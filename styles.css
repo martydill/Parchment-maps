@@ -413,6 +413,31 @@ button.parchment {
   font-size: 16px;
   letter-spacing: 0.04em;
 }
+.discovery-card {
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid rgba(84, 50, 24, 0.42);
+  border-left: 4px solid #8d5128;
+  background: rgba(255, 245, 211, 0.2);
+}
+.discovery-card h4 {
+  margin: 0;
+}
+.discovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.discovery-actions .mini-action {
+  flex: 1 1 130px;
+}
+.discovery-status {
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: rgba(72, 45, 24, 0.12);
+  font-weight: 700;
+}
 .resource-list {
   display: flex;
   flex-wrap: wrap;
