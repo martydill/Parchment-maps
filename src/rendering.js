@@ -13,6 +13,44 @@ import {
   worldShoals,
 } from "./world-data.js";
 
+function seeded(n) {
+  let t = n + 0x6d2b79f5;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function createRoughSeaParticles(seas, isOnLand) {
+  return seas.map((sea, seaIndex) => {
+    const rnd = seeded(9300 + seaIndex * 131);
+    const particles = [];
+    const count = Math.round(22 * sea.strength);
+    for (let i = 0; i < count; i++) {
+      const baseX = (rnd() - 0.5) * sea.rx * 1.75;
+      const baseY = (rnd() - 0.5) * sea.ry * 1.75;
+      const speed = 0.00042 + rnd() * 0.0002;
+      const phaseOffset = rnd() * Math.PI * 2;
+      const swell = 4 + rnd() * 7;
+      const scale = 0.7 + rnd() * 0.7;
+      const rotation = sea.angle + (rnd() - 0.5) * 0.24;
+      if (!isOnLand(sea.x + baseX, sea.y + baseY))
+        particles.push({
+          baseX,
+          baseY,
+          phaseOffset,
+          rotation,
+          scale,
+          speed,
+          swell,
+        });
+    }
+    return particles;
+  });
+}
+
 function strokeHandDrawn(c, drawPath, color, width, z = 1) {
   c.save();
   c.strokeStyle = color;
@@ -237,16 +275,6 @@ export function drawShip(c, x, y, a) {
 }
 
 export function createMapRendering({ WORLD, game }) {
-  function seeded(n) {
-    let t = n + 0x6d2b79f5;
-    return () => {
-      t += 0x6d2b79f5;
-      let r = Math.imul(t ^ (t >>> 15), 1 | t);
-      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-
   const mapLayer = document.createElement("canvas");
   mapLayer.width = WORLD.w;
   mapLayer.height = WORLD.h;
