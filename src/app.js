@@ -125,6 +125,16 @@ import {
   factionRivals,
 } from "./core/factions.js";
 import {
+  buyPermit,
+  canTrade,
+  cultivateOfficial,
+  jurisdictionLaw,
+  lawDetails,
+  normalizeLegalState,
+  resolveCustoms,
+  tradeQuote,
+} from "./core/jurisdictions.js";
+import {
   discoverySites,
   explorationSites,
   goods,
@@ -2123,6 +2133,7 @@ function loadGameState() {
   game.exploration = normalizeExplorationState(game.exploration);
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
+  game.legal = normalizeLegalState(game.legal);
   game.regionalEconomy = normalizeRegionalState(
     game.regionalEconomy,
     regionalPortSpecifications(),
@@ -3084,6 +3095,12 @@ function buyPriceFor(port, key) {
 function sellPriceFor(port, key) {
   return sellPrice(pricingOptions(port, key));
 }
+function legalStatusAt(port, key) {
+  return jurisdictionLaw(port.name, key, {
+    crises: crisisAtPort(game.regionalCrises, port.name),
+    dominantFaction: dominantFaction(port).name,
+  });
+}
 function renderMilestone(root) {
   root.innerHTML = "";
   const steps = [
@@ -3365,6 +3382,7 @@ function renderPortSystems() {
     `<b>${features.length ? features.join(" · ") : "A modest working harbor"}</b>` +
     `<span>${summary.pirateAttention >= 50 ? "Pirates are watching this wealthy harbor. " : ""}${summary.politicalAttention >= 50 ? "Courts and factions contest its growing influence. " : ""}${summary.unrest >= 45 ? "Protests and outward migration trouble the streets. " : ""}${collapsed.length ? `Collapsed: ${collapsed.join(", ")}. Restoration capital is required.` : ""}</span>`;
   renderMarket();
+  renderCustomsOffice();
   renderCargoPlan();
   renderProductionChains();
   renderPortEvent();
@@ -3378,6 +3396,60 @@ function renderPortSystems() {
   renderShipyard();
   renderReadiness();
   renderMilestone(document.getElementById("milestonePort"));
+}
+
+function renderCustomsOffice() {
+  const root = document.getElementById("customsOffice");
+  root.innerHTML = "";
+  const inspection = game.legal.lastInspection;
+  const summary = document.createElement("div");
+  summary.className = "politics-box";
+  summary.innerHTML =
+    `<div class="law-head"><b>${currentPort.realm} jurisdiction</b><span class="contract-tag">${game.legal.offenses[currentPort.name] || 0} offenses</span></div>` +
+    `<div class="law-effect">${inspection?.portName === currentPort.name ? `Last arrival: ${inspection.inspected ? "inspected" : "cleared"} at ${Math.round(inspection.scrutiny * 100)}% scrutiny${inspection.fine ? ` · ${inspection.fine} crowns assessed` : ""}.` : "No recent customs record at this port."}</div>`;
+  root.append(summary);
+  const actions = document.createElement("div");
+  actions.className = "customs-actions";
+  const forgery = document.createElement("button");
+  forgery.className = "parchment";
+  forgery.textContent = game.legal.forgedManifest
+    ? "Forged manifest prepared"
+    : "Forge next manifest · 18 crowns";
+  forgery.disabled = game.legal.forgedManifest || game.coins < 18;
+  forgery.onclick = () => {
+    game.coins -= 18;
+    game.legal.forgedManifest = true;
+    renderPortSystems();
+    updateHud();
+  };
+  const remote = document.createElement("button");
+  remote.className = "parchment";
+  remote.textContent = game.legal.remoteAnchorage
+    ? "Remote landing arranged"
+    : "Arrange remote landing · 12 crowns";
+  remote.disabled = game.legal.remoteAnchorage || game.coins < 12;
+  remote.onclick = () => {
+    game.coins -= 12;
+    game.legal.remoteAnchorage = true;
+    renderPortSystems();
+    updateHud();
+  };
+  const cultivate = document.createElement("button");
+  cultivate.className = "parchment";
+  cultivate.textContent = game.legal.cultivatedOfficials[currentPort.name]
+    ? "Customs contact cultivated"
+    : "Cultivate an official · 55 crowns";
+  cultivate.disabled =
+    game.legal.cultivatedOfficials[currentPort.name] || game.coins < 55;
+  cultivate.onclick = () => {
+    const result = cultivateOfficial(game.legal, currentPort.name, game.coins);
+    if (!result.ok) return showMessage(result.reason);
+    game.coins = result.coins;
+    renderPortSystems();
+    updateHud();
+  };
+  actions.append(forgery, remote, cultivate);
+  root.append(actions);
 }
 
 function renderCargoPlan() {
@@ -3766,9 +3838,7 @@ function openPort() {
       distance,
       roughness:
         roughness / componentEfficiency(game.operations.components.fittings),
-      inspectionRisk:
-        stats.inspectionRisk /
-        componentEfficiency(game.operations.components.fittings),
+      inspectionRisk: 0,
       seed: game.day + currentPort.name.length,
     });
     game.cargoLots = outcome.remaining;
@@ -3789,6 +3859,37 @@ function openPort() {
       showMessage("CUSTOMS SEIZURE · Illegal goods confiscated.", 4);
     } else if (outcome.lost.length)
       showMessage("ROUGH VOYAGE · Fragile cargo was damaged.", 4);
+    const laws = Object.fromEntries(
+      Object.keys(goods).map((key) => [key, legalStatusAt(currentPort, key)]),
+    );
+    const customs = resolveCustoms({
+      state: game.legal,
+      portName: currentPort.name,
+      lots: game.cargoLots,
+      day: game.day,
+      reputation: game.factionStanding[dominantFaction(currentPort).name] || 0,
+      laws,
+      seed: `${game.departedFromPort}:${distance}`,
+    });
+    if (!customs.admitted) {
+      addNews("Entry refused at " + currentPort.name, customs.reason);
+      showMessage("PORT BAN · Registered trade is unavailable.", 4);
+    }
+    game.coins = Math.max(0, game.coins - customs.fine - customs.remoteFee);
+    if (customs.confiscated.length) {
+      const seized = new Set(customs.confiscated.map((lot) => lot.id));
+      game.cargoLots = game.cargoLots.filter((lot) => !seized.has(lot.id));
+      syncCargoCounts(game, goods);
+    }
+    if (customs.standingChange)
+      changeStanding(dominantFaction(currentPort).name, customs.standingChange);
+    if (customs.admitted)
+      addNews(
+        customs.inspected ? "Customs inspection" : "Customs clearance",
+        customs.inspected
+          ? `${Math.round(customs.scrutiny * 100)}% scrutiny. ${customs.confiscated.length} units confiscated and ${customs.fine} crowns fined.${customs.forgeryDetected ? " The forged manifest was exposed." : ""}`
+          : `The manifest cleared at ${Math.round(customs.scrutiny * 100)}% scrutiny.${customs.remoteFee ? " Cargo moved through a remote anchorage." : ""}`,
+      );
     if (operations.shortage)
       addNews(
         "Provisions exhausted",
@@ -3837,8 +3938,14 @@ function renderMarket() {
   Object.keys(goods).forEach((key) => {
     if (!available.has(key)) return;
     const state = economyState(currentPort, key),
-      buyQuote = buyPriceFor(currentPort, key),
-      baseSellQuote = sellPriceFor(currentPort, key),
+      legalStatus = legalStatusAt(currentPort, key),
+      law = lawDetails(legalStatus),
+      buyQuote = tradeQuote(buyPriceFor(currentPort, key), legalStatus, "buy"),
+      baseSellQuote = tradeQuote(
+        sellPriceFor(currentPort, key),
+        legalStatus,
+        "sell",
+      ),
       lots = game.cargoLots.filter((lot) => lot.key === key),
       nextLot = lots[0],
       sellQuote = nextLot
@@ -3851,6 +3958,14 @@ function renderMarket() {
           )
         : baseSellQuote,
       condition = economyCondition(currentPort, key);
+    const tradeAccess = canTrade({
+      state: game.legal,
+      portName: currentPort.name,
+      good: key,
+      status: legalStatus,
+      day: game.day,
+      units: game.cargo[key],
+    });
     const row = document.createElement("div");
     row.className = "trade-row";
     const klass =
@@ -3873,7 +3988,7 @@ function renderMarket() {
       klass +
       '">' +
       condition +
-      "</span> · " +
+      `</span> · <span class="legal-status legal-${legalStatus}">${law.label}</span> · ` +
       Math.floor(state.stock) +
       " units in market</span>" +
       (lots.length
@@ -3890,9 +4005,25 @@ function renderMarket() {
     buy.textContent = "Buy " + buyQuote;
     buy.title = "Buy one for " + buyQuote + " crowns";
     buy.disabled =
-      game.coins < buyQuote || cargoCount() >= game.holdMax || state.stock < 1;
+      !tradeAccess.ok ||
+      game.coins < buyQuote ||
+      cargoCount() >= game.holdMax ||
+      state.stock < 1;
     buy.onclick = () => {
-      const livePrice = buyPriceFor(currentPort, key);
+      const access = canTrade({
+        state: game.legal,
+        portName: currentPort.name,
+        good: key,
+        status: legalStatus,
+        day: game.day,
+        units: game.cargo[key],
+      });
+      if (!access.ok) return showMessage(access.reason);
+      const livePrice = tradeQuote(
+        buyPriceFor(currentPort, key),
+        legalStatus,
+        "buy",
+      );
       if (game.coins < livePrice) return showMessage("Not enough crowns.");
       if (cargoCount() >= game.holdMax) return showMessage("The hold is full.");
       if (state.stock < 1)
@@ -3920,7 +4051,7 @@ function renderMarket() {
     const sell = document.createElement("button");
     sell.textContent = "Sell " + sellQuote;
     sell.title = "Sell one for " + sellQuote + " crowns";
-    sell.disabled = game.cargo[key] <= 0;
+    sell.disabled = game.cargo[key] <= 0 || !tradeAccess.ok;
     sell.onclick = () => {
       if (game.cargo[key] <= 0) return showMessage("None aboard.");
       const lotIndex = game.cargoLots.findIndex((lot) => lot.key === key);
@@ -3928,7 +4059,7 @@ function renderMarket() {
       const livePrice = Math.max(
           1,
           Math.round(
-            sellPriceFor(currentPort, key) *
+            tradeQuote(sellPriceFor(currentPort, key), legalStatus, "sell") *
               cargoValueMultiplier(lot, currentPort.name, goods[key]),
           ),
         ),
@@ -3960,6 +4091,30 @@ function renderMarket() {
       updateHud();
     };
     row.append(label, buy, sell);
+    if (
+      legalStatus === "licensed" &&
+      !tradeAccess.ok &&
+      !game.legal.portBans[currentPort.name]
+    ) {
+      const permit = document.createElement("button");
+      permit.textContent = "Permit 35";
+      permit.disabled = game.coins < 35;
+      permit.onclick = () => {
+        const result = buyPermit(
+          game.legal,
+          currentPort.name,
+          key,
+          game.day,
+          game.coins,
+        );
+        if (!result.ok) return showMessage(result.reason);
+        game.coins = result.coins;
+        showMessage(`Permit issued through Day ${result.expiresDay}.`);
+        renderPortSystems();
+        updateHud();
+      };
+      row.append(permit);
+    }
     market.append(row);
   });
 }

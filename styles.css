@@ -647,6 +647,31 @@ button.parchment {
   filter: grayscale(0.35);
   cursor: not-allowed;
 }
+
+.legal-status {
+  font-weight: 700;
+}
+
+.legal-legal {
+  color: #315e3c;
+}
+
+.legal-taxed,
+.legal-licensed,
+.legal-rationed {
+  color: #8a5a18;
+}
+
+.legal-prohibited {
+  color: #8b2727;
+}
+
+.customs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
 .ship-stats {
   padding: 8px 10px;
   border-radius: 6px;
