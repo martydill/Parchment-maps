@@ -1,5 +1,6 @@
 import { createShipUpgradeState } from "./upgrades.js";
 import { createDiscoveryState } from "./discoveries.js";
+import { createOperationsState } from "./operations.js";
 
 export function createGameState() {
   return {
@@ -40,6 +41,8 @@ export function createGameState() {
     voyageDistance: 0,
     departedFromPort: null,
     discoveries: createDiscoveryState(),
+    operations: createOperationsState(),
+    regionalEconomy: {},
   };
 }
 

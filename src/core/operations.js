@@ -1,0 +1,231 @@
+import { clamp } from "./math.js";
+
+export const FACTION_PRIVILEGES = Object.freeze([
+  { standing: 10, label: "Trusted factor", contractReward: 0.05 },
+  {
+    standing: 25,
+    label: "Favored captain",
+    contractReward: 0.1,
+    intelDiscount: 0.15,
+  },
+  {
+    standing: 45,
+    label: "Chartered ally",
+    contractReward: 0.15,
+    intelDiscount: 0.25,
+  },
+]);
+
+export function createOperationsState() {
+  return {
+    provisions: 14,
+    condition: 100,
+    morale: 75,
+    wagesDueDay: 8,
+    wageArrears: 0,
+    obligations: [],
+    nextObligationId: 1,
+  };
+}
+
+export function normalizeOperationsState(value) {
+  const fresh = createOperationsState();
+  if (!value || typeof value !== "object") return fresh;
+  return {
+    provisions: clamp(Number(value.provisions ?? fresh.provisions), 0, 30),
+    condition: clamp(Number(value.condition ?? fresh.condition), 0, 100),
+    morale: clamp(Number(value.morale ?? fresh.morale), 0, 100),
+    wagesDueDay: Math.max(
+      1,
+      Math.floor(value.wagesDueDay ?? fresh.wagesDueDay),
+    ),
+    wageArrears: Math.max(0, Math.floor(value.wageArrears ?? 0)),
+    obligations: Array.isArray(value.obligations) ? value.obligations : [],
+    nextObligationId: Math.max(1, Math.floor(value.nextObligationId ?? 1)),
+  };
+}
+
+export function factionPrivilege(standing = 0) {
+  let privilege = {
+    standing: 0,
+    label: "Unproven",
+    contractReward: 0,
+    intelDiscount: 0,
+  };
+  for (const candidate of FACTION_PRIVILEGES)
+    if (standing >= candidate.standing)
+      privilege = { intelDiscount: 0, ...candidate };
+  return privilege;
+}
+
+export function adjustedContractReward(reward, standing = 0) {
+  return Math.round(reward * (1 + factionPrivilege(standing).contractReward));
+}
+
+export function adjustedIntelCost(cost, bestLocalStanding = 0) {
+  return Math.max(
+    1,
+    Math.round(cost * (1 - factionPrivilege(bestLocalStanding).intelDiscount)),
+  );
+}
+
+export function intelligenceFreshness(report, day) {
+  const remaining = report.expiresDay - day;
+  if (remaining < 0) return { label: "Expired", reliability: 0 };
+  const lifetime = Math.max(1, report.expiresDay - (report.boughtDay ?? day));
+  const reliability = clamp(remaining / lifetime, 0, 1);
+  if (reliability <= 0.34) return { label: "Stale", reliability };
+  if (reliability <= 0.67) return { label: "Aging", reliability };
+  return { label: "Current", reliability };
+}
+
+export function estimateVoyageReadiness(operations, distance, stats) {
+  const days = Math.max(1, Math.ceil(distance / 620));
+  const provisionsNeeded = Math.max(
+    1,
+    Math.ceil((days * 2) / Math.max(0.7, stats.crewComfort)),
+  );
+  const conditionRisk = Math.ceil(
+    distance / 260 / Math.max(0.5, stats.stormResistance),
+  );
+  return { days, provisionsNeeded, conditionRisk };
+}
+
+export function resolveVoyageOperations(
+  operations,
+  { distance, days, roughness, stats },
+) {
+  const next = normalizeOperationsState(operations);
+  const provisionsNeeded = Math.max(
+    1,
+    Math.ceil((days * 2) / Math.max(0.7, stats.crewComfort)),
+  );
+  const provisionsUsed = Math.min(next.provisions, provisionsNeeded);
+  const shortage = provisionsNeeded - provisionsUsed;
+  next.provisions -= provisionsUsed;
+
+  const damage = clamp(
+    Math.round(
+      distance / 330 +
+        (roughness * distance) / Math.max(150, stats.stormResistance * 850),
+    ),
+    0,
+    35,
+  );
+  next.condition = clamp(next.condition - damage, 0, 100);
+  const comfortRecovery = (stats.crewComfort - 1) * days * 3;
+  const moraleChange =
+    comfortRecovery - days * 1.5 - shortage * 7 - damage * 0.25;
+  next.morale = clamp(next.morale + moraleChange, 0, 100);
+
+  return {
+    operations: next,
+    provisionsNeeded,
+    provisionsUsed,
+    shortage,
+    damage,
+    speedMultiplier: clamp(0.7 + next.morale / 250, 0.7, 1.08),
+  };
+}
+
+export function processWages(operations, day, coins, wage = 18) {
+  const next = normalizeOperationsState(operations);
+  let paid = 0;
+  let missed = 0;
+  while (day >= next.wagesDueDay) {
+    if (coins >= wage) {
+      coins -= wage;
+      paid += wage;
+      next.morale = clamp(next.morale + 4, 0, 100);
+    } else {
+      next.wageArrears += wage;
+      missed += wage;
+      next.morale = clamp(next.morale - 14, 0, 100);
+    }
+    next.wagesDueDay += 7;
+  }
+  return { operations: next, coins, paid, missed };
+}
+
+export function repairOperations(operations, coins) {
+  const next = normalizeOperationsState(operations);
+  const missing = 100 - next.condition;
+  const repair = Math.min(missing, Math.floor(coins / 2));
+  next.condition += repair;
+  return { operations: next, coins: coins - repair * 2, repaired: repair };
+}
+
+export function buyProvisions(operations, coins, units = 5) {
+  const next = normalizeOperationsState(operations);
+  const purchased = Math.min(
+    units,
+    30 - next.provisions,
+    Math.floor(coins / 3),
+  );
+  next.provisions += purchased;
+  return { operations: next, coins: coins - purchased * 3, purchased };
+}
+
+export function contractOutcome(contract, day, standing = 0) {
+  const lateness = day - contract.deadline;
+  const fullReward = adjustedContractReward(contract.reward, standing);
+  if (lateness <= 0)
+    return {
+      grade: "On time",
+      reward: fullReward,
+      standing: contract.influence,
+      completed: true,
+    };
+  if (lateness <= 2)
+    return {
+      grade: "Late",
+      reward: Math.round(fullReward * 0.55),
+      standing: -1,
+      completed: false,
+    };
+  return {
+    grade: "Defaulted",
+    reward: 0,
+    standing: -3,
+    completed: false,
+  };
+}
+
+export function maybeCreateObligation(operations, faction, standing, day) {
+  const next = normalizeOperationsState(operations);
+  if (
+    standing < 25 ||
+    next.obligations.some((item) => item.faction === faction)
+  )
+    return { operations: next, obligation: null };
+  const obligation = {
+    id: `O${next.nextObligationId++}`,
+    faction,
+    dueDay: day + 8,
+    fulfilled: false,
+  };
+  next.obligations.push(obligation);
+  return { operations: next, obligation };
+}
+
+export function processObligations(operations, day) {
+  const next = normalizeOperationsState(operations);
+  const failed = next.obligations.filter(
+    (item) => !item.fulfilled && !item.failed && day > item.dueDay,
+  );
+  for (const item of failed) item.failed = true;
+  return { operations: next, failed };
+}
+
+export function fulfillObligationsAtPort(operations, factions, day) {
+  const next = normalizeOperationsState(operations);
+  const fulfilled = next.obligations.filter(
+    (item) =>
+      !item.fulfilled &&
+      !item.failed &&
+      day <= item.dueDay &&
+      factions.includes(item.faction),
+  );
+  for (const item of fulfilled) item.fulfilled = true;
+  return { operations: next, fulfilled };
+}
