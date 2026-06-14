@@ -6,6 +6,17 @@ import {
   wrappedDistance as calculateWrappedDistance,
 } from "./core/math.js";
 import {
+  expandPolygon,
+  pointInPolygon,
+  polygonCentroid,
+  raySegmentDistance,
+} from "./core/geometry.js";
+import {
+  edgeInwardVector,
+  limitOutwardWind,
+  readSailingInput,
+} from "./core/sailing.js";
+import {
   advanceEconomyState,
   buyPrice,
   createEconomyState,
@@ -2018,38 +2029,9 @@ function renderIntelOffice() {
 
 initializeMerchantShips();
 
-function pointInPoly(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i][0],
-      yi = poly[i][1],
-      xj = poly[j][0],
-      yj = poly[j][1];
-    const intersect =
-      yi > y !== yj > y &&
-      x < ((xj - xi) * (y - yi)) / (yj - yi + 0.00001) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
 function onLand(x, y) {
   const wx = wrapX(x);
-  return lands.some((l) => pointInPoly(wx, y, l.poly));
-}
-
-function cross(ax, ay, bx, by) {
-  return ax * by - ay * bx;
-}
-function raySegmentDistance(px, py, dx, dy, ax, ay, bx, by, maxDistance) {
-  const sx = bx - ax,
-    sy = by - ay;
-  const den = cross(dx, dy, sx, sy);
-  if (Math.abs(den) < 1e-8) return null;
-  const qx = ax - px,
-    qy = ay - py;
-  const t = cross(qx, qy, sx, sy) / den;
-  const u = cross(qx, qy, dx, dy) / den;
-  return t >= 0 && t <= maxDistance && u >= 0 && u <= 1 ? t : null;
+  return lands.some((land) => pointInPolygon(wx, y, land.poly));
 }
 function buildVisibilityPolygon(force = false) {
   const radius = currentVisibilityKm() * visibility.worldUnitsPerKm;
@@ -2421,21 +2403,6 @@ function polyPath(c, poly) {
   c.beginPath();
   poly.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])));
   c.closePath();
-}
-function polygonCentroid(poly) {
-  return {
-    x: poly.reduce((a, p) => a + p[0], 0) / poly.length,
-    y: poly.reduce((a, p) => a + p[1], 0) / poly.length,
-  };
-}
-function expandedPoly(poly, amount) {
-  const cent = polygonCentroid(poly);
-  return poly.map(([x, y]) => {
-    const dx = x - cent.x,
-      dy = y - cent.y,
-      d = Math.hypot(dx, dy) || 1;
-    return [x + (dx / d) * amount, y + (dy / d) * amount];
-  });
 }
 function drawWaveGlyph(c, x, y, s = 1, alpha = 0.18) {
   c.save();
@@ -2907,7 +2874,7 @@ function buildMapLayer() {
   // islands with layered coast contours and internal parchment texture
   lands.forEach((l, li) => {
     for (const off of [22, 14, 7]) {
-      polyPath(m, expandedPoly(l.poly, off));
+      polyPath(m, expandPolygon(l.poly, off));
       m.strokeStyle = `rgba(54,43,25,${off === 22 ? 0.22 : off === 14 ? 0.34 : 0.48})`;
       m.lineWidth = off === 22 ? 2 : 1.5;
       m.stroke();
@@ -3836,69 +3803,18 @@ function hideControlHint() {
 }
 
 function readInput() {
-  let dx = input.x,
-    dy = input.y,
-    power = input.power,
-    kx = 0,
-    ky = 0;
-  if (keys.has("arrowleft") || keys.has("a")) kx--;
-  if (keys.has("arrowright") || keys.has("d")) kx++;
-  if (keys.has("arrowup") || keys.has("w")) ky--;
-  if (keys.has("arrowdown") || keys.has("s")) ky++;
-  if (kx || ky) {
-    const len = Math.hypot(kx, ky);
-    dx = kx / len;
-    dy = ky / len;
-    power = 1;
-    hideControlHint();
-  }
-  if (power < 0.14)
-    return { active: false, desiredAngle: ship.angle, power: 0 };
-  return {
-    active: true,
-    desiredAngle: Math.atan2(dy, dx),
-    power: Math.min(1, power),
-  };
+  const result = readSailingInput(keys, input, ship.angle);
+  if (result.keyboardActive) hideControlHint();
+  return result;
 }
 const MAP_MARGIN = 58;
 const EDGE_RECOVERY_ZONE = 155;
-
-function edgeInwardVector(x, y) {
-  let iy = 0,
-    strength = 0;
-  if (y < EDGE_RECOVERY_ZONE) {
-    const s = (EDGE_RECOVERY_ZONE - y) / EDGE_RECOVERY_ZONE;
-    iy += s;
-    strength = Math.max(strength, s);
-  }
-  if (y > WORLD.h - EDGE_RECOVERY_ZONE) {
-    const s = (y - (WORLD.h - EDGE_RECOVERY_ZONE)) / EDGE_RECOVERY_ZONE;
-    iy -= s;
-    strength = Math.max(strength, s);
-  }
-  return { x: 0, y: iy ? Math.sign(iy) : 0, strength: clamp(strength, 0, 1) };
-}
-function limitOutwardWind(wx, wy) {
-  const top = clamp(
-    (ship.y - MAP_MARGIN) / (EDGE_RECOVERY_ZONE - MAP_MARGIN),
-    0,
-    1,
-  );
-  const bottom = clamp(
-    (WORLD.h - MAP_MARGIN - ship.y) / (EDGE_RECOVERY_ZONE - MAP_MARGIN),
-    0,
-    1,
-  );
-  if (wy < 0) wy *= top;
-  if (wy > 0) wy *= bottom;
-  return { x: wx, y: wy };
-}
 function update(dt) {
   if (!gameStarted || currentPort || selectedTown || selectedMerchant) return;
   updateMerchantShips(dt);
   edgeMessageCooldown = Math.max(0, edgeMessageCooldown - dt);
   const inp = readInput();
-  const edge = edgeInwardVector(ship.x, ship.y);
+  const edge = edgeInwardVector(ship.y, WORLD.h, EDGE_RECOVERY_ZONE);
   edgeRecoveryActive = edge.strength > 0.56;
   if (ship.anchored) {
     ship.speed = 0;
@@ -3938,6 +3854,10 @@ function update(dt) {
   const safeWind = limitOutwardWind(
     Math.cos(game.windAngle) * windPush,
     Math.sin(game.windAngle) * windPush,
+    ship.y,
+    WORLD.h,
+    MAP_MARGIN,
+    EDGE_RECOVERY_ZONE,
   );
   const recoveryPush =
     !inp.active && edge.strength > 0.55 ? 30 * edge.strength : 0;
