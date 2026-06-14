@@ -91,6 +91,7 @@ import {
 } from "./core/regional.js";
 import {
   chooseFactionCharter,
+  factionLore,
   contractConflict,
   factionRivals,
 } from "./core/factions.js";
@@ -5488,7 +5489,24 @@ function openTownDetails(port, _fromChart = false) {
     const note = document.createElement("div");
     note.className = "faction-note";
     note.textContent = faction.note;
-    row.append(head, bar, note);
+    const lore = factionLore(faction, port);
+    const details = document.createElement("details");
+    details.className = "faction-lore";
+    const summary = document.createElement("summary");
+    summary.textContent = "Backstory, history & motivations";
+    for (const [heading, text] of [
+      ["Backstory", lore.backstory],
+      ["History", lore.history],
+      ["Motivations", lore.motivations],
+    ]) {
+      const section = document.createElement("p");
+      const label = document.createElement("b");
+      label.textContent = `${heading}: `;
+      section.append(label, document.createTextNode(text));
+      details.append(section);
+    }
+    details.prepend(summary);
+    row.append(head, bar, note, details);
     factions.append(row);
   });
   fillChips("townResources", port.resources);

@@ -479,6 +479,22 @@ button.parchment {
   line-height: 1.35;
   opacity: 0.82;
 }
+.faction-lore {
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-left: 2px solid rgba(107, 61, 32, 0.42);
+  background: rgba(255, 244, 205, 0.14);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.faction-lore summary {
+  cursor: pointer;
+  color: #5b321b;
+  font-weight: 700;
+}
+.faction-lore p {
+  margin: 7px 0 0;
+}
 .route-row {
   padding: 8px 0;
   border-bottom: 1px solid rgba(71, 44, 23, 0.2);
