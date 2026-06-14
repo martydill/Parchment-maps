@@ -1570,33 +1570,99 @@ function merchantEta(merchant) {
     ),
   );
 }
+
+function strokeHandDrawn(c, drawPath, color, width, z = 1) {
+  c.save();
+  c.strokeStyle = color;
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  c.lineWidth = width / z;
+  drawPath();
+  c.stroke();
+  c.globalAlpha = 0.34;
+  c.translate(0.55 / z, -0.35 / z);
+  c.lineWidth = Math.max(0.65 / z, (width * 0.55) / z);
+  drawPath();
+  c.stroke();
+  c.restore();
+}
+
 function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
   c.save();
   c.translate(renderX, merchant.y);
   c.rotate(merchant.angle + Math.PI / 2);
-  c.fillStyle = "rgba(24,17,11,.28)";
+  c.fillStyle = "rgba(35,24,14,.2)";
   c.beginPath();
-  c.ellipse(3, 5, 6, 15, 0, 0, Math.PI * 2);
+  c.ellipse(3, 5, 7, 16, -0.08, 0, Math.PI * 2);
   c.fill();
-  c.fillStyle = "#4b2d1a";
-  c.strokeStyle = "#25170e";
-  c.lineWidth = 1.3 / z;
+
+  c.fillStyle = "#704425";
   c.beginPath();
   c.moveTo(0, -14);
-  c.lineTo(6, 9);
-  c.lineTo(0, 15);
-  c.lineTo(-6, 9);
+  c.quadraticCurveTo(7, -5, 6, 9);
+  c.quadraticCurveTo(4, 13, 0, 16);
+  c.quadraticCurveTo(-5, 12, -6, 8);
+  c.quadraticCurveTo(-7, -5, 0, -14);
   c.closePath();
   c.fill();
-  c.stroke();
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(0, -14);
+      c.quadraticCurveTo(7, -5, 6, 9);
+      c.quadraticCurveTo(4, 13, 0, 16);
+      c.quadraticCurveTo(-5, 12, -6, 8);
+      c.quadraticCurveTo(-7, -5, 0, -14);
+      c.closePath();
+    },
+    "#2b1a10",
+    1.25,
+    z,
+  );
+
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(-4, 7);
+      c.quadraticCurveTo(0, 10, 5, 7);
+      c.moveTo(0, -10);
+      c.lineTo(0, 9);
+    },
+    "#342116",
+    0.9,
+    z,
+  );
+
+  c.fillStyle = "#ead9aa";
+  c.beginPath();
+  c.moveTo(1, -9);
+  c.quadraticCurveTo(7, -4, 9, 4);
+  c.quadraticCurveTo(5, 3, 1, 6);
+  c.closePath();
+  c.fill();
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(1, -9);
+      c.quadraticCurveTo(7, -4, 9, 4);
+      c.quadraticCurveTo(5, 3, 1, 6);
+      c.closePath();
+    },
+    "#483321",
+    0.85,
+    z,
+  );
+
   c.fillStyle = merchant.color;
   c.beginPath();
-  c.moveTo(0, -9);
-  c.lineTo(0, 6);
-  c.lineTo(10, 4);
+  c.moveTo(1, -5);
+  c.lineTo(7, -1);
+  c.lineTo(1, 1);
   c.closePath();
   c.fill();
-  c.stroke();
   c.restore();
 }
 function openVesselDetails(merchant) {
@@ -3398,41 +3464,127 @@ function drawShip(c, x, y, a) {
   c.save();
   c.translate(x, y);
   c.rotate(a + Math.PI / 2);
-  c.fillStyle = "rgba(20,16,12,.25)";
+
+  c.fillStyle = "rgba(37,25,14,.2)";
   c.beginPath();
-  c.ellipse(5, 6, 11, 25, 0, 0, Math.PI * 2);
+  c.ellipse(5, 7, 12, 27, -0.08, 0, Math.PI * 2);
   c.fill();
-  c.fillStyle = "#5e3820";
-  c.strokeStyle = "#2c1e14";
-  c.lineWidth = 2;
+
+  c.fillStyle = "#754726";
   c.beginPath();
   c.moveTo(0, -25);
-  c.quadraticCurveTo(13, -9, 10, 18);
-  c.lineTo(0, 28);
-  c.lineTo(-10, 18);
-  c.quadraticCurveTo(-13, -9, 0, -25);
-  c.fill();
-  c.stroke();
-  c.strokeStyle = "#3a291d";
-  c.beginPath();
-  c.moveTo(0, -15);
-  c.lineTo(0, 12);
-  c.stroke();
-  c.fillStyle = "#efe0b4";
-  c.beginPath();
-  c.moveTo(1, -12);
-  c.lineTo(1, 9);
-  c.lineTo(17, 6);
+  c.quadraticCurveTo(13, -12, 11, 17);
+  c.quadraticCurveTo(8, 23, 0, 28);
+  c.quadraticCurveTo(-8, 23, -11, 17);
+  c.quadraticCurveTo(-13, -11, 0, -25);
   c.closePath();
   c.fill();
-  c.stroke();
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(0, -25);
+      c.quadraticCurveTo(13, -12, 11, 17);
+      c.quadraticCurveTo(8, 23, 0, 28);
+      c.quadraticCurveTo(-8, 23, -11, 17);
+      c.quadraticCurveTo(-13, -11, 0, -25);
+      c.closePath();
+    },
+    "#2b1b11",
+    2,
+  );
+
+  c.fillStyle = "rgba(47,29,17,.24)";
+  c.beginPath();
+  c.moveTo(-8, 14);
+  c.quadraticCurveTo(0, 19, 9, 14);
+  c.lineTo(8, 20);
+  c.quadraticCurveTo(0, 25, -8, 20);
+  c.closePath();
+  c.fill();
+
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(-9, 11);
+      c.quadraticCurveTo(0, 16, 10, 11);
+      c.moveTo(-8, 17);
+      c.quadraticCurveTo(0, 22, 8, 17);
+    },
+    "#4b2b19",
+    1,
+  );
+
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(0, -17);
+      c.lineTo(0, 15);
+    },
+    "#332217",
+    1.7,
+  );
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(-8, 13);
+      c.lineTo(0, -16);
+      c.lineTo(10, 12);
+    },
+    "rgba(61,43,28,.72)",
+    0.8,
+  );
+
+  c.fillStyle = "#ead9aa";
+  c.beginPath();
+  c.moveTo(1, -12);
+  c.quadraticCurveTo(12, -5, 17, 6);
+  c.quadraticCurveTo(9, 5, 1, 10);
+  c.closePath();
+  c.fill();
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(1, -12);
+      c.quadraticCurveTo(12, -5, 17, 6);
+      c.quadraticCurveTo(9, 5, 1, 10);
+      c.closePath();
+    },
+    "#493321",
+    1.25,
+  );
+
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(3, -8);
+      c.quadraticCurveTo(8, -5, 13, 1);
+      c.moveTo(3, 5);
+      c.quadraticCurveTo(8, 3, 14, 4);
+    },
+    "rgba(122,88,49,.55)",
+    0.7,
+  );
+
   c.fillStyle = "#9c3d2c";
   c.beginPath();
   c.moveTo(2, -5);
-  c.lineTo(12, 0);
+  c.quadraticCurveTo(8, -2, 12, 0);
   c.lineTo(2, 3);
   c.closePath();
   c.fill();
+
+  c.fillStyle = "#d8b768";
+  for (const deckX of [-5, 5]) {
+    c.beginPath();
+    c.arc(deckX, 12, 1.1, 0, Math.PI * 2);
+    c.fill();
+  }
   c.restore();
 }
 
