@@ -58,6 +58,62 @@ export const goods = {
     processed: true,
     terms: ["fashion", "fine cloth", "luxur"],
   },
+  salt: {
+    name: "Whitecliff Salt",
+    base: 8,
+    terms: ["salt", "salt pans", "brine"],
+  },
+  tea: {
+    name: "Cloudleaf Tea",
+    base: 24,
+    perishRate: 0.025,
+    terms: ["tea", "cloudleaf", "tea terraces"],
+  },
+  ceramics: {
+    name: "Jade Ceramics",
+    base: 29,
+    fragility: 0.4,
+    terms: ["ceramic", "porcelain", "pottery", "kiln"],
+  },
+  pearls: {
+    name: "Nacre Pearls",
+    base: 46,
+    terms: ["pearl", "nacre", "diving grounds"],
+  },
+  amber: {
+    name: "Storm Amber",
+    base: 39,
+    terms: ["amber", "storm amber", "fossil resin"],
+  },
+  wine: {
+    name: "Sunspire Wine",
+    base: 27,
+    fragility: 0.25,
+    terms: ["wine", "vineyard", "vintage"],
+  },
+  copper: {
+    name: "Red Copper",
+    base: 15,
+    terms: ["copper", "copper mines"],
+  },
+  coal: {
+    name: "Deep Coal",
+    base: 10,
+    terms: ["coal", "colliery", "fuel"],
+  },
+  glass: {
+    name: "Tideglass",
+    base: 36,
+    processed: true,
+    fragility: 0.45,
+    terms: ["glass", "tideglass", "glassworks"],
+  },
+  tools: {
+    name: "Machinist Tools",
+    base: 33,
+    processed: true,
+    terms: ["tool", "machinery", "instruments"],
+  },
 };
 goods.silk.premiumPorts = ["Lethariel", "Kingfisher Quay"];
 goods.silk.faction = "Silver Loom Consortium";
@@ -249,6 +305,7 @@ export const discoverySites = [
     },
   },
 ];
+
 export const explorationSites = [
   {
     id: "moon-iron-uplands",
@@ -275,6 +332,196 @@ export const explorationSites = [
     hazards: "Rising tide, unstable chambers",
   },
 ];
+
+const discoveryNames = [
+  "Albatross",
+  "Amber",
+  "Bell",
+  "Blackfin",
+  "Brass",
+  "Candle",
+  "Cloud",
+  "Cormorant",
+  "Crown",
+  "Dawn",
+  "Dragon",
+  "Echo",
+  "Emerald",
+  "Gannet",
+  "Ghost",
+  "Gull",
+  "Ivory",
+  "Jade",
+  "Lantern",
+  "Leviathan",
+  "Moon",
+  "Needle",
+  "Osprey",
+  "Pearl",
+  "Pilgrim",
+  "Raven",
+  "Saint",
+  "Sapphire",
+  "Silver",
+  "Star",
+  "Storm",
+  "Sun",
+  "Tempest",
+  "Tern",
+  "Whale",
+  "Wind",
+];
+const discoveryFeatures = [
+  {
+    suffix: "Haven",
+    type: "Uncharted anchorage",
+    icon: "⚓",
+    description: "a sheltered natural harbor concealed behind wave-cut stone",
+    benefit: "gives merchant captains a safe refuge on a dangerous passage",
+  },
+  {
+    suffix: "Seam",
+    type: "Hidden resource deposit",
+    icon: "◆",
+    description: "a rich mineral vein exposed where the tide scoured a cliff",
+    benefit: "opens a valuable source of raw material for regional workshops",
+  },
+  {
+    suffix: "Archive",
+    type: "Ruins",
+    icon: "✦",
+    description: "weathered chambers preserving charts from a forgotten age",
+    benefit: "corrects old sailing directions and rewards further scholarship",
+  },
+  {
+    suffix: "Cove",
+    type: "Smuggler cove",
+    icon: "☠",
+    description:
+      "a concealed quay marked by coded lamps and hidden storehouses",
+    benefit: "redirects illicit cargo into a lawful public market",
+  },
+  {
+    suffix: "Passage",
+    type: "Reef shortcut",
+    icon: "↝",
+    description: "a narrow but navigable channel between knife-edged reefs",
+    benefit: "shortens a busy route and encourages regular merchant traffic",
+  },
+  {
+    suffix: "Shoal",
+    type: "Seasonal fishing ground",
+    icon: "◀",
+    description:
+      "a current where great schools gather during part of each cycle",
+    benefit: "supplies nearby ports with seasonal food and sailors' work",
+  },
+  {
+    suffix: "Wreck",
+    type: "Salvage site",
+    icon: "⚒",
+    description: "the intact remains of a lost merchant vessel in clear water",
+    benefit: "supports a continuing trade in salvage and repair materials",
+  },
+  {
+    suffix: "Quay",
+    type: "Emerging settlement",
+    icon: "⌂",
+    description: "a young island community building a permanent stone landing",
+    benefit: "creates a new feeder settlement for established ports",
+  },
+  {
+    suffix: "Garden",
+    type: "Rare ecosystem",
+    icon: "❈",
+    description: "an isolated habitat crowded with unusual medicinal life",
+    benefit: "provides healers with a renewable source of rare ingredients",
+  },
+  {
+    suffix: "Beacon",
+    type: "Navigational landmark",
+    icon: "☼",
+    description:
+      "a distinctive sea-mark visible through the region's worst haze",
+    benefit: "makes landfall safer and reduces losses along nearby routes",
+  },
+];
+const discoveryPorts = [
+  "Goldhaven",
+  "Rimegate",
+  "Lethariel",
+  "Glasswater",
+  "Khaz Vhar",
+  "Drakefall",
+  "Mallowfen",
+  "Kingfisher Quay",
+  "Gloamharbor",
+  "Emberstrand",
+  "Sunspire",
+  "Nacre Bay",
+  "Asterfall",
+  "Qasr Merid",
+  "Skyreach",
+  "Duskport",
+  "Dawnwatch",
+  "Redharbor",
+  "Pearlspire",
+  "Jadegate",
+  "Cloudrest",
+  "Tempest Hold",
+  "Whalegrave",
+  "Saint’s Anchorage",
+  "Kestrel Haven",
+];
+const discoveryGoods = Object.keys(goods);
+const discoveryFactions = [
+  "Free Keel Brotherhood",
+  "Deep Delvers’ Union",
+  "Lantern League",
+  "Mirror Knives",
+  "Guild of Gilded Oars",
+  "Tideborn Commons",
+  "Pearl Senate",
+  "Divers’ Communion",
+  "Silver Loom Consortium",
+  "Reedboat Families",
+];
+
+// Fill the expanded world with a deterministic catalog of one hundred unique
+// finds. Positions follow open-water bands rather than random generation, so
+// old and new saves always share the same chart.
+for (let index = discoverySites.length; index < 100; index++) {
+  const feature = discoveryFeatures[index % discoveryFeatures.length];
+  const givenName = discoveryNames[(index * 7) % discoveryNames.length];
+  const origin = discoveryPorts[index % discoveryPorts.length];
+  const destination = discoveryPorts[(index * 7 + 3) % discoveryPorts.length];
+  const seasonal = feature.type === "Seasonal fishing ground";
+  discoverySites.push({
+    id: `charted-find-${String(index + 1).padStart(3, "0")}`,
+    type: feature.type,
+    name: `${givenName} ${feature.suffix}`,
+    x: 180 + ((index * 593) % 6040),
+    y: 110 + ((index * 337) % 2050),
+    radius: 38 + (index % 4) * 4,
+    icon: feature.icon,
+    description: `Surveyors report ${feature.description}.`,
+    benefit: `Publishing the find ${feature.benefit}.`,
+    saleValue: 70 + (index % 12) * 10,
+    faction: discoveryFactions[index % discoveryFactions.length],
+    standingValue: 6 + (index % 7),
+    ...(seasonal
+      ? { season: { cycle: 12, start: 2 + (index % 4), end: 7 + (index % 3) } }
+      : {}),
+    route: {
+      origin,
+      destination: destination === origin ? "Goldhaven" : destination,
+      good: discoveryGoods[(index * 3) % discoveryGoods.length],
+      units: 0.8 + (index % 6) * 0.2,
+      delay: 2 + (index % 6),
+    },
+  });
+}
+
 export const productionChains = [
   {
     id: "forge",
@@ -352,6 +599,38 @@ export const productionChains = [
     ],
     outputs: { garments: 1 },
     rate: 0.7,
+  },
+  {
+    id: "glassworks",
+    name: "Tideglass furnaces",
+    inputs: { salt: 0.45, coal: 0.7 },
+    alternatives: [
+      {
+        id: "timber-fired",
+        label: "Timber-fired glass",
+        inputs: { salt: 0.5, timber: 0.9 },
+        outputScale: 0.78,
+      },
+    ],
+    outputs: { glass: 1 },
+    rate: 0.72,
+    fuel: 0.2,
+  },
+  {
+    id: "machinist",
+    name: "Machinist halls",
+    inputs: { iron: 0.75, copper: 0.55 },
+    alternatives: [
+      {
+        id: "iron-tools",
+        label: "All-iron tools",
+        inputs: { iron: 1.4 },
+        outputScale: 0.82,
+      },
+    ],
+    outputs: { tools: 1 },
+    rate: 0.8,
+    fuel: 0.14,
   },
 ];
 
