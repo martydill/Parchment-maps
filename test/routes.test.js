@@ -38,6 +38,16 @@ test("pointAlongPath interpolates, clamps past the end, and handles a singleton"
         [0, 0],
         [10, 0],
       ],
+      -4,
+    ),
+    { x: 0, y: 0, angle: 0 },
+  );
+  assert.deepEqual(
+    pointAlongPath(
+      [
+        [0, 0],
+        [10, 0],
+      ],
       4,
     ),
     { x: 4, y: 0, angle: 0 },
@@ -53,9 +63,21 @@ test("pointAlongPath interpolates, clamps past the end, and handles a singleton"
     { x: 10, y: 0, angle: 0 },
   );
   assert.deepEqual(pointAlongPath([[3, 4]], 2), { x: 3, y: 4, angle: 0 });
+  assert.deepEqual(pointAlongPath([], 2), { x: 0, y: 0, angle: 0 });
+  assert.deepEqual(
+    pointAlongPath(
+      [
+        [3, 4],
+        [3, 4],
+      ],
+      0,
+    ),
+    { x: 3, y: 4, angle: 0 },
+  );
 });
 
 test("unwrapPath keeps seam-crossing segments continuous", () => {
+  assert.deepEqual(unwrapPath([], 9, 10), []);
   assert.deepEqual(unwrapPath(route.points, 9, 10), [
     [9, 0],
     [11, 0],
@@ -73,6 +95,11 @@ test("orientRoute supports both route directions", () => {
     [3, 0],
     [1, 0],
     [-1, 0],
+  ]);
+  assert.deepEqual(orientRoute(route, "West", "East", undefined, 10), [
+    [9, 0],
+    [11, 0],
+    [13, 0],
   ]);
 });
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:coverage": "node --experimental-test-coverage --test --test-coverage-include='src/core/*.js' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
