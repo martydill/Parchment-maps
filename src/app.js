@@ -24,6 +24,11 @@ import {
   changeStanding as adjustStanding,
   createGameState,
 } from "./core/state.js";
+import {
+  createSaveData,
+  parseSave,
+  serializeSave,
+} from "./core/persistence.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -41,6 +46,7 @@ let selectedTown = null;
 let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
+const SAVE_KEY = "gilded-archipelago-save";
 
 const game = createGameState();
 
@@ -3737,6 +3743,58 @@ function revealCurrentView(force = false) {
   }
   exploredCtx.restore();
 }
+
+function saveGameState() {
+  if (!gameStarted) return;
+  try {
+    const data = createSaveData({
+      game,
+      ship,
+      merchants: merchantShips,
+      worldEvents,
+      exploredMap: exploredMask.toDataURL("image/png"),
+      gameStarted,
+    });
+    localStorage.setItem(SAVE_KEY, serializeSave(data));
+  } catch (error) {
+    console.warn("Unable to save game state.", error);
+  }
+}
+
+function restoreExploredMap(dataUrl) {
+  if (!dataUrl) return;
+  const image = new Image();
+  image.addEventListener("load", () => {
+    exploredCtx.clearRect(0, 0, exploredMask.width, exploredMask.height);
+    exploredCtx.drawImage(image, 0, 0, exploredMask.width, exploredMask.height);
+  });
+  image.src = dataUrl;
+}
+
+function loadGameState() {
+  let saved;
+  try {
+    saved = parseSave(localStorage.getItem(SAVE_KEY));
+  } catch (error) {
+    console.warn("Unable to load game state.", error);
+    return false;
+  }
+  if (!saved) return false;
+
+  Object.assign(game, saved.game);
+  Object.assign(ship, saved.ship);
+  ship.trail = Array.isArray(saved.ship.trail) ? saved.ship.trail : [];
+  merchantShips.length = 0;
+  merchantShips.push(...saved.merchants);
+  Object.assign(worldEvents, saved.worldEvents);
+  gameStarted = saved.gameStarted;
+  restoreExploredMap(saved.exploredMap);
+  visibility.lastRadius = -1;
+  camera.x = ship.x;
+  camera.y = ship.y;
+  return true;
+}
+
 function punchCurrentVisibility(
   c,
   worldToTargetX,
@@ -5848,6 +5906,7 @@ document.getElementById("beginButton").addEventListener("click", () => {
     "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
     4.5,
   );
+  saveGameState();
 });
 const ledgerButton = document.getElementById("ledgerButton"),
   ledgerPanel = document.getElementById("ledgerPanel");
@@ -5966,11 +6025,30 @@ minimapWrap.addEventListener("click", (e) => {
   if (e.target === minimapWrap) minimapWrap.style.display = "none";
 });
 
-setWeatherForDay(game.day);
-processWorldEventsForDay();
+const restoredSavedGame = loadGameState();
+if (!restoredSavedGame) {
+  setWeatherForDay(game.day);
+  processWorldEventsForDay();
+}
 buildVisibilityPolygon(true);
 camera.x = ship.x;
 camera.y = ship.y;
 updateHud();
-if (new URLSearchParams(location.search).has("autostart"))
+if (restoredSavedGame && gameStarted) {
+  document.getElementById("intro").style.display = "none";
+  nearPort =
+    ports.find(
+      (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
+    ) || null;
+  ui.dock.style.display = nearPort ? "block" : "none";
+  revealCurrentView(true);
+  showMessage("Voyage restored from this browser.", 3);
+} else if (new URLSearchParams(location.search).has("autostart")) {
   requestAnimationFrame(() => document.getElementById("beginButton").click());
+}
+
+window.setInterval(saveGameState, 5000);
+window.addEventListener("pagehide", saveGameState);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") saveGameState();
+});
