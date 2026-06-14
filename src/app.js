@@ -135,6 +135,17 @@ import {
   tradeQuote,
 } from "./core/jurisdictions.js";
 import {
+  contractCargoCount as countContractCargo,
+  contractOffersForPort,
+  createContractOffer,
+} from "./core/contracts.js";
+import {
+  bestTradeOpportunity as findBestTradeOpportunity,
+  intelActionLabel,
+  intelEffectText,
+  upcomingEvents as findUpcomingEvents,
+} from "./core/intelligence.js";
+import {
   discoverySites,
   explorationSites,
   goods,
@@ -1239,64 +1250,31 @@ function revealContractDestination(port) {
   exploredCtx.restore();
 }
 function makeContractOffer(origin, index) {
-  const destinations = contractRoutes[origin.name];
-  const destinationName =
-    destinations[(index + game.day + origin.name.length) % destinations.length];
-  const destination = getPortByName(destinationName),
-    distance = wrappedDistance(
-      destination.x,
-      destination.y,
-      origin.x,
-      origin.y,
-    );
-  const courier = index === 1;
-  const cargoUnits = courier
-    ? 1
-    : 2 + ((game.day + index + origin.name.length) % 3);
-  const cargoName = courier
-    ? "sealed diplomatic pouch"
-    : contractCargoNames[
-        (game.day * 3 + index + origin.name.length) % contractCargoNames.length
-      ];
-  const sponsor =
-    origin.name === "Goldhaven"
-      ? "Guild of Gilded Oars"
-      : origin.factions[Math.min(1, index % origin.factions.length)].name;
-  const reward = Math.round(
-    45 + distance * 0.07 + cargoUnits * 9 + (courier ? 20 : 0),
-  );
-  const influence = origin.name === "Goldhaven" ? 8 : 5 + index;
-  return {
-    id: "C" + game.contractSerial++,
-    origin: origin.name,
-    destination: destinationName,
-    title:
-      (courier ? "Urgent dispatch" : "Cargo commission") +
-      " to " +
-      destinationName,
-    cargoName,
-    cargoUnits,
-    reward,
-    influence,
-    faction: sponsor,
-    estimatedDays: Math.max(2, Math.ceil(distance / 430)),
-    acceptedDay: null,
-    deadline: null,
-  };
+  const result = createContractOffer({
+    origin,
+    index,
+    day: game.day,
+    serial: game.contractSerial,
+    destinations: contractRoutes[origin.name],
+    cargoNames: contractCargoNames,
+    getPort: getPortByName,
+    distanceBetween: (destination, source) =>
+      wrappedDistance(destination.x, destination.y, source.x, source.y),
+  });
+  game.contractSerial = result.nextSerial;
+  return result.offer;
 }
 function ensureContractOffers(port) {
-  let cache = game.contractOffers[port.name];
-  if (!cache || game.day - cache.refreshedDay >= 4) {
-    cache = {
-      refreshedDay: game.day,
-      offers: [0, 1, 2].map((i) => makeContractOffer(port, i)),
-    };
-    game.contractOffers[port.name] = cache;
-  }
+  const cache = contractOffersForPort({
+    cache: game.contractOffers[port.name],
+    day: game.day,
+    createOffer: (index) => makeContractOffer(port, index),
+  });
+  game.contractOffers[port.name] = cache;
   return cache.offers;
 }
 function contractCargoCount() {
-  return game.activeContracts.reduce((sum, c) => sum + c.cargoUnits, 0);
+  return countContractCargo(game.activeContracts);
 }
 function acceptContract(id) {
   if (!currentPort) return;
@@ -1694,26 +1672,15 @@ function closeVesselDetails() {
   selectedMerchant = null;
 }
 function upcomingEvents(days = 9) {
-  return game.scheduledEvents
-    .filter(
-      (e) =>
-        !e.started && e.startDay > game.day && e.startDay <= game.day + days,
-    )
-    .sort((a, b) => a.startDay - b.startDay);
+  return findUpcomingEvents(game.scheduledEvents, game.day, days);
 }
 function bestTradeOpportunity() {
-  let best = null;
-  for (const key of Object.keys(goods)) {
-    for (const buy of ports) {
-      for (const sell of ports) {
-        if (buy === sell) continue;
-        const margin = sellPriceFor(sell, key) - buyPriceFor(buy, key);
-        if (!best || margin > best.margin)
-          best = { key, buy: buy.name, sell: sell.name, margin };
-      }
-    }
-  }
-  return best;
+  return findBestTradeOpportunity(
+    Object.keys(goods),
+    ports,
+    buyPriceFor,
+    sellPriceFor,
+  );
 }
 function makeIntelOffers(port) {
   const event =
@@ -1812,34 +1779,6 @@ function ensureIntelOffers(port) {
     game.intelOffers[port.name] = cache;
   }
   return cache.offers;
-}
-function intelEffectText(report) {
-  if (report.type === "forecast")
-    return (
-      report.affectedPort +
-      " has been marked on your chart, and the confidential forecast now appears in that town’s political record."
-    );
-  if (report.type === "market")
-    return (
-      "The recommended " +
-      report.buyPort +
-      " → " +
-      report.sellPort +
-      " trade is saved in your ledger. Both ports have been marked on your chart. Prices remain dynamic and can change as stock moves."
-    );
-  if (report.type === "shipping")
-    return (
-      "The named merchant vessel is now visible on your chart through Day " +
-      report.expiresDay +
-      ", even when it is beyond normal sight range."
-    );
-  return "The report has been saved in your captain’s ledger.";
-}
-function intelActionLabel(report) {
-  if (report.type === "forecast") return "Inspect " + report.affectedPort;
-  if (report.type === "market") return "Inspect " + report.sellPort;
-  if (report.type === "shipping") return "Inspect Tracked Vessel";
-  return "Open Ledger";
 }
 function performIntelAction(report) {
   document.getElementById("reportPanel").style.display = "none";
