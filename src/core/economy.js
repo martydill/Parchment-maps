@@ -1,6 +1,7 @@
 import { clamp } from "./math.js";
 
 export const MARKET_HALF_SPREAD = 0.06;
+export const DEFAULT_MARKET_TARGET = 26;
 
 export function economyCondition(state) {
   const ratio = state.stock / state.target;
@@ -16,17 +17,47 @@ export function createEconomyState(ports, goods) {
   for (const port of ports) {
     economy[port.name] = {};
     for (const key of Object.keys(goods)) {
-      const bias = port.bias[key];
-      const target = 26;
+      const bias = port.bias[key] || 1;
+      const target = goods[key].target || DEFAULT_MARKET_TARGET;
+      const processed = goods[key].processed === true;
       economy[port.name][key] = {
         stock: clamp(Math.round(target * (1.45 / bias)), 7, 52),
         target,
-        production: clamp((1.18 - bias) * 2.2 + 0.55, 0.2, 2.7),
+        production: processed ? 0 : clamp((1.18 - bias) * 2.2 + 0.55, 0.2, 2.7),
         consumption: clamp((bias - 0.72) * 1.6 + 0.45, 0.35, 2.5),
       };
     }
   }
   return economy;
+}
+
+export function runProductionChains(states, recipes, efficiencies = {}) {
+  const reports = [];
+  for (const recipe of recipes) {
+    const efficiency = clamp(efficiencies[recipe.id] || 0, 0, 2);
+    if (efficiency <= 0) continue;
+    const desiredBatches = recipe.rate * efficiency;
+    let batches = desiredBatches;
+    for (const [key, units] of Object.entries(recipe.inputs)) {
+      const state = states[key];
+      batches = Math.min(batches, state ? state.stock / units : 0);
+    }
+    batches = Math.max(0, batches);
+    for (const [key, units] of Object.entries(recipe.inputs)) {
+      if (states[key])
+        states[key].stock = clamp(states[key].stock - units * batches, 0, 70);
+    }
+    for (const [key, units] of Object.entries(recipe.outputs)) {
+      if (states[key])
+        states[key].stock = clamp(states[key].stock + units * batches, 0, 70);
+    }
+    reports.push({
+      id: recipe.id,
+      batches,
+      utilization: desiredBatches ? batches / desiredBatches : 0,
+    });
+  }
+  return reports;
 }
 
 export function marketReferenceValue({

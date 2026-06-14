@@ -10,6 +10,7 @@ import {
   buyPrice,
   createEconomyState,
   economyCondition as classifyEconomy,
+  runProductionChains,
   sellPrice,
 } from "./core/economy.js";
 import {
@@ -29,6 +30,13 @@ import {
   parseSave,
   serializeSave,
 } from "./core/persistence.js";
+import {
+  buyOrEquipUpgrade,
+  calculateShipStats,
+  normalizeShipUpgradeState,
+  SHIP_UPGRADES,
+  UPGRADE_SLOTS,
+} from "./core/upgrades.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -72,10 +80,88 @@ const ship = {
 };
 
 const goods = {
-  spice: { name: "Moonspice", base: 28 },
-  iron: { name: "Dwarf-forged Iron", base: 18 },
-  silk: { name: "Starweave Silk", base: 34 },
+  grain: { name: "Crown Grain", base: 9, terms: ["grain", "granaries"] },
+  timber: {
+    name: "Ship Timber",
+    base: 13,
+    terms: ["timber", "hardwood", "pine"],
+  },
+  ore: { name: "Iron Ore", base: 11, terms: ["ore", "mines", "iron mines"] },
+  herbs: {
+    name: "Medicinal Herbs",
+    base: 16,
+    terms: ["herb", "resin", "fungi"],
+  },
+  spice: { name: "Moonspice", base: 28, terms: ["spice"] },
+  silk: { name: "Starweave Silk", base: 34, terms: ["silk", "fine cloth"] },
+  iron: {
+    name: "Dwarf-forged Iron",
+    base: 18,
+    processed: true,
+    terms: ["iron ingot", "ironwork", "weapons", "machinery"],
+  },
+  provisions: {
+    name: "Sea Provisions",
+    base: 17,
+    processed: true,
+    terms: ["provisions", "preserved", "salt fish"],
+  },
+  medicine: {
+    name: "Apothecary Medicines",
+    base: 31,
+    processed: true,
+    terms: ["medicine"],
+  },
+  fittings: {
+    name: "Ship Fittings",
+    base: 38,
+    processed: true,
+    terms: ["vessels", "shipyard", "machinery"],
+  },
+  garments: {
+    name: "Court Garments",
+    base: 52,
+    processed: true,
+    terms: ["fashion", "fine cloth", "luxur"],
+  },
 };
+const productionChains = [
+  {
+    id: "forge",
+    name: "Foundry",
+    inputs: { ore: 1.5 },
+    outputs: { iron: 1 },
+    rate: 1.4,
+  },
+  {
+    id: "victualler",
+    name: "Victualling houses",
+    inputs: { grain: 1.4, spice: 0.08 },
+    outputs: { provisions: 1 },
+    rate: 1.25,
+  },
+  {
+    id: "apothecary",
+    name: "Apothecaries",
+    inputs: { herbs: 1.25 },
+    outputs: { medicine: 1 },
+    rate: 0.9,
+  },
+  {
+    id: "shipwright",
+    name: "Shipwrights",
+    inputs: { timber: 1.3, iron: 0.55 },
+    outputs: { fittings: 1 },
+    rate: 0.75,
+  },
+  {
+    id: "tailor",
+    name: "Luxury ateliers",
+    inputs: { silk: 1.15, spice: 0.12 },
+    outputs: { garments: 1 },
+    rate: 0.7,
+  },
+];
 
 // Visibility uses the real-world geometric horizon from an observer near the
 // top of the mast, then applies a lower weather limit when haze or fog closes in.
@@ -109,6 +195,18 @@ function setWeatherForDay(day) {
 }
 function currentVisibilityKm() {
   return Math.min(visibility.horizonKm, game.weatherVisibilityKm);
+}
+function applyShipUpgrades() {
+  game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
+  const stats = calculateShipStats(game.shipUpgrades);
+  game.holdMax = stats.holdMax;
+  ship.maxSpeed = stats.maxSpeed;
+  ship.accel = stats.accel;
+  ship.turnRate = stats.turnRate;
+  visibility.eyeHeightM = stats.visibilityHeightM;
+  visibility.horizonKm = 3.57 * Math.sqrt(visibility.eyeHeightM);
+  visibility.lastRadius = -1;
+  return stats;
 }
 
 const lands = [
@@ -2641,6 +2739,7 @@ function dynamicEventModifiers(port, key) {
   return { price, production, consumption };
 }
 function initializeEconomy() {
+  configurePortIndustries();
   game.economy = createEconomyState(ports, goods);
   // Deliberately strong regional identities make trade intelligence useful.
   game.economy["Rimegate"].iron.stock = 48;
@@ -2650,6 +2749,44 @@ function initializeEconomy() {
   game.economy["Goldhaven"].iron.stock = 15;
   game.economy["Kingfisher Quay"].silk.stock = 9;
 }
+function portTradeText(port) {
+  return [...port.resources, ...port.exports, ...port.imports]
+    .join(" ")
+    .toLowerCase();
+}
+function configurePortIndustries() {
+  for (const port of ports) {
+    const text = portTradeText(port);
+    for (const [key, good] of Object.entries(goods)) {
+      if (port.bias[key]) continue;
+      const locallyNamed = good.terms.some((term) => text.includes(term));
+      const imported = port.imports.some((item) =>
+        good.terms.some((term) => item.toLowerCase().includes(term)),
+      );
+      port.bias[key] = imported ? 1.28 : locallyNamed ? 0.78 : 1.04;
+    }
+    port.industries = Object.fromEntries(
+      productionChains.map((chain) => {
+        const outputTerms = Object.keys(chain.outputs).flatMap(
+          (key) => goods[key].terms,
+        );
+        const inputTerms = Object.keys(chain.inputs).flatMap(
+          (key) => goods[key].terms,
+        );
+        const outputMatch = outputTerms.some((term) => text.includes(term));
+        const inputMatch = inputTerms.some((term) => text.includes(term));
+        return [chain.id, outputMatch ? 1.25 : inputMatch ? 0.7 : 0.18];
+      }),
+    );
+  }
+}
+function initializeCargoState() {
+  for (const key of Object.keys(goods)) {
+    game.cargo[key] = 0;
+    game.cargoCost[key] = [];
+  }
+}
+initializeCargoState();
 initializeEconomy();
 initializeWorldSchedule();
 function economyState(port, key) {
@@ -2679,6 +2816,11 @@ function runEconomyDay() {
         mods = dynamicEventModifiers(port, key);
       advanceEconomyState(state, mods);
     }
+    game.productionReports[port.name] = runProductionChains(
+      game.economy[port.name],
+      productionChains,
+      port.industries,
+    );
   }
   if (game.laws.amberConvoy) {
     const source = economyState(getPortByName("Khaz Vhar"), "iron");
@@ -3788,8 +3930,22 @@ function loadGameState() {
   if (!saved) return false;
 
   Object.assign(game, saved.game);
+  for (const key of Object.keys(goods)) {
+    game.cargo[key] ??= 0;
+    game.cargoCost[key] = Array.isArray(game.cargoCost[key])
+      ? game.cargoCost[key]
+      : [];
+  }
+  game.productionReports ||= {};
+  const freshEconomy = createEconomyState(ports, goods);
+  for (const port of ports) {
+    game.economy[port.name] ||= {};
+    for (const key of Object.keys(goods))
+      game.economy[port.name][key] ||= freshEconomy[port.name][key];
+  }
   Object.assign(ship, saved.ship);
   ship.trail = Array.isArray(saved.ship.trail) ? saved.ship.trail : [];
+  applyShipUpgrades();
   merchantShips.length = 0;
   merchantShips.push(...saved.merchants);
   Object.assign(worldEvents, saved.worldEvents);
@@ -5338,7 +5494,9 @@ function update(dt) {
   }
   ship.speed *= Math.pow(inp.active ? 0.992 : 0.978, dt * 60);
   ship.speed = Math.max(0, Math.min(ship.maxSpeed, ship.speed));
-  const windPush = ship.anchored ? 0 : game.windStrength * 18;
+  const windPush = ship.anchored
+    ? 0
+    : game.windStrength * 18 * calculateShipStats(game.shipUpgrades).windDrift;
   const safeWind = limitOutwardWind(
     Math.cos(game.windAngle) * windPush,
     Math.sin(game.windAngle) * windPush,
@@ -5745,6 +5903,7 @@ function renderPolitics() {
 function renderPortSystems() {
   if (!currentPort) return;
   renderMarket();
+  renderProductionChains();
   renderPortEvent();
   renderIntelOffice();
   renderContractList(
@@ -5753,7 +5912,125 @@ function renderPortSystems() {
     false,
   );
   renderPolitics();
+  renderShipyard();
   renderMilestone(document.getElementById("milestonePort"));
+}
+function formatChainGoods(entries) {
+  return Object.entries(entries)
+    .map(([key, units]) => units + " " + goods[key].name)
+    .join(" + ");
+}
+function renderProductionChains() {
+  const root = document.getElementById("productionChains");
+  root.innerHTML = "";
+  const reports = Object.fromEntries(
+    (game.productionReports[currentPort.name] || []).map((report) => [
+      report.id,
+      report,
+    ]),
+  );
+  for (const chain of productionChains) {
+    const efficiency = currentPort.industries[chain.id];
+    const report = reports[chain.id];
+    const card = document.createElement("div");
+    card.className = "production-chain";
+    const status = report
+      ? report.utilization < 0.5
+        ? "Input-starved"
+        : "Operating"
+      : "Awaiting daily cycle";
+    card.innerHTML =
+      "<div><b>" +
+      chain.name +
+      '</b><span class="small">' +
+      formatChainGoods(chain.inputs) +
+      " → " +
+      formatChainGoods(chain.outputs) +
+      '</span></div><span class="contract-tag">' +
+      status +
+      " · " +
+      Math.round(efficiency * 100) +
+      "%</span>";
+    root.append(card);
+  }
+}
+function signed(value) {
+  return value > 0 ? "+" + value : String(value);
+}
+function upgradeEffects(item) {
+  const labels = {
+    holdMax: "hold",
+    maxSpeed: "top speed",
+    accel: "acceleration",
+    turnRate: "turning",
+    visibilityHeightM: "lookout height",
+    windDrift: "wind drift",
+    inspectionRisk: "inspection risk",
+    stormResistance: "storm resistance",
+    crewComfort: "crew comfort",
+    defense: "defense",
+  };
+  const effects = Object.entries(item.modifiers).map(
+    ([key, value]) => signed(value) + " " + labels[key],
+  );
+  return effects.length ? effects.join(" · ") : "Balanced baseline";
+}
+function renderShipyard() {
+  const root = document.getElementById("shipyard");
+  root.innerHTML = "";
+  const stats = applyShipUpgrades();
+  document.getElementById("shipStats").textContent =
+    stats.holdMax +
+    " hold · " +
+    Math.round(stats.maxSpeed / 7) +
+    " knots · " +
+    stats.turnRate.toFixed(2) +
+    " turning · " +
+    currentVisibilityKm().toFixed(1) +
+    " km sight · defense " +
+    stats.defense;
+  for (const slot of UPGRADE_SLOTS) {
+    const section = document.createElement("div");
+    section.className = "upgrade-slot";
+    section.innerHTML = "<h4>" + slot.name + "</h4>";
+    for (const item of SHIP_UPGRADES[slot.id]) {
+      const equipped = game.shipUpgrades.equipped[slot.id] === item.id;
+      const owned = game.shipUpgrades.owned.includes(item.id);
+      const row = document.createElement("div");
+      row.className = "upgrade-option" + (equipped ? " equipped" : "");
+      const details = document.createElement("div");
+      details.innerHTML =
+        "<b>" +
+        item.name +
+        '</b><span class="small">' +
+        item.description +
+        '</span><span class="upgrade-effects">' +
+        upgradeEffects(item) +
+        "</span>";
+      const button = document.createElement("button");
+      button.textContent = equipped
+        ? "Fitted"
+        : owned
+          ? "Equip"
+          : "Buy " + item.cost;
+      button.disabled = equipped || (!owned && game.coins < item.cost);
+      button.onclick = () => {
+        const result = buyOrEquipUpgrade(game, slot.id, item.id, cargoCount());
+        if (!result.ok) return showMessage(result.reason);
+        applyShipUpgrades();
+        showMessage(
+          (result.purchased ? "Purchased and fitted " : "Fitted ") +
+            item.name +
+            ".",
+        );
+        renderPortSystems();
+        updateHud();
+      };
+      row.append(details, button);
+      section.append(row);
+    }
+    root.append(section);
+  }
 }
 function openPort() {
   if (!nearPort) return;
@@ -6152,6 +6429,7 @@ minimapWrap.addEventListener("click", (e) => {
 
 const restoredSavedGame = loadGameState();
 if (!restoredSavedGame) {
+  applyShipUpgrades();
   setWeatherForDay(game.day);
   processWorldEventsForDay();
 }

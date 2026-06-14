@@ -1,8 +1,11 @@
+import { createShipUpgradeState } from "./upgrades.js";
+
 export function createGameState() {
   return {
     day: 1,
     coins: 120,
     holdMax: 18,
+    shipUpgrades: createShipUpgradeState(),
     cargo: { spice: 0, iron: 0, silk: 0 },
     windAngle: 0.12,
     windStrength: 0.28,
@@ -10,6 +13,7 @@ export function createGameState() {
     weatherVisibilityKm: 24,
     cargoCost: { spice: [], iron: [], silk: [] },
     economy: {},
+    productionReports: {},
     contractOffers: {},
     activeContracts: [],
     completedContracts: 0,

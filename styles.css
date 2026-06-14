@@ -554,11 +554,75 @@ button.parchment {
   filter: grayscale(0.35);
   cursor: not-allowed;
 }
+.ship-stats {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(74, 43, 20, 0.12);
+  font-size: 12px;
+  font-weight: 700;
+}
+.upgrade-slot {
+  margin-top: 12px;
+}
+.upgrade-slot h4 {
+  margin: 0 0 4px;
+  border-bottom: 1px solid rgba(71, 44, 23, 0.3);
+  padding-bottom: 4px;
+}
+.upgrade-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px;
+  border-radius: 6px;
+}
+.upgrade-option.equipped {
+  background: rgba(92, 116, 65, 0.18);
+  box-shadow: inset 3px 0 #546b3f;
+}
+.upgrade-option .small,
+.upgrade-effects {
+  display: block;
+}
+.upgrade-effects {
+  margin-top: 3px;
+  color: #74401e;
+  font-size: 11px;
+  font-weight: 700;
+}
+.upgrade-option button {
+  min-width: 70px;
+  border: 1px solid #5b3a21;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: #815630;
+  color: #fff2ca;
+  font-weight: 700;
+}
+.upgrade-option button:disabled {
+  opacity: 0.5;
+}
 .market-spread-note {
   margin: 8px 0 2px;
   padding: 7px 9px;
   border-left: 3px solid rgba(91, 58, 33, 0.65);
   background: rgba(255, 244, 205, 0.13);
+}
+.production-chain {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(71, 44, 23, 0.24);
+}
+.production-chain:last-child {
+  border-bottom: 0;
+}
+.production-chain .small {
+  display: block;
+  margin-top: 2px;
 }
 #closePort {
   margin-top: 18px;
