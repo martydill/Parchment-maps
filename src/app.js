@@ -17,6 +17,7 @@ import {
   pathLength,
   pointAlongPath,
   routesFrom as findRoutesFrom,
+  unwrapPath,
 } from "./core/routes.js";
 import {
   addNews as recordNews,
@@ -2456,7 +2457,7 @@ function drawShoal(c, x, y, rx, ry, label) {
   }
 }
 function drawRoute(c, points, label) {
-  const unwrapped = unwrapPath(points, points[0][0]);
+  const unwrapped = unwrapPath(points, points[0][0], WORLD.w);
   for (const offset of [-WORLD.w, 0, WORLD.w]) {
     c.save();
     c.translate(offset, 0);
