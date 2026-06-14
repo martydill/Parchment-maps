@@ -5,10 +5,12 @@ import { createGameState } from "../src/core/state.js";
 import {
   BASE_SHIP_STATS,
   buyOrEquipUpgrade,
+  buyOrSelectShipClass,
   calculateShipIdentity,
   calculateShipStats,
   createShipUpgradeState,
   normalizeShipUpgradeState,
+  SHIP_CLASSES,
   SHIP_IDENTITIES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
@@ -44,6 +46,30 @@ test("default upgrade state calculates baseline ship statistics", () => {
   assert.deepEqual(
     calculateShipStats(createShipUpgradeState()),
     BASE_SHIP_STATS,
+  );
+});
+
+test("ship classes provide distinct baseline tradeoffs", () => {
+  const state = createShipUpgradeState();
+  state.activeClass = "carrack";
+  state.ownedClasses.push("carrack");
+  const carrack = calculateShipStats(state);
+  assert.equal(carrack.holdMax, 30);
+  assert.equal(carrack.maxSpeed, 157);
+  assert.ok(Math.abs(carrack.turnRate - 2.36) < 1e-12);
+  assert.ok(carrack.stormResistance > 1);
+
+  state.activeClass = "barque";
+  const barque = calculateShipStats(state);
+  assert.equal(barque.visibilityHeightM, 19);
+  assert.equal(barque.holdMax, 15);
+  assert.ok(barque.crewComfort > 1);
+
+  assert.equal(Object.keys(SHIP_CLASSES).length, 6);
+  assert.ok(
+    Object.values(SHIP_CLASSES).every(
+      (item) => item.vesselName && item.description,
+    ),
   );
 });
 
@@ -125,6 +151,46 @@ test("purchase failures do not mutate coins or equipment", () => {
   );
 });
 
+test("ships are purchased once and owned classes can be selected freely", () => {
+  const game = createGameState();
+  game.coins = 500;
+  const purchase = buyOrSelectShipClass(game, "sloop");
+  assert.equal(purchase.ok, true);
+  assert.equal(purchase.purchased, true);
+  assert.equal(game.coins, 240);
+  assert.equal(game.shipUpgrades.activeClass, "sloop");
+  assert.ok(game.shipUpgrades.ownedClasses.includes("sloop"));
+
+  buyOrSelectShipClass(game, "cutter");
+  const selected = buyOrSelectShipClass(game, "sloop");
+  assert.equal(selected.ok, true);
+  assert.equal(selected.purchased, false);
+  assert.equal(game.coins, 240);
+});
+
+test("ship class changes reject invalid, unaffordable, active, and undersized vessels", () => {
+  const game = createGameState();
+  game.coins = 10;
+  assert.equal(
+    buyOrSelectShipClass(game, "unknown").reason,
+    "Unknown ship class.",
+  );
+  assert.equal(
+    buyOrSelectShipClass(game, "cutter").reason,
+    "That ship is already active.",
+  );
+  assert.equal(buyOrSelectShipClass(game, "brig").reason, "Not enough crowns.");
+
+  game.coins = 500;
+  const tooSmall = buyOrSelectShipClass(game, "sloop", 18);
+  assert.equal(
+    tooSmall.reason,
+    "Unload cargo before changing to this ship class.",
+  );
+  assert.equal(game.coins, 500);
+  assert.equal(game.shipUpgrades.ownedClasses.includes("sloop"), false);
+});
+
 test("a refit cannot reduce capacity below cargo already aboard", () => {
   const game = createGameState();
   game.coins = 500;
@@ -145,4 +211,13 @@ test("normalization repairs missing and invalid saved upgrade data", () => {
   assert.equal(normalized.equipped.hull, "narrow-hull");
   assert.equal(normalized.equipped.sails, "patched-sails");
   assert.equal(normalized.owned.includes("not-real"), false);
+  assert.equal(normalized.activeClass, "cutter");
+  assert.deepEqual(normalized.ownedClasses, ["cutter"]);
+
+  const fleet = normalizeShipUpgradeState({
+    activeClass: "barque",
+    ownedClasses: ["barque", "brig", "not-real"],
+  });
+  assert.equal(fleet.activeClass, "barque");
+  assert.deepEqual(fleet.ownedClasses, ["barque", "brig"]);
 });

@@ -21,6 +21,7 @@ test("createGameState returns independent complete state objects", () => {
   first.news.push({ title: "Changed" });
   assert.equal(second.cargo.iron, 0);
   assert.deepEqual(second.news, []);
+  assert.deepEqual(second.warehouses, {});
   assert.equal(first.day, 1);
   assert.equal(first.holdMax, 18);
 });

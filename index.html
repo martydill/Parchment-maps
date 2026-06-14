@@ -15,9 +15,11 @@
     <div id="hud">
       <div class="topbar">
         <div class="badge">
-          <b>The Wren</b> · <span class="small">Home: Goldhaven</span
-          ><br /><span id="speedText">0 knots</span> ·
-          <span id="windText">Wind E</span><br /><span
+          <b id="shipName">The Wren</b> ·
+          <span class="small">Home: Goldhaven</span><br /><span id="speedText"
+            >0 knots</span
+          >
+          · <span id="windText">Wind E</span><br /><span
             class="small"
             id="visibilityText"
             >Clear · 12 km sight</span
@@ -148,6 +150,15 @@
           </p>
           <div id="cargoPlan"></div>
         </div>
+        <div class="detail-card warehouse-card">
+          <h3>Port warehouse</h3>
+          <p class="small">
+            Lease permanent storage at this port, then move individual cargo
+            lots between the warehouse and your ship. Stored goods remain here
+            between voyages and age at one quarter the rate of cargo at sea.
+          </p>
+          <div id="warehouse"></div>
+        </div>
         <div class="detail-card">
           <h3>Local production chains</h3>
           <p class="small">
@@ -184,10 +195,10 @@
           <div id="voyageReadiness"></div>
         </div>
         <div class="detail-card">
-          <h3>Shipyard · The Wren</h3>
+          <h3>Shipyard & fleet</h3>
           <p class="small">
-            Buy fittings once, then refit them freely while docked. Every
-            specialized fitting carries a tradeoff.
+            Purchase specialized vessels and fittings once, then change ships or
+            refit freely while docked. Every choice carries a tradeoff.
           </p>
           <div id="shipStats" class="ship-stats"></div>
           <div id="shipyard"></div>
