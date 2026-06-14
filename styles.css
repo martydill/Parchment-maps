@@ -978,6 +978,10 @@ button.parchment {
   flex-direction: column;
   overflow: hidden;
   padding: 0;
+  /* Pin a definite height (matching .scroll's cap) so the panel no longer
+     shrinks to fit shorter tabs — harbor now matches market and the rest,
+     and .port-body scrolls internally instead. */
+  height: min(88vh, 760px);
 }
 .port-header {
   flex-shrink: 0;
