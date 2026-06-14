@@ -7,6 +7,35 @@ export const INFRASTRUCTURE_NAMES = Object.freeze([
   "Renowned",
 ]);
 
+const MAGNATE_FIRST_NAMES = [
+  "Alda",
+  "Bram",
+  "Cassia",
+  "Dorian",
+  "Esme",
+  "Farid",
+];
+const MAGNATE_EPITHETS = [
+  "the Brasshand",
+  "of the Long Quay",
+  "the Ledger-Keeper",
+  "Blackwake",
+  "the Harbor Fox",
+  "of Nine Keys",
+];
+
+function namedMagnate(portName, chainId) {
+  const seed = [...`${portName}:${chainId}`].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  );
+  return `${MAGNATE_FIRST_NAMES[seed % MAGNATE_FIRST_NAMES.length]} ${
+    MAGNATE_EPITHETS[
+      Math.floor(seed / MAGNATE_FIRST_NAMES.length) % MAGNATE_EPITHETS.length
+    ]
+  }`;
+}
+
 export function createRegionalState(ports, chains) {
   return Object.fromEntries(
     ports.map((port) => [
@@ -14,11 +43,18 @@ export function createRegionalState(ports, chains) {
       {
         infrastructure: port.infrastructure ?? 1,
         labor: port.labor ?? 1,
+        population: port.population ?? Math.round((port.labor ?? 1) * 50000),
+        unrest: 0,
+        politicalAttention: 0,
+        pirateAttention: 0,
         resourceHealth: Object.fromEntries(
           (port.extractiveGoods || []).map((key) => [key, 1]),
         ),
         industries: Object.fromEntries(
-          chains.map((chain) => [chain.id, { investment: 0 }]),
+          chains.map((chain) => [
+            chain.id,
+            { investment: 0, collapsed: false, magnate: null },
+          ]),
         ),
       },
     ]),
@@ -38,18 +74,35 @@ export function normalizeRegionalState(value, ports, chains) {
       3,
     );
     state.labor = clamp(Number(saved.labor ?? state.labor), 0.35, 1.5);
+    state.population = Math.max(
+      1000,
+      Math.round(Number(saved.population ?? state.population)),
+    );
+    state.unrest = clamp(Number(saved.unrest ?? 0), 0, 100);
+    state.politicalAttention = clamp(
+      Number(saved.politicalAttention ?? 0),
+      0,
+      100,
+    );
+    state.pirateAttention = clamp(Number(saved.pirateAttention ?? 0), 0, 100);
     for (const key of Object.keys(state.resourceHealth))
       state.resourceHealth[key] = clamp(
         Number(saved.resourceHealth?.[key] ?? 1),
         0.2,
         1,
       );
-    for (const chain of chains)
+    for (const chain of chains) {
       state.industries[chain.id].investment = clamp(
         Math.floor(saved.industries?.[chain.id]?.investment ?? 0),
         0,
         3,
       );
+      state.industries[chain.id].collapsed = Boolean(
+        saved.industries?.[chain.id]?.collapsed,
+      );
+      state.industries[chain.id].magnate =
+        saved.industries?.[chain.id]?.magnate || null;
+    }
   }
   return fresh;
 }
@@ -62,20 +115,45 @@ export function investmentCost(industry) {
   return 90 + industry.investment * 70;
 }
 
-export function investInIndustry(regionalState, chainId, coins) {
+export function investInIndustry(
+  regionalState,
+  chainId,
+  coins,
+  portName = "the port",
+) {
   const industry = regionalState.industries[chainId];
   if (!industry) return { ok: false, reason: "Unknown local industry." };
-  if (industry.investment >= 3)
+  if (industry.investment >= 3 && !industry.collapsed)
     return { ok: false, reason: "This industry is fully developed." };
   const cost = investmentCost(industry);
   if (coins < cost) return { ok: false, reason: "Not enough crowns." };
+  if (industry.collapsed) {
+    industry.collapsed = false;
+    industry.investment = Math.max(1, industry.investment);
+    industry.magnate ||= namedMagnate(portName, chainId);
+    return {
+      ok: true,
+      restored: true,
+      cost,
+      coins: coins - cost,
+      level: industry.investment,
+      magnate: industry.magnate,
+    };
+  }
   industry.investment += 1;
+  industry.magnate ||= namedMagnate(portName, chainId);
   regionalState.infrastructure = clamp(
     regionalState.infrastructure + (industry.investment === 3 ? 1 : 0),
     0,
     3,
   );
-  return { ok: true, cost, coins: coins - cost, level: industry.investment };
+  return {
+    ok: true,
+    cost,
+    coins: coins - cost,
+    level: industry.investment,
+    magnate: industry.magnate,
+  };
 }
 
 function recipeAvailability(states, recipe) {
@@ -134,7 +212,7 @@ export function runRegionalIndustries(
       ? Math.min(1, (states.timber?.stock || 0) / fuelNeed)
       : 1;
     const capacity =
-      (baseEfficiencies[chain.id] || 0) *
+      (local.collapsed ? 0 : baseEfficiencies[chain.id] || 0) *
       infrastructureCapacity(regionalState.infrastructure) *
       regionalState.labor *
       (1 + local.investment * 0.18) *
@@ -168,12 +246,17 @@ export function runRegionalIndustries(
       capacity,
       fuelLimited: fuelAvailable < 1,
       investment: local.investment,
+      collapsed: Boolean(local.collapsed),
     });
   }
   return reports;
 }
 
-export function advanceRegionalResources(regionalState, economyStates) {
+export function advanceRegionalResources(
+  regionalState,
+  economyStates,
+  chains = [],
+) {
   const modifiers = {};
   for (const [key, health] of Object.entries(regionalState.resourceHealth)) {
     const state = economyStates[key];
@@ -200,7 +283,90 @@ export function advanceRegionalResources(regionalState, economyStates) {
     0.35,
     1.5,
   );
+  const health = Object.values(regionalState.resourceHealth);
+  const worstHealth = health.length ? Math.min(...health) : 1;
+  const shortage = Object.values(economyStates).some(
+    (state) => state.target && state.stock / state.target < 0.35,
+  );
+  regionalState.unrest = clamp(
+    regionalState.unrest +
+      (worstHealth < 0.35 ? 2.5 : -0.8) +
+      (shortage ? 1.2 : -0.3),
+    0,
+    100,
+  );
+  const migrationRate =
+    regionalState.unrest >= 65
+      ? -0.006
+      : regionalState.labor > 1.1
+        ? 0.0015
+        : 0;
+  regionalState.population = Math.max(
+    1000,
+    Math.round(regionalState.population * (1 + migrationRate)),
+  );
+  if (worstHealth <= 0.22) {
+    for (const chain of chains) {
+      const dependsOnCollapsedResource = Object.keys(chain.inputs).some(
+        (key) => regionalState.resourceHealth[key] <= 0.22,
+      );
+      if (dependsOnCollapsedResource)
+        regionalState.industries[chain.id].collapsed = true;
+    }
+  }
+  const development =
+    regionalState.infrastructure +
+    Object.values(regionalState.industries).reduce(
+      (sum, industry) => sum + industry.investment,
+      0,
+    ) /
+      Math.max(1, Object.keys(regionalState.industries).length);
+  regionalState.pirateAttention = clamp((development - 1.5) * 24, 0, 100);
+  regionalState.politicalAttention = clamp((development - 1) * 30, 0, 100);
   return modifiers;
+}
+
+export function dockingFee(regionalState) {
+  return Math.max(
+    2,
+    Math.round(
+      2 +
+        regionalState.infrastructure * 3 +
+        regionalState.politicalAttention / 20 -
+        regionalState.unrest / 30,
+    ),
+  );
+}
+
+export function availableMarketGoods(regionalState, chains, allGoodKeys) {
+  const unlocked = new Set(
+    allGoodKeys.filter((key) => !chains.some((chain) => chain.outputs[key])),
+  );
+  for (const chain of chains) {
+    const industry = regionalState.industries[chain.id];
+    if (!industry?.collapsed && industry?.investment > 0)
+      Object.keys(chain.outputs).forEach((key) => unlocked.add(key));
+  }
+  return unlocked;
+}
+
+export function portEvolution(regionalState) {
+  const investments = Object.values(regionalState.industries);
+  return {
+    cranes:
+      regionalState.infrastructure >= 2 ||
+      investments.some((industry) => industry.investment >= 2),
+    warehouses: investments.some((industry) => industry.investment >= 1),
+    foundries: (regionalState.industries.forge?.investment || 0) > 0,
+    fortifications:
+      regionalState.infrastructure >= 3 ||
+      regionalState.politicalAttention >= 60,
+    crisis:
+      regionalState.unrest >= 45 ||
+      Object.values(regionalState.resourceHealth).some(
+        (health) => health < 0.4,
+      ),
+  };
 }
 
 export function regionalSummary(regionalState) {
@@ -214,6 +380,11 @@ export function regionalSummary(regionalState) {
         clamp(Math.floor(regionalState.infrastructure), 0, 3)
       ],
     laborPercent: Math.round(regionalState.labor * 100),
+    population: regionalState.population,
     resourcePercent: Math.round(averageHealth * 100),
+    unrest: Math.round(regionalState.unrest),
+    pirateAttention: Math.round(regionalState.pirateAttention),
+    politicalAttention: Math.round(regionalState.politicalAttention),
+    dockingFee: dockingFee(regionalState),
   };
 }
