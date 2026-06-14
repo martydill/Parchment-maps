@@ -570,6 +570,66 @@ lands.push(
   { name:'The Lantern Isles', color:'#8c8256', poly:[[5540,1030],[5650,970],[5770,1040],[5750,1165],[5620,1215],[5520,1140]] }
 );
 
+// Subdivide the broad hand-authored silhouettes into irregular coves, points,
+// beaches, and headlands. Original vertices stay fixed so ports and established
+// sea lanes retain their authored positions, while deterministic intermediate
+// points replace the old long, ruler-straight coastal edges.
+function ruggedCoast(poly,seed,roughness=1){
+  const detailed=[];
+  for(let i=0;i<poly.length;i++){
+    const a=poly[i],b=poly[(i+1)%poly.length],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy)||1;
+    const nx=-dy/length,ny=dx/length;
+    detailed.push(a);
+    for(const [step,t] of [[0,.22],[1,.48],[2,.76]]){
+      const wave=Math.sin((seed+i*7+step*13)*12.9898)*43758.5453;
+      const random=wave-Math.floor(wave);
+      const alternating=(i+step)%2?1:-1;
+      const displacement=(7+(random*19))*roughness*alternating*Math.min(1,length/115);
+      const along=(random-.5)*Math.min(18,length*.08);
+      detailed.push([
+        a[0]+dx*t+dx/length*along+nx*displacement,
+        a[1]+dy*t+dy/length*along+ny*displacement
+      ]);
+    }
+  }
+  return detailed;
+}
+function coastalIsland(cx,cy,rx,ry,seed,color='#82784e'){
+  const poly=[];
+  for(let i=0;i<11;i++){
+    const a=i/11*Math.PI*2;
+    const wave=Math.sin((seed+i*17)*9.173)*18371.31;
+    const radius=.72+(wave-Math.floor(wave))*.42;
+    poly.push([cx+Math.cos(a)*rx*radius,cy+Math.sin(a)*ry*radius]);
+  }
+  return {name:'',color,poly: ruggedCoast(poly,seed,.42),satellite:true};
+}
+
+lands.forEach((land,index)=>{land.poly=ruggedCoast(land.poly,101+index*29,land.satellite?.45:1);});
+lands.push(
+  coastalIsland(790,250,55,26,701,'#80784c'),
+  coastalIsland(1320,250,42,21,702,'#77704a'),
+  coastalIsland(1410,570,68,25,703,'#7c7950'),
+  coastalIsland(1890,590,37,19,704,'#8b8157'),
+  coastalIsland(2260,900,64,29,705,'#8b8157'),
+  coastalIsland(1220,1010,48,25,706,'#766d45'),
+  coastalIsland(950,700,35,18,707,'#80754b'),
+  coastalIsland(2250,475,72,26,708,'#7d7549'),
+  coastalIsland(3300,430,46,24,709,'#85804f'),
+  coastalIsland(4540,470,58,22,710,'#918258'),
+  coastalIsland(5700,510,40,20,711,'#82784c'),
+  coastalIsland(515,1480,67,28,712,'#8b8054'),
+  coastalIsland(5850,1630,54,24,713,'#7c7147'),
+  coastalIsland(2320,2070,44,22,714,'#806f43'),
+  coastalIsland(3600,2070,64,27,715,'#788052'),
+  coastalIsland(4850,1840,42,20,716,'#726c48'),
+  coastalIsland(5480,2130,58,25,717,'#82764c'),
+  coastalIsland(3370,1120,37,18,718,'#91855d'),
+  coastalIsland(4380,1160,45,20,719,'#897f56'),
+  coastalIsland(5100,1190,35,17,720,'#90875e'),
+  coastalIsland(5820,1090,43,19,721,'#8c8256')
+);
+
 const ports = [
   {
     name:'Goldhaven', x:HOME_PORT.x, y:HOME_PORT.y, land:'Avelorn', home:true,
@@ -1521,7 +1581,7 @@ function buildMapLayer() {
     for(let i=0;i<90;i++){const x=lr()*WORLD.w,y=lr()*WORLD.h;if(pointInPoly(x,y,l.poly)){m.beginPath();m.moveTo(x,y);m.lineTo(x+8+lr()*12,y-3-lr()*5);m.stroke();}}
     m.restore();
 
-    const cent=polygonCentroid(l.poly); m.fillStyle='rgba(46,34,20,.58)'; m.font='italic 29px Georgia'; m.textAlign='center'; m.fillText(l.name,cent.x,cent.y);
+    if(l.name){const cent=polygonCentroid(l.poly); m.fillStyle='rgba(46,34,20,.58)'; m.font='italic 29px Georgia'; m.textAlign='center'; m.fillText(l.name,cent.x,cent.y);}
   });
 
   // original landmarks plus denser procedural groves and ranges
