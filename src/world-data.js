@@ -1,7 +1,7 @@
 // Static world, economy catalog, and map annotation data.
 // Keep browser state and rendering behavior in app.js; this module is data-only.
 
-import { ruggedCoast } from "./core/coastlines.js";
+import { continentalCoast, ruggedCoast } from "./core/coastlines.js";
 
 export const HOME_PORT = {
   name: "Goldhaven",
@@ -1010,11 +1010,12 @@ function coastalIsland(cx, cy, rx, ry, seed, color = "#82784e") {
 }
 
 lands.forEach((land, index) => {
-  land.poly = ruggedCoast(
-    land.poly,
-    101 + index * 29,
-    land.satellite ? 0.45 : 1,
-  );
+  const seed = 101 + index * 29;
+  const relief = 0.72 + ((index * 7) % 5) * 0.12;
+  const broadOutline = land.satellite
+    ? land.poly
+    : continentalCoast(land.poly, seed, relief);
+  land.poly = ruggedCoast(broadOutline, seed, land.satellite ? 0.45 : 1);
 });
 lands.push(
   coastalIsland(790, 250, 55, 26, 701, "#80784c"),

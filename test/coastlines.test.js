@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ruggedCoast } from "../src/core/coastlines.js";
+import { continentalCoast, ruggedCoast } from "../src/core/coastlines.js";
 
 const square = [
   [0, 0],
@@ -56,4 +56,34 @@ test("ruggedCoast bounds detail on very long and zero-length edges", () => {
 
   assert.equal(coast.length, 30);
   assert.ok(coast.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y)));
+});
+
+test("continentalCoast adds broad features while preserving anchors", () => {
+  const coast = continentalCoast(square, 19);
+
+  assert.ok(coast.length > square.length);
+  for (const vertex of square) {
+    assert.ok(
+      coast.some(
+        ([x, y]) =>
+          Math.abs(x - vertex[0]) < 1e-10 && Math.abs(y - vertex[1]) < 1e-10,
+      ),
+    );
+  }
+  assert.ok(coast.some(([x, y]) => x < 0 || x > 120 || y < 0 || y > 120));
+  assert.deepEqual(continentalCoast(square, 19), coast);
+  assert.notDeepEqual(continentalCoast(square, 20), coast);
+  assert.notDeepEqual(continentalCoast(square, 19, 0), coast);
+});
+
+test("continentalCoast safely copies incomplete outlines", () => {
+  const line = [
+    [1, 2],
+    [3, 4],
+  ];
+  const result = continentalCoast(line, 1);
+
+  assert.deepEqual(result, line);
+  assert.notEqual(result, line);
+  assert.notEqual(result[0], line[0]);
 });

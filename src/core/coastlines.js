@@ -19,6 +19,45 @@ function catmullRom(a, b, c, d, t) {
 }
 
 /**
+ * Breaks long outline edges into broad, asymmetric bays and headlands before
+ * fine coastline detail is applied. Authored vertices remain fixed so the
+ * intended geography and nearby port placements are preserved.
+ */
+export function continentalCoast(poly, seed, relief = 1) {
+  if (poly.length < 3) return poly.map((point) => [...point]);
+
+  const shaped = [];
+  for (let edge = 0; edge < poly.length; edge++) {
+    const start = poly[edge];
+    const end = poly[(edge + 1) % poly.length];
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = -dy / length;
+    const ny = dx / length;
+    const samples = Math.max(2, Math.min(6, Math.ceil(length / 105)));
+    const phase = noise(seed, edge, 0, 4) * Math.PI * 2;
+    const bias = (noise(seed, edge, 0, 5) - 0.5) * 0.9;
+
+    for (let sample = 0; sample < samples; sample++) {
+      const t = sample / samples;
+      const envelope = Math.sin(Math.PI * t);
+      const shelf =
+        Math.sin(t * Math.PI * 2 + phase) * 0.68 +
+        Math.sin(t * Math.PI * 4 - phase * 0.7) * 0.24 +
+        bias;
+      const displacement =
+        shelf * Math.min(72, length * 0.2) * relief * envelope;
+      shaped.push([
+        start[0] + dx * t + nx * displacement,
+        start[1] + dy * t + ny * displacement,
+      ]);
+    }
+  }
+  return shaped;
+}
+
+/**
  * Adds deterministic bays and headlands to a closed, hand-authored outline.
  * The curve passes through every source vertex while rounding the hard corners
  * between them.

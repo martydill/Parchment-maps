@@ -2559,6 +2559,9 @@ function openTownDetails(port, _fromChart = false) {
       '<p class="empty-note">No active crisis or verified forecast is recorded here.</p>';
   const dockButton = document.getElementById("townDockButton");
   dockButton.style.display = nearPort === port ? "block" : "none";
+  // Each town dossier opens on the Politics tab (factions and current law),
+  // with Commerce and Market one tap away.
+  activateSectionTabs(document.getElementById("townPanel"), "politics");
   document.getElementById("townPanel").style.display = "grid";
 }
 function closeTownDetails() {
@@ -4123,6 +4126,9 @@ function openPort() {
   document.getElementById("portName").textContent = currentPort.name;
   document.getElementById("portFlavor").textContent = currentPort.flavor;
   renderPortSystems();
+  // Each docking opens on the Harbor tab so arrival context — harbor state,
+  // current events, and customs standing — is seen before trading.
+  activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
   updateHud();
 }
@@ -4708,6 +4714,33 @@ document.getElementById("closePort").addEventListener("click", () => {
     "At anchor. Drag the wheel toward open water when you are ready to cast off.",
     3,
   );
+});
+
+// Section tabs shared by the dock and town panels. Each panel owns its own
+// .port-tabs bar and .port-panel sections, so activation is scoped to the
+// panel that contains the clicked tab — the two never interfere. Re-rendering
+// a section's inner content (renderPortSystems / openTownDetails) never
+// rebuilds this tab structure, so the active section persists across buys and
+// other actions; only opening a panel resets to its first tab.
+function activateSectionTabs(root, name) {
+  if (!root) return;
+  root
+    .querySelectorAll(".port-tab")
+    .forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === name));
+  root
+    .querySelectorAll(".port-panel")
+    .forEach((panel) =>
+      panel.classList.toggle("active", panel.dataset.tab === name),
+    );
+  const body = root.querySelector(".port-body");
+  if (body) body.scrollTop = 0;
+}
+document.querySelectorAll(".port-tabs").forEach((bar) => {
+  const root = bar.closest("#portPanel, #townPanel");
+  bar.addEventListener("click", (event) => {
+    const btn = event.target.closest(".port-tab");
+    if (btn) activateSectionTabs(root, btn.dataset.tab);
+  });
 });
 const ledgerButton = document.getElementById("ledgerButton"),
   ledgerPanel = document.getElementById("ledgerPanel");

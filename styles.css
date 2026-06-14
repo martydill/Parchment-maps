@@ -619,8 +619,11 @@ button.parchment {
   .market-intel {
     grid-template-columns: 1fr;
   }
-  .town-scroll {
-    padding: 18px;
+  .town-scroll .port-header,
+  .town-scroll .port-body,
+  .town-scroll .town-actions {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 }
 .trade-row {
@@ -919,6 +922,100 @@ button.parchment {
 .ledger-scroll,
 .port-scroll {
   width: min(94vw, 760px);
+}
+/* Dock panel: a compact header and a section tab bar sit above a single
+   scrolling body, so each port area is one tap away instead of one long
+   vertical scroll. The parchment frame and decorative pseudo-elements come
+   from .scroll; here we repurpose the shell into a flex column. */
+.port-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.port-header {
+  flex-shrink: 0;
+  padding: 22px 23px 6px;
+}
+.port-header .port-grid {
+  margin-top: 10px;
+}
+.port-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px 16px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid rgba(76, 43, 20, 0.34);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 244, 205, 0.22),
+    rgba(255, 244, 205, 0)
+  );
+  box-shadow: 0 2px 6px rgba(67, 39, 14, 0.16);
+}
+.port-tabs::-webkit-scrollbar {
+  display: none;
+}
+.port-tab {
+  flex: 0 0 auto;
+  appearance: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(58, 36, 18, 0.55);
+  font:
+    700 13px/1 Georgia,
+    serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 10px 13px 9px;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.port-tab:hover {
+  color: #5a351c;
+}
+.port-tab.active {
+  color: #38240f;
+  border-bottom-color: #8b5428;
+}
+.port-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 23px 16px;
+}
+.port-panel {
+  display: none;
+}
+.port-panel.active {
+  display: block;
+}
+.port-close-wrap {
+  flex-shrink: 0;
+  padding: 2px 23px 18px;
+}
+.port-close-wrap button.parchment {
+  margin-top: 4px;
+}
+/* Town dossier reuses the dock's tabbed shell (.port-header / .port-tabs /
+   .port-body / .port-panel) so the two panels feel identical; only the shell
+   class and footer differ. */
+.town-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.town-scroll .town-actions {
+  flex-shrink: 0;
+  padding: 4px 23px 18px;
+  margin-top: 4px;
 }
 .contract-card,
 .news-card,
@@ -1250,9 +1347,14 @@ button.parchment {
   .law-head {
     align-items: flex-start;
   }
-  .ledger-scroll,
-  .port-scroll {
+  .ledger-scroll {
     padding: 18px;
+  }
+  .port-header,
+  .port-body,
+  .port-close-wrap {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 }
 .intel-card,

@@ -116,108 +116,150 @@
 
     <div id="portPanel">
       <div class="scroll port-scroll">
-        <h2 id="portName">Port</h2>
-        <p id="portFlavor"></p>
-        <div class="port-grid">
-          <div><b>Your purse:</b> <span id="portCoins"></span></div>
-          <div><b>Cargo hold:</b> <span id="portHold"></span></div>
-        </div>
-        <div id="portEvolution" class="port-evolution"></div>
-        <div id="portEvent"></div>
-        <div class="detail-card customs-card">
-          <h3>Customs & jurisdiction</h3>
-          <p class="small">
-            Honest declarations, permits, and good standing reduce risk. Forged
-            papers and remote landings can evade restrictions, but repeat
-            offenses bring confiscation, fines, political hostility, and port
-            bans.
-          </p>
-          <div id="customsOffice"></div>
-        </div>
-        <h3>Market</h3>
-        <div id="market"></div>
-        <p class="small market-spread-note">
-          <b>Posted market:</b> merchants charge a broker spread and port
-          duties. The buy and sell quotes are different, so buying and
-          immediately reselling in the same port always loses money.
-        </p>
-        <div class="detail-card">
-          <h3>Cargo plan</h3>
-          <p class="small">
-            Assign individual lots to specialized compartments. Secured racks
-            protect fragile goods, the dry locker slows spoilage, and smuggler’s
-            lockers conceal contraband.
-          </p>
-          <div id="cargoPlan"></div>
-        </div>
-        <div class="detail-card warehouse-card">
-          <h3>Port warehouse</h3>
-          <p class="small">
-            Lease permanent storage at this port, then move individual cargo
-            lots between the warehouse and your ship. Stored goods remain here
-            between voyages and age at one quarter the rate of cargo at sea.
-          </p>
-          <div id="warehouse"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Local production chains</h3>
-          <p class="small">
-            Workshops consume real market inputs each day. Supplying a missing
-            input restores output and can relieve downstream shortages. Labor,
-            fuel, infrastructure, resource depletion, and investment determine
-            regional output and quality.
-          </p>
-          <div id="productionChains"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Whisper Network</h3>
-          <p class="small">
-            Buy time-sensitive market, political, and shipping intelligence.
-            Reports can reveal events before they reach the public gazette.
-          </p>
-          <div id="intelOffice"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Contract board</h3>
-          <p class="small">
-            Sealed contract cargo is loaded automatically and occupies hold
-            space until delivery. Rival sponsors demand exclusive service, so
-            accepting one commission can close another.
-          </p>
-          <div id="contractBoard"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Voyage readiness</h3>
-          <p class="small">
-            Routes consume provisions, wear the ship, and test crew morale.
-            Better quarters and storm fittings reduce those pressures.
-          </p>
-          <div id="voyageReadiness"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Shipyard & fleet</h3>
-          <p class="small">
-            Purchase specialized vessels and fittings once, then change ships or
-            refit freely while docked. Every choice carries a tradeoff.
-          </p>
-          <div id="shipStats" class="ship-stats"></div>
-          <div id="shipyard"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Local politics</h3>
-          <div id="portStanding"></div>
-          <div id="localLaw" class="politics-box"></div>
+        <header class="port-header">
+          <h2 id="portName">Port</h2>
+          <p id="portFlavor"></p>
+          <div class="port-grid">
+            <div><b>Your purse:</b> <span id="portCoins"></span></div>
+            <div><b>Cargo hold:</b> <span id="portHold"></span></div>
+          </div>
+        </header>
+        <nav class="port-tabs" role="tablist" aria-label="Port sections">
           <button
-            class="parchment"
-            id="politicsAction"
-            style="display: none"
-          ></button>
+            type="button"
+            class="port-tab active"
+            data-tab="harbor"
+            role="tab"
+          >
+            Harbor
+          </button>
+          <button type="button" class="port-tab" data-tab="market" role="tab">
+            Market
+          </button>
+          <button type="button" class="port-tab" data-tab="trade" role="tab">
+            Trade
+          </button>
+          <button type="button" class="port-tab" data-tab="vessel" role="tab">
+            Vessel
+          </button>
+          <button type="button" class="port-tab" data-tab="politics" role="tab">
+            Politics
+          </button>
+        </nav>
+        <div class="port-body">
+          <section class="port-panel active" data-tab="harbor" role="tabpanel">
+            <div id="portEvolution" class="port-evolution"></div>
+            <div id="portEvent"></div>
+            <div class="detail-card customs-card">
+              <h3>Customs & jurisdiction</h3>
+              <p class="small">
+                Honest declarations, permits, and good standing reduce risk.
+                Forged papers and remote landings can evade restrictions, but
+                repeat offenses bring confiscation, fines, political hostility,
+                and port bans.
+              </p>
+              <div id="customsOffice"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="market" role="tabpanel">
+            <div class="detail-card">
+              <h3>Market</h3>
+              <div id="market"></div>
+              <p class="small market-spread-note">
+                <b>Posted market:</b> merchants charge a broker spread and port
+                duties. The buy and sell quotes are different, so buying and
+                immediately reselling in the same port always loses money.
+              </p>
+            </div>
+            <div class="detail-card">
+              <h3>Cargo plan</h3>
+              <p class="small">
+                Assign individual lots to specialized compartments. Secured
+                racks protect fragile goods, the dry locker slows spoilage, and
+                smuggler’s lockers conceal contraband.
+              </p>
+              <div id="cargoPlan"></div>
+            </div>
+            <div class="detail-card warehouse-card">
+              <h3>Port warehouse</h3>
+              <p class="small">
+                Lease permanent storage at this port, then move individual cargo
+                lots between the warehouse and your ship. Stored goods remain
+                here between voyages and age at one quarter the rate of cargo at
+                sea.
+              </p>
+              <div id="warehouse"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Local production chains</h3>
+              <p class="small">
+                Workshops consume real market inputs each day. Supplying a
+                missing input restores output and can relieve downstream
+                shortages. Labor, fuel, infrastructure, resource depletion, and
+                investment determine regional output and quality.
+              </p>
+              <div id="productionChains"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="trade" role="tabpanel">
+            <div class="detail-card">
+              <h3>Contract board</h3>
+              <p class="small">
+                Sealed contract cargo is loaded automatically and occupies hold
+                space until delivery. Rival sponsors demand exclusive service,
+                so accepting one commission can close another.
+              </p>
+              <div id="contractBoard"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Whisper Network</h3>
+              <p class="small">
+                Buy time-sensitive market, political, and shipping intelligence.
+                Reports can reveal events before they reach the public gazette.
+              </p>
+              <div id="intelOffice"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="vessel" role="tabpanel">
+            <div class="detail-card">
+              <h3>Shipyard & fleet</h3>
+              <p class="small">
+                Purchase specialized vessels and fittings once, then change
+                ships or refit freely while docked. Every choice carries a
+                tradeoff.
+              </p>
+              <div id="shipStats" class="ship-stats"></div>
+              <div id="shipyard"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Voyage readiness</h3>
+              <p class="small">
+                Routes consume provisions, wear the ship, and test crew morale.
+                Better quarters and storm fittings reduce those pressures.
+              </p>
+              <div id="voyageReadiness"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="politics" role="tabpanel">
+            <div class="detail-card">
+              <h3>Local politics</h3>
+              <div id="portStanding"></div>
+              <div id="localLaw" class="politics-box"></div>
+              <button
+                class="parchment"
+                id="politicsAction"
+                style="display: none"
+              ></button>
+            </div>
+            <div class="detail-card">
+              <h3>Merchant-prince milestone</h3>
+              <div id="milestonePort"></div>
+            </div>
+          </section>
         </div>
-        <div class="detail-card">
-          <h3>Merchant-prince milestone</h3>
-          <div id="milestonePort"></div>
+        <div class="port-close-wrap">
+          <button class="parchment" id="closePort">Cast Off</button>
         </div>
-        <button class="parchment" id="closePort">Cast Off</button>
       </div>
     </div>
 
@@ -241,51 +283,81 @@
 
     <div id="townPanel">
       <div class="scroll town-scroll">
-        <div class="town-kicker" id="townRealm">Realm</div>
-        <h2 id="townName">Town</h2>
-        <p id="townFlavor"></p>
-        <div class="town-summary-grid">
-          <div class="summary-item">
-            <b>Population</b><span id="townPopulation"></span>
+        <header class="port-header town-header">
+          <div class="town-kicker" id="townRealm">Realm</div>
+          <h2 id="townName">Town</h2>
+          <p id="townFlavor"></p>
+          <div class="town-summary-grid">
+            <div class="summary-item">
+              <b>Population</b><span id="townPopulation"></span>
+            </div>
+            <div class="summary-item">
+              <b>Government</b><span id="townGovernment"></span>
+            </div>
+            <div class="summary-item">
+              <b>Prosperity</b><span id="townProsperity"></span>
+            </div>
+            <div class="summary-item">
+              <b>Security</b><span id="townSecurity"></span>
+            </div>
+            <div class="summary-item">
+              <b>Dominant faction</b><span id="townDominantFaction"></span>
+            </div>
           </div>
-          <div class="summary-item">
-            <b>Government</b><span id="townGovernment"></span>
-          </div>
-          <div class="summary-item">
-            <b>Prosperity</b><span id="townProsperity"></span>
-          </div>
-          <div class="summary-item">
-            <b>Security</b><span id="townSecurity"></span>
-          </div>
-          <div class="summary-item">
-            <b>Dominant faction</b><span id="townDominantFaction"></span>
-          </div>
-        </div>
-        <div class="detail-card">
-          <h3>Political factions</h3>
-          <div id="townFactions"></div>
-          <div id="townPlayerStanding"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Current law and conditions</h3>
-          <div id="townLaw"></div>
-          <div id="townActiveEvents"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Local resources</h3>
-          <div class="resource-list" id="townResources"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Exports and imports</h3>
-          <div id="townCommerce"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Trade routes</h3>
-          <div id="townRoutes"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Current market intelligence</h3>
-          <div class="market-intel" id="townMarketIntel"></div>
+        </header>
+        <nav class="port-tabs" role="tablist" aria-label="Town sections">
+          <button
+            type="button"
+            class="port-tab active"
+            data-tab="politics"
+            role="tab"
+          >
+            Politics
+          </button>
+          <button type="button" class="port-tab" data-tab="commerce" role="tab">
+            Commerce
+          </button>
+          <button type="button" class="port-tab" data-tab="market" role="tab">
+            Market
+          </button>
+        </nav>
+        <div class="port-body">
+          <section
+            class="port-panel active"
+            data-tab="politics"
+            role="tabpanel"
+          >
+            <div class="detail-card">
+              <h3>Political factions</h3>
+              <div id="townFactions"></div>
+              <div id="townPlayerStanding"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Current law and conditions</h3>
+              <div id="townLaw"></div>
+              <div id="townActiveEvents"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="commerce" role="tabpanel">
+            <div class="detail-card">
+              <h3>Local resources</h3>
+              <div class="resource-list" id="townResources"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Exports and imports</h3>
+              <div id="townCommerce"></div>
+            </div>
+            <div class="detail-card">
+              <h3>Trade routes</h3>
+              <div id="townRoutes"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="market" role="tabpanel">
+            <div class="detail-card">
+              <h3>Current market intelligence</h3>
+              <div class="market-intel" id="townMarketIntel"></div>
+            </div>
+          </section>
         </div>
         <div class="town-actions">
           <button class="parchment" id="townDockButton">Dock and Trade</button>
