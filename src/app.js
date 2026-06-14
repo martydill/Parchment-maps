@@ -39,6 +39,7 @@ import {
   parseSave,
   serializeSave,
 } from "./core/persistence.js";
+import { beginAtHomePort, bindBeginButton } from "./core/startup.js";
 import {
   ageCargo,
   bestCargoCompartment,
@@ -2251,6 +2252,37 @@ const ui = {
   steeringStatus: document.getElementById("steeringStatus"),
   objective: document.getElementById("objectiveText"),
 };
+const intro = document.getElementById("intro");
+const beginButton = document.getElementById("beginButton");
+
+function beginGame() {
+  nearPort = beginAtHomePort({
+    camera,
+    homePort: HOME_PORT,
+    ports,
+    ship,
+  });
+  gameStarted = true;
+  intro.style.display = "none";
+  ui.dock.style.display = "block";
+  revealCurrentView(true);
+  addNews(
+    "The first commission",
+    "The Guild of Gilded Oars has posted three introductory commissions at Goldhaven. Fulfill them to build influence.",
+  );
+  addNews(
+    "Sails on the horizon",
+    "Independent merchants now carry real cargo between the archipelago’s ports. Their arrivals will change local stock and prices.",
+  );
+  showMessage(
+    "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
+    4.5,
+  );
+  saveGameState();
+}
+
+bindBeginButton(beginButton, beginGame);
+
 function cargoCount() {
   return countCargo(game, contractCargoCount());
 }
@@ -4657,34 +4689,6 @@ document.getElementById("closePort").addEventListener("click", () => {
     3,
   );
 });
-document.getElementById("beginButton").addEventListener("click", () => {
-  document.getElementById("intro").style.display = "none";
-  gameStarted = true;
-  ship.x = HOME_PORT.spawnX;
-  ship.y = HOME_PORT.spawnY;
-  ship.angle = HOME_PORT.departureAngle;
-  ship.speed = 0;
-  ship.anchored = true;
-  ship.trail.length = 0;
-  camera.x = ship.x;
-  camera.y = ship.y;
-  nearPort = ports.find((p) => p.home);
-  ui.dock.style.display = "block";
-  revealCurrentView(true);
-  addNews(
-    "The first commission",
-    "The Guild of Gilded Oars has posted three introductory commissions at Goldhaven. Fulfill them to build influence.",
-  );
-  addNews(
-    "Sails on the horizon",
-    "Independent merchants now carry real cargo between the archipelago’s ports. Their arrivals will change local stock and prices.",
-  );
-  showMessage(
-    "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
-    4.5,
-  );
-  saveGameState();
-});
 const ledgerButton = document.getElementById("ledgerButton"),
   ledgerPanel = document.getElementById("ledgerPanel");
 ledgerButton.addEventListener("click", () => {
@@ -4813,7 +4817,7 @@ camera.x = ship.x;
 camera.y = ship.y;
 updateHud();
 if (restoredSavedGame && gameStarted) {
-  document.getElementById("intro").style.display = "none";
+  intro.style.display = "none";
   nearPort =
     ports.find(
       (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
@@ -4822,7 +4826,7 @@ if (restoredSavedGame && gameStarted) {
   revealCurrentView(true);
   showMessage("Voyage restored from this browser.", 3);
 } else if (new URLSearchParams(location.search).has("autostart")) {
-  requestAnimationFrame(() => document.getElementById("beginButton").click());
+  requestAnimationFrame(() => beginButton.click());
 }
 
 window.setInterval(saveGameState, 5000);
