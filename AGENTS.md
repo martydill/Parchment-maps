@@ -66,7 +66,3 @@ npm run lint
 npm test
 npm run test:coverage
 ```
-
-For perceptible UI changes, also launch the game in a browser, verify the
-affected desktop and mobile layouts, and capture a screenshot when the
-environment supports it.
