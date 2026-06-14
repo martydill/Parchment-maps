@@ -31,9 +31,14 @@ import {
 } from "./core/persistence.js";
 import {
   ageCargo,
+  bestCargoCompartment,
+  cargoCompartmentCapacities,
+  CARGO_COMPARTMENTS,
   cargoLotDescription,
   cargoValueMultiplier,
   createCargoLot,
+  moveCargoLot,
+  normalizeCargoCompartments,
   normalizeCargoLots,
   resolveVoyageCargo,
   syncCargoCounts,
@@ -55,8 +60,10 @@ import {
   seasonalSiteActive,
 } from "./core/discoveries.js";
 import {
+  applyComponentDamage,
   adjustedIntelCost,
   buyProvisions,
+  componentEfficiency,
   contractOutcome,
   estimateVoyageReadiness,
   factionPrivilege,
@@ -67,8 +74,10 @@ import {
   processObligations,
   processWages,
   repairOperations,
+  repairShipComponent,
   resolveHostileEncounter,
   resolveVoyageOperations,
+  SHIP_COMPONENTS,
   weatherRoughness,
 } from "./core/operations.js";
 import {
@@ -476,7 +485,7 @@ function currentWeather() {
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
-  const stats = calculateShipStats(game.shipUpgrades);
+  const stats = operationalShipStats();
   game.holdMax = stats.holdMax;
   ship.maxSpeed = stats.maxSpeed;
   ship.accel = stats.accel;
@@ -485,6 +494,26 @@ function applyShipUpgrades() {
   visibility.horizonKm = 3.57 * Math.sqrt(visibility.eyeHeightM);
   visibility.lastRadius = -1;
   return stats;
+}
+
+function operationalShipStats() {
+  const stats = calculateShipStats(game.shipUpgrades);
+  const components = game.operations.components;
+  const rigging = componentEfficiency(components.rigging);
+  const rudder = componentEfficiency(components.rudder);
+  const hull = componentEfficiency(components.hull);
+  stats.maxSpeed *= rigging;
+  stats.accel *= Math.min(rigging, hull);
+  stats.turnRate *= rudder;
+  stats.stormResistance *= hull;
+  stats.defense *= componentEfficiency(components.weapons);
+  return stats;
+}
+
+function cargoCapacities() {
+  return cargoCompartmentCapacities(game.holdMax, {
+    concealedLocker: game.shipUpgrades.equipped.cargo === "smugglers-lockers",
+  });
 }
 
 const lands = [
@@ -4369,7 +4398,7 @@ function loadGameState() {
       ? game.cargoCost[key]
       : [];
   }
-  normalizeCargoLots(game, goods, "Legacy manifest");
+  normalizeCargoLots(game, goods, "Legacy manifest", cargoCapacities());
   game.productionReports ||= {};
   const freshEconomy = createEconomyState(ports, goods);
   for (const port of ports) {
@@ -6382,6 +6411,7 @@ function renderPolitics() {
 function renderPortSystems() {
   if (!currentPort) return;
   renderMarket();
+  renderCargoPlan();
   renderProductionChains();
   renderPortEvent();
   renderIntelOffice();
@@ -6396,10 +6426,68 @@ function renderPortSystems() {
   renderMilestone(document.getElementById("milestonePort"));
 }
 
+function renderCargoPlan() {
+  const root = document.getElementById("cargoPlan");
+  root.innerHTML = "";
+  const capacities = cargoCapacities();
+  normalizeCargoCompartments(game.cargoLots, capacities);
+  for (const [key, compartment] of Object.entries(CARGO_COMPARTMENTS)) {
+    const lots = game.cargoLots.filter((lot) => lot.compartment === key);
+    const section = document.createElement("section");
+    section.className = "cargo-compartment";
+    section.innerHTML =
+      `<div class="cargo-compartment-head"><b>${compartment.label}</b><span>${lots.length}/${capacities[key]}</span></div>` +
+      `<p class="small">${compartment.description}</p>`;
+    if (!capacities[key]) section.classList.add("locked");
+    if (!lots.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-note";
+      empty.textContent = capacities[key]
+        ? "Empty"
+        : key === "concealed"
+          ? "Fit smuggler’s lockers to unlock."
+          : "No space available.";
+      section.append(empty);
+    }
+    for (const lot of lots) {
+      const row = document.createElement("div");
+      row.className = "cargo-lot-row";
+      const details = document.createElement("span");
+      details.innerHTML = `<b>${goods[lot.key].name}</b><span class="small">${cargoLotDescription(lot)}</span>`;
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", `Move ${goods[lot.key].name}`);
+      for (const [destination, data] of Object.entries(CARGO_COMPARTMENTS)) {
+        const option = document.createElement("option");
+        option.value = destination;
+        option.textContent = data.label;
+        option.selected = destination === key;
+        option.disabled =
+          destination !== key &&
+          game.cargoLots.filter((item) => item.compartment === destination)
+            .length >= capacities[destination];
+        select.append(option);
+      }
+      select.onchange = () => {
+        const result = moveCargoLot(
+          game.cargoLots,
+          lot.id,
+          select.value,
+          capacities,
+        );
+        if (!result.ok) showMessage(result.reason);
+        renderCargoPlan();
+      };
+      row.append(details, select);
+      section.append(row);
+    }
+    root.append(section);
+  }
+}
+
 function renderReadiness() {
   const root = document.getElementById("voyageReadiness");
   const ops = game.operations;
-  const stats = calculateShipStats(game.shipUpgrades);
+  const stats = operationalShipStats();
   const nearbyRoutes = routesFrom(currentPort.name);
   const estimates = nearbyRoutes.map((route) => {
     const destination = route.a === currentPort.name ? route.b : route.a;
@@ -6409,7 +6497,13 @@ function renderReadiness() {
     return { destination, ...estimateVoyageReadiness(distance, stats) };
   });
   root.innerHTML =
-    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
+    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
+    `<div class="component-grid">${Object.entries(SHIP_COMPONENTS)
+      .map(
+        ([key, component]) =>
+          `<div class="component-condition ${ops.components[key] < 40 ? "critical" : ""}"><span>${component.label}</span><b>${Math.round(ops.components[key])}%</b></div>`,
+      )
+      .join("")}</div>` +
     estimates
       .slice(0, 3)
       .map(
@@ -6431,20 +6525,45 @@ function renderReadiness() {
     renderPortSystems();
     updateHud();
   };
-  const repair = document.createElement("button");
-  repair.className = "parchment";
-  repair.textContent = "Repair ship · 2 per point";
-  repair.disabled = game.coins < 2 || ops.condition >= 100;
-  repair.onclick = () => {
+  const repairAll = document.createElement("button");
+  repairAll.className = "parchment";
+  repairAll.textContent = "Repair weakest systems · 2 per point";
+  repairAll.disabled = game.coins < 2 || ops.condition >= 100;
+  repairAll.onclick = () => {
     const result = repairOperations(game.operations, game.coins);
     game.operations = result.operations;
     game.coins = result.coins;
-    showMessage(`Repaired ${result.repaired}% ship condition.`);
+    applyShipUpgrades();
+    showMessage(
+      `Repaired ${result.repaired} component point${result.repaired === 1 ? "" : "s"}.`,
+    );
     renderPortSystems();
     updateHud();
   };
-  actions.append(provision, repair);
+  actions.append(provision, repairAll);
   root.append(actions);
+  const componentActions = document.createElement("div");
+  componentActions.className = "component-repairs";
+  for (const [key, component] of Object.entries(SHIP_COMPONENTS)) {
+    const button = document.createElement("button");
+    button.className = "parchment";
+    button.textContent = `Repair ${component.label}`;
+    button.disabled =
+      game.coins < component.repairCost || ops.components[key] >= 100;
+    button.onclick = () => {
+      const result = repairShipComponent(game.operations, game.coins, key);
+      game.operations = result.operations;
+      game.coins = result.coins;
+      applyShipUpgrades();
+      showMessage(
+        `Repaired ${component.label.toLowerCase()} by ${result.repaired} point${result.repaired === 1 ? "" : "s"}.`,
+      );
+      renderPortSystems();
+      updateHud();
+    };
+    componentActions.append(button);
+  }
+  root.append(componentActions);
 }
 
 function formatChainGoods(entries) {
@@ -6587,6 +6706,7 @@ function renderShipyard() {
         const result = buyOrEquipUpgrade(game, slot.id, item.id, cargoCount());
         if (!result.ok) return showMessage(result.reason);
         applyShipUpgrades();
+        normalizeCargoCompartments(game.cargoLots, cargoCapacities());
         showMessage(
           (result.purchased ? "Purchased and fitted " : "Fitted ") +
             item.name +
@@ -6610,7 +6730,7 @@ function openPort() {
     const days = Math.max(1, Math.ceil(game.voyageDistance / 620));
     const distance = game.voyageDistance;
     advanceDays(days);
-    const stats = calculateShipStats(game.shipUpgrades);
+    const stats = operationalShipStats();
     const roughness = weatherRoughness(currentWeather(), stats.stormResistance);
     const operations = resolveVoyageOperations(game.operations, {
       distance,
@@ -6626,11 +6746,10 @@ function openPort() {
       seed: game.day + currentPort.name.length + game.departedFromPort.length,
     });
     if (encounter.encountered) {
-      game.operations.condition = clampNumber(
-        game.operations.condition - encounter.conditionDamage,
-        0,
-        100,
-      );
+      game.operations = applyComponentDamage(
+        game.operations,
+        encounter.componentDamage,
+      ).operations;
       game.operations.morale = clampNumber(
         game.operations.morale + encounter.moraleChange,
         0,
@@ -6653,8 +6772,11 @@ function openPort() {
     }
     const outcome = resolveVoyageCargo(game.cargoLots, {
       distance,
-      roughness,
-      inspectionRisk: stats.inspectionRisk,
+      roughness:
+        roughness / componentEfficiency(game.operations.components.fittings),
+      inspectionRisk:
+        stats.inspectionRisk /
+        componentEfficiency(game.operations.components.fittings),
       seed: game.day + currentPort.name.length,
     });
     game.cargoLots = outcome.remaining;
@@ -6777,16 +6899,20 @@ function renderMarket() {
       if (state.stock < 1)
         return showMessage("The market has no more " + goods[key].name + ".");
       game.coins -= livePrice;
-      game.cargoLots.push(
-        createCargoLot({
-          key,
-          cost: livePrice,
-          origin: currentPort.name,
-          day: game.day,
-          sequence: game.cargoLots.length,
-          good: goods[key],
-        }),
+      const lot = createCargoLot({
+        key,
+        cost: livePrice,
+        origin: currentPort.name,
+        day: game.day,
+        sequence: game.cargoLots.length,
+        good: goods[key],
+      });
+      lot.compartment = bestCargoCompartment(
+        lot,
+        cargoCapacities(),
+        game.cargoLots,
       );
+      game.cargoLots.push(lot);
       syncCargoCounts(game, goods);
       state.stock -= 1;
       renderPortSystems();

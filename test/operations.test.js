@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyComponentDamage,
   adjustedContractReward,
   adjustedIntelCost,
   buyProvisions,
+  componentEfficiency,
   contractOutcome,
   createOperationsState,
   estimateVoyageReadiness,
@@ -16,8 +18,10 @@ import {
   processObligations,
   processWages,
   repairOperations,
+  repairShipComponent,
   resolveHostileEncounter,
   resolveVoyageOperations,
+  shipCondition,
   weatherRoughness,
 } from "../src/core/operations.js";
 
@@ -33,6 +37,13 @@ test("operations state normalizes old and invalid saves", () => {
   });
   assert.equal(state.provisions, 30);
   assert.equal(state.condition, 0);
+  assert.deepEqual(state.components, {
+    hull: 0,
+    rigging: 0,
+    rudder: 0,
+    fittings: 0,
+    weapons: 0,
+  });
   assert.equal(state.morale, 100);
   assert.equal(state.wagesDueDay, 1);
   assert.deepEqual(state.obligations, []);
@@ -48,6 +59,63 @@ test("operations state normalizes old and invalid saves", () => {
   assert.equal(partial.wageArrears, 7);
   assert.equal(partial.nextObligationId, 3);
   assert.equal(partial.obligations.length, 1);
+  assert.equal(partial.components.hull, 80);
+
+  const componentSave = normalizeOperationsState({
+    condition: 70,
+    components: {
+      hull: 20,
+      rigging: 40,
+      rudder: 60,
+      fittings: 80,
+      weapons: 120,
+    },
+  });
+  assert.deepEqual(componentSave.components, {
+    hull: 20,
+    rigging: 40,
+    rudder: 60,
+    fittings: 80,
+    weapons: 100,
+  });
+  assert.equal(componentSave.condition, 60);
+});
+
+test("component condition determines aggregate condition and efficiency", () => {
+  assert.equal(
+    shipCondition({
+      hull: 100,
+      rigging: 80,
+      rudder: 60,
+      fittings: 40,
+      weapons: 20,
+    }),
+    60,
+  );
+  assert.equal(shipCondition(), 100);
+  assert.equal(componentEfficiency(100), 1);
+  assert.equal(componentEfficiency(0), 0.45);
+  assert.equal(componentEfficiency(-20), 0.45);
+  assert.equal(componentEfficiency(200), 1);
+});
+
+test("component damage is bounded and updates overall condition", () => {
+  const result = applyComponentDamage(createOperationsState(), {
+    hull: 12.4,
+    rigging: -5,
+    rudder: 200,
+    unknown: 50,
+  });
+  assert.deepEqual(result.applied, {
+    hull: 12,
+    rigging: 0,
+    rudder: 100,
+    fittings: 0,
+    weapons: 0,
+  });
+  assert.equal(result.operations.components.hull, 88);
+  assert.equal(result.operations.components.rudder, 0);
+  assert.equal(result.operations.condition, 77.6);
 });
 
 test("faction ranks grant escalating contract and intelligence benefits", () => {
@@ -85,6 +153,8 @@ test("voyages consume supplies and convert comfort and weather into consequences
   });
   assert.equal(result.provisionsUsed, 4);
   assert.ok(result.damage > 0);
+  assert.ok(result.componentDamage.hull > 0);
+  assert.ok(result.componentDamage.rigging > 0);
   assert.ok(result.operations.condition < 100);
   assert.ok(result.operations.morale < 75);
 
@@ -107,7 +177,7 @@ test("voyages consume supplies and convert comfort and weather into consequences
   });
   assert.equal(capped.damage, 35);
   assert.equal(capped.operations.condition, 65);
-  assert.equal(capped.speedMultiplier, 0.7);
+  assert.ok(capped.speedMultiplier < 0.7);
 });
 
 test("weather roughness uses explicit weather data and storm resistance", () => {
@@ -163,6 +233,7 @@ test("defensive armament deters and repels hostile encounters", () => {
       encountered: false,
       repelled: false,
       conditionDamage: 0,
+      componentDamage: {},
       moraleChange: 0,
       coinsLost: 0,
     },
@@ -187,12 +258,44 @@ test("weekly wages, provisions, and repairs create predictable operating costs",
   assert.equal(provisioned.purchased, 4);
   assert.equal(provisioned.coins, 0);
   const repaired = repairOperations(
-    { ...createOperationsState(), condition: 90 },
+    {
+      ...createOperationsState(),
+      condition: 90,
+      components: {
+        hull: 90,
+        rigging: 90,
+        rudder: 90,
+        fittings: 90,
+        weapons: 90,
+      },
+    },
     9,
   );
   assert.equal(repaired.repaired, 4);
   assert.equal(repaired.coins, 1);
   assert.equal(repairOperations(createOperationsState(), 100).repaired, 0);
+  const targeted = repairShipComponent(
+    {
+      ...createOperationsState(),
+      components: {
+        hull: 80,
+        rigging: 90,
+        rudder: 100,
+        fittings: 100,
+        weapons: 100,
+      },
+    },
+    15,
+    "hull",
+  );
+  assert.equal(targeted.ok, true);
+  assert.equal(targeted.repaired, 7);
+  assert.equal(targeted.operations.components.hull, 87);
+  assert.equal(targeted.coins, 1);
+  assert.equal(
+    repairShipComponent(createOperationsState(), 10, "mast").ok,
+    false,
+  );
   assert.equal(
     buyProvisions({ ...createOperationsState(), provisions: 30 }, 100)
       .purchased,
