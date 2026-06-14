@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRoughSeaParticles } from "../src/rendering.js";
+import { createRoughSeaParticles, isLandPoint } from "../src/rendering.js";
 
 const seas = [
   { x: 100, y: 200, rx: 80, ry: 40, strength: 1, angle: 0.3 },
@@ -40,4 +40,22 @@ test("rough sea particles omit samples placed on land", () => {
     createRoughSeaParticles(seas, () => true),
     [[], []],
   );
+});
+
+test("map land checks include horizontally wrapped coordinates", () => {
+  const landShapes = [
+    {
+      poly: [
+        [10, 10],
+        [30, 10],
+        [30, 30],
+        [10, 30],
+      ],
+    },
+  ];
+
+  assert.equal(isLandPoint(20, 20, 100, landShapes), true);
+  assert.equal(isLandPoint(120, 20, 100, landShapes), true);
+  assert.equal(isLandPoint(-80, 20, 100, landShapes), true);
+  assert.equal(isLandPoint(50, 20, 100, landShapes), false);
 });

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { beginAtHomePort, bindBeginButton } from "../src/core/startup.js";
+import {
+  beginAtHomePort,
+  bindBeginButton,
+  recoverNavigablePosition,
+} from "../src/core/startup.js";
 
 test("the Begin button starts the supplied Goldhaven transition", () => {
   let listener;
@@ -63,5 +67,54 @@ test("startup fails clearly when the Begin button or home port is missing", () =
         ship: {},
       }),
     /without a home port/,
+  );
+});
+
+test("valid restored positions remain unchanged", () => {
+  const position = { x: 40, y: 50 };
+
+  assert.equal(
+    recoverNavigablePosition({
+      position,
+      fallback: { x: 10, y: 20 },
+      isBlocked: () => false,
+    }),
+    position,
+  );
+});
+
+test("blocked restored positions move to nearby wrapped open water", () => {
+  const checked = [];
+  const recovered = recoverNavigablePosition({
+    position: { x: 95, y: 50 },
+    fallback: { x: 10, y: 20 },
+    isBlocked(x, y) {
+      checked.push([x, y]);
+      return x !== 11 || y !== 50;
+    },
+    searchRadius: 16,
+    step: 16,
+    samples: 4,
+    wrapX: (x) => ((x % 100) + 100) % 100,
+  });
+
+  assert.deepEqual(recovered, { x: 11, y: 50 });
+  assert.deepEqual(checked, [
+    [95, 50],
+    [11, 50],
+  ]);
+});
+
+test("blocked restored positions fall back when no nearby water is open", () => {
+  assert.deepEqual(
+    recoverNavigablePosition({
+      position: { x: 40, y: 50 },
+      fallback: { x: 10, y: 20 },
+      isBlocked: () => true,
+      searchRadius: 16,
+      step: 16,
+      samples: 2,
+    }),
+    { x: 10, y: 20 },
   );
 });

@@ -39,7 +39,11 @@ import {
   parseSave,
   serializeSave,
 } from "./core/persistence.js";
-import { beginAtHomePort, bindBeginButton } from "./core/startup.js";
+import {
+  beginAtHomePort,
+  bindBeginButton,
+  recoverNavigablePosition,
+} from "./core/startup.js";
 import {
   ageCargo,
   bestCargoCompartment,
@@ -197,16 +201,6 @@ let edgeMessageCooldown = 0;
 const SAVE_KEY = "gilded-archipelago-save";
 
 const game = createGameState();
-const {
-  exploredCtx,
-  exploredMask,
-  FOG_MASK_SCALE,
-  fogCanvas,
-  fogCtx,
-  mapLayer,
-  minimapFog,
-} = createMapRendering({ WORLD, game });
-
 const ship = {
   x: HOME_PORT.spawnX,
   y: HOME_PORT.spawnY,
@@ -796,6 +790,17 @@ merchantRoutePaths.push(
     ],
   },
 );
+
+const {
+  exploredCtx,
+  exploredMask,
+  FOG_MASK_SCALE,
+  fogCanvas,
+  fogCtx,
+  mapLayer,
+  minimapFog,
+} = createMapRendering({ WORLD, game, merchantRoutePaths });
+
 const merchantNames = [
   "Amber Heron",
   "Silver Wake",
@@ -2129,6 +2134,21 @@ function loadGameState() {
   }
   Object.assign(ship, saved.ship);
   ship.trail = Array.isArray(saved.ship.trail) ? saved.ship.trail : [];
+  const restoredPosition = recoverNavigablePosition({
+    position: ship,
+    fallback: { x: HOME_PORT.spawnX, y: HOME_PORT.spawnY },
+    isBlocked: onLand,
+    wrapX,
+  });
+  const recoveredFromLand =
+    restoredPosition.x !== ship.x || restoredPosition.y !== ship.y;
+  ship.x = restoredPosition.x;
+  ship.y = restoredPosition.y;
+  if (recoveredFromLand) {
+    ship.speed = 0;
+    ship.anchored = true;
+    ship.trail.length = 0;
+  }
   applyShipUpgrades();
   merchantShips.length = 0;
   merchantShips.push(...saved.merchants);

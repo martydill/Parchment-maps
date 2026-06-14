@@ -1,4 +1,8 @@
-import { pointInPolygon, polygonCentroid } from "./core/geometry.js";
+import {
+  expandPolygon,
+  pointInPolygon,
+  polygonCentroid,
+} from "./core/geometry.js";
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import {
@@ -21,6 +25,11 @@ function seeded(n) {
     r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+export function isLandPoint(x, y, worldWidth, landShapes = lands) {
+  const wrappedX = ((x % worldWidth) + worldWidth) % worldWidth;
+  return landShapes.some((land) => pointInPolygon(wrappedX, y, land.poly));
 }
 
 export function createRoughSeaParticles(seas, isOnLand) {
@@ -274,7 +283,13 @@ export function drawShip(c, x, y, a) {
   c.restore();
 }
 
-export function createMapRendering({ WORLD, game }) {
+export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
+  const onLand = (x, y) => isLandPoint(x, y, WORLD.w);
+  const wrappedDistance = (x1, y1, x2, y2) => {
+    const directX = Math.abs(x1 - x2);
+    const dx = Math.min(directX, WORLD.w - directX);
+    return Math.hypot(dx, y1 - y2);
+  };
   const mapLayer = document.createElement("canvas");
   mapLayer.width = WORLD.w;
   mapLayer.height = WORLD.h;
