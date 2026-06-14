@@ -1,0 +1,308 @@
+export const BASE_SHIP_STATS = Object.freeze({
+  holdMax: 18,
+  maxSpeed: 175,
+  accel: 120,
+  turnRate: 2.7,
+  visibilityHeightM: 12,
+  windDrift: 1,
+  inspectionRisk: 1,
+  stormResistance: 1,
+  crewComfort: 1,
+  defense: 0,
+});
+
+export const UPGRADE_SLOTS = Object.freeze([
+  { id: "hull", name: "Hull" },
+  { id: "sails", name: "Sails" },
+  { id: "rudder", name: "Rudder" },
+  { id: "cargo", name: "Cargo fittings" },
+  { id: "quarters", name: "Crew quarters" },
+  { id: "navigation", name: "Navigation instruments" },
+  { id: "armament", name: "Defensive armament" },
+]);
+
+export const SHIP_UPGRADES = Object.freeze({
+  hull: [
+    upgrade(
+      "standard-hull",
+      "Weathered carvel hull",
+      0,
+      "A balanced merchant hull.",
+    ),
+    upgrade(
+      "narrow-hull",
+      "Narrow racing hull",
+      150,
+      "More speed, but less hold space and storm protection.",
+      {
+        maxSpeed: 22,
+        holdMax: -3,
+        stormResistance: -0.18,
+      },
+    ),
+    upgrade(
+      "reinforced-hull",
+      "Iron-braced hull",
+      180,
+      "Resists heavy weather, at the cost of speed and acceleration.",
+      {
+        stormResistance: 0.38,
+        maxSpeed: -14,
+        accel: -10,
+      },
+    ),
+  ],
+  sails: [
+    upgrade(
+      "patched-sails",
+      "Patched square sails",
+      0,
+      "Reliable, ordinary canvas.",
+    ),
+    upgrade(
+      "lateen-sails",
+      "Lateen sail plan",
+      125,
+      "Turns and accelerates quickly, but gives up top speed.",
+      {
+        turnRate: 0.55,
+        accel: 16,
+        maxSpeed: -12,
+      },
+    ),
+    upgrade(
+      "towering-sails",
+      "Towering square rig",
+      165,
+      "Fast in open water, but slow to answer the helm and vulnerable to wind.",
+      {
+        maxSpeed: 28,
+        turnRate: -0.48,
+        windDrift: 0.22,
+        stormResistance: -0.12,
+      },
+    ),
+  ],
+  rudder: [
+    upgrade(
+      "oak-rudder",
+      "Oak barn-door rudder",
+      0,
+      "A sturdy, balanced steering surface.",
+    ),
+    upgrade(
+      "balanced-rudder",
+      "Balanced rudder",
+      110,
+      "Sharper handling, with added drag at speed.",
+      {
+        turnRate: 0.52,
+        maxSpeed: -8,
+      },
+    ),
+    upgrade(
+      "deep-rudder",
+      "Deep-water rudder",
+      135,
+      "Strong steering authority, but catches wind and rough seas.",
+      {
+        turnRate: 0.32,
+        windDrift: 0.18,
+        stormResistance: -0.1,
+      },
+    ),
+  ],
+  cargo: [
+    upgrade(
+      "open-hold",
+      "Open merchant hold",
+      0,
+      "Standard capacity and easy customs access.",
+    ),
+    upgrade(
+      "reinforced-hold",
+      "Reinforced cargo racks",
+      145,
+      "Carries more cargo safely, but the extra weight slows the vessel.",
+      {
+        holdMax: 6,
+        maxSpeed: -10,
+        accel: -8,
+      },
+    ),
+    upgrade(
+      "smugglers-lockers",
+      "Smuggler’s lockers",
+      170,
+      "Conceals cargo from casual searches, while sacrificing capacity and stability.",
+      {
+        inspectionRisk: -0.4,
+        holdMax: -2,
+        stormResistance: -0.12,
+      },
+    ),
+  ],
+  quarters: [
+    upgrade(
+      "plain-berths",
+      "Plain crew berths",
+      0,
+      "Cramped but serviceable accommodations.",
+    ),
+    upgrade(
+      "expanded-quarters",
+      "Expanded crew quarters",
+      120,
+      "Improves morale and endurance, but consumes cargo space.",
+      {
+        crewComfort: 0.42,
+        holdMax: -3,
+      },
+    ),
+    upgrade(
+      "hammock-deck",
+      "Hammock deck",
+      105,
+      "Makes room for extra hands and faster sail handling, but adds weight aloft.",
+      {
+        accel: 14,
+        maxSpeed: -6,
+        stormResistance: -0.08,
+      },
+    ),
+  ],
+  navigation: [
+    upgrade(
+      "coastal-charts",
+      "Coastal charts",
+      0,
+      "Basic charts and a serviceable compass.",
+    ),
+    upgrade(
+      "brass-sextant",
+      "Brass sextant",
+      135,
+      "Extends reliable sighting range, but its deck station creates drag and clutter.",
+      {
+        visibilityHeightM: 5,
+        accel: -4,
+      },
+    ),
+    upgrade(
+      "tall-mast",
+      "Tall lookout mast",
+      175,
+      "Reveals a farther horizon, while making the ship slower to turn and less stormworthy.",
+      {
+        visibilityHeightM: 10,
+        turnRate: -0.25,
+        stormResistance: -0.2,
+      },
+    ),
+  ],
+  armament: [
+    upgrade(
+      "unarmed",
+      "Unarmed merchantman",
+      0,
+      "No guns: light, quick, and inexpensive.",
+    ),
+    upgrade(
+      "swivel-guns",
+      "Deck swivel guns",
+      155,
+      "Deters light attackers, but costs speed and hold capacity.",
+      {
+        defense: 1,
+        maxSpeed: -7,
+        holdMax: -1,
+      },
+    ),
+    upgrade(
+      "culverin-battery",
+      "Culverin battery",
+      240,
+      "Serious protection with serious weight and cargo demands.",
+      {
+        defense: 2,
+        maxSpeed: -18,
+        accel: -12,
+        holdMax: -3,
+        turnRate: -0.18,
+      },
+    ),
+  ],
+});
+
+function upgrade(id, name, cost, description, modifiers = {}) {
+  return Object.freeze({ id, name, cost, description, modifiers });
+}
+
+export function createShipUpgradeState() {
+  const equipped = {};
+  const owned = [];
+  for (const slot of UPGRADE_SLOTS) {
+    const standard = SHIP_UPGRADES[slot.id][0];
+    equipped[slot.id] = standard.id;
+    owned.push(standard.id);
+  }
+  return { equipped, owned };
+}
+
+export function normalizeShipUpgradeState(state) {
+  const normalized = createShipUpgradeState();
+  if (!state || typeof state !== "object") return normalized;
+  const owned = new Set(Array.isArray(state.owned) ? state.owned : []);
+  for (const slot of UPGRADE_SLOTS) {
+    const choices = SHIP_UPGRADES[slot.id];
+    const selected = choices.find(
+      (item) => item.id === state.equipped?.[slot.id],
+    );
+    if (selected) normalized.equipped[slot.id] = selected.id;
+    owned.add(normalized.equipped[slot.id]);
+  }
+  normalized.owned = [...owned].filter((id) => findUpgrade(id));
+  return normalized;
+}
+
+export function findUpgrade(id) {
+  for (const slot of UPGRADE_SLOTS) {
+    const item = SHIP_UPGRADES[slot.id].find(
+      (candidate) => candidate.id === id,
+    );
+    if (item) return item;
+  }
+  return null;
+}
+
+export function calculateShipStats(upgradeState) {
+  const stats = { ...BASE_SHIP_STATS };
+  const state = normalizeShipUpgradeState(upgradeState);
+  for (const id of Object.values(state.equipped)) {
+    const item = findUpgrade(id);
+    for (const [stat, amount] of Object.entries(item.modifiers))
+      stats[stat] += amount;
+  }
+  return stats;
+}
+
+export function buyOrEquipUpgrade(game, slotId, upgradeId, cargoAboard = 0) {
+  const choices = SHIP_UPGRADES[slotId];
+  const item = choices?.find((candidate) => candidate.id === upgradeId);
+  if (!item) return { ok: false, reason: "Unknown ship fitting." };
+
+  game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
+  const owned = game.shipUpgrades.owned.includes(item.id);
+  if (!owned && game.coins < item.cost)
+    return { ok: false, reason: "Not enough crowns." };
+
+  const candidate = normalizeShipUpgradeState(game.shipUpgrades);
+  candidate.equipped[slotId] = item.id;
+  if (!candidate.owned.includes(item.id)) candidate.owned.push(item.id);
+  if (calculateShipStats(candidate).holdMax < cargoAboard)
+    return { ok: false, reason: "Unload cargo before fitting this option." };
+
+  if (!owned) game.coins -= item.cost;
+  game.shipUpgrades = candidate;
+  return { ok: true, purchased: !owned, item };
+}
