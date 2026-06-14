@@ -5915,6 +5915,7 @@ function renderPortSystems() {
   renderShipyard();
   renderMilestone(document.getElementById("milestonePort"));
 }
+
 function formatChainGoods(entries) {
   return Object.entries(entries)
     .map(([key, units]) => units + " " + goods[key].name)
@@ -5954,6 +5955,7 @@ function renderProductionChains() {
     root.append(card);
   }
 }
+
 function signed(value) {
   return value > 0 ? "+" + value : String(value);
 }
