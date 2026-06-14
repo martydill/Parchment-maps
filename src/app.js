@@ -229,8 +229,27 @@ const visibility = {
   lastRadius: -1,
   revealCooldown: 0,
 };
+function getInterpolatedWeather() {
+  const weatherInterval = 1050;
+  const progress =
+    ((game.day - 1) * 620 + game.voyageDistance) / weatherInterval;
+  const idx1 = Math.floor(progress) % weatherPatterns.length;
+  const idx2 = (idx1 + 1) % weatherPatterns.length;
+  const t = progress % 1;
+  const smoothT = (1 - Math.cos(t * Math.PI)) / 2;
+
+  const w1 = weatherPatterns[idx1];
+  const w2 = weatherPatterns[idx2];
+
+  return {
+    name: t < 0.5 ? w1.name : w2.name,
+    visibilityKm:
+      w1.visibilityKm + (w2.visibilityKm - w1.visibilityKm) * smoothT,
+    roughness: w1.roughness + (w2.roughness - w1.roughness) * smoothT,
+  };
+}
 function setWeatherForDay(day) {
-  const weather = weatherPatterns[(day - 1) % weatherPatterns.length];
+  const weather = getInterpolatedWeather();
   game.weatherName = weather.name;
   game.weatherVisibilityKm = weather.visibilityKm;
   visibility.lastRadius = -1;
@@ -239,7 +258,7 @@ function currentVisibilityKm() {
   return Math.min(visibility.horizonKm, game.weatherVisibilityKm);
 }
 function currentWeather() {
-  return weatherPatterns[(game.day - 1) % weatherPatterns.length];
+  return getInterpolatedWeather();
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
@@ -1238,9 +1257,12 @@ function advanceDays(days) {
     );
   }
   if (days) {
-    game.windAngle += 0.62 * days;
-    game.windStrength = 0.18 + ((game.day * 37) % 22) / 100;
-    setWeatherForDay(game.day);
+    game.windAngle += 1.42 * days;
+    game.windStrength = 0.18 + ((game.day * 41) % 24) / 100;
+    const weather = getInterpolatedWeather();
+    game.weatherName = weather.name;
+    game.weatherVisibilityKm = weather.visibilityKm;
+    visibility.lastRadius = -1;
   }
   const retained = [];
   for (const contract of game.activeContracts) {
@@ -2318,7 +2340,12 @@ function updateHud() {
         (Math.PI * 2)) *
         8,
     ) % 8;
-  ui.wind.textContent = "Wind " + dirs[idx];
+  ui.wind.textContent =
+    "Wind " +
+    dirs[idx] +
+    " · " +
+    Math.round(game.windStrength * 100) +
+    " knots";
   const km = currentVisibilityKm();
   ui.visibility.textContent =
     game.weatherName +
@@ -2381,6 +2408,21 @@ function nearestKnownPort(x, y, radius) {
     if (d < best && isWorldPointExplored(port.x, port.y)) {
       best = d;
       hit = port;
+    }
+  }
+  return hit;
+}
+// Only discoveries the captain has already recorded appear on the chart, so the
+// hit test restricts itself to found sites — undiscovered ones stay hidden.
+function discoveryAtPoint(x, y, radius) {
+  let hit = null,
+    best = radius;
+  for (const site of discoverySites) {
+    if (!game.discoveries.found[site.id]) continue;
+    const d = Math.hypot(x - nearestWrappedX(site.x, x), y - site.y);
+    if (d < best) {
+      best = d;
+      hit = site;
     }
   }
   return hit;
@@ -2773,6 +2815,53 @@ function render() {
   }
   ctx.restore();
   renderFog();
+
+  // Subtle cloud/haze effect
+  const lowerWeather = game.weatherName.toLowerCase();
+  if (
+    lowerWeather.includes("cloud") ||
+    lowerWeather.includes("haze") ||
+    lowerWeather.includes("mist") ||
+    lowerWeather.includes("fog") ||
+    lowerWeather.includes("rain")
+  ) {
+    const time = performance.now();
+    ctx.save();
+    for (let i = 0; i < 6; i++) {
+      const x = ((i * 443 + time * 0.02) % (vw + 400)) - 200;
+      const y = ((i * 571 + time * 0.01) % (vh + 400)) - 200;
+      const rx = 200 + ((i * 123) % 150);
+      const ry = 150 + ((i * 191) % 100);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+      const alpha = 0.03 + (i % 3 === 0 ? 0.02 : 0);
+      g.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+      g.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, i, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Subtle rain effect
+  if (game.weatherName.includes("Rain")) {
+    const rainCount = 120;
+    const time = performance.now();
+    ctx.save();
+    ctx.strokeStyle = "rgba(174,194,224,0.34)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < rainCount; i++) {
+      const x = (i * 137.5 + time * 0.15) % vw;
+      const y = (i * 243.1 + time * 0.85) % vh;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 2, y + 12);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // The ship and immediate docking cue remain readable above the fog layer.
   ctx.save();
   ctx.translate(vw / 2, vh / 2);
@@ -2954,9 +3043,21 @@ function update(dt) {
   } else {
     const oldCycle = Math.floor(ship.x / WORLD.w),
       newCycle = Math.floor(nx / WORLD.w);
-    game.voyageDistance += Math.hypot(nx - ship.x, ny - ship.y);
+    const d = Math.hypot(nx - ship.x, ny - ship.y);
+    game.voyageDistance += d;
     ship.x = nx;
     ship.y = ny;
+
+    // Wind and weather change continuously with distance and time
+    game.windAngle += 0.01 * dt + 0.8 * (d / 620);
+    const windPhase =
+      (game.day * 620 + game.voyageDistance) / 250 + performance.now() / 15000;
+    game.windStrength = 0.16 + (Math.sin(windPhase) + 1) * 0.14;
+
+    const weather = getInterpolatedWeather();
+    game.weatherName = weather.name;
+    game.weatherVisibilityKm = weather.visibilityKm;
+
     if (oldCycle !== newCycle)
       showMessage(
         "FIRST MERIDIAN CROSSED · the world continues around the globe.",
@@ -3107,6 +3208,15 @@ canvas.addEventListener("pointerup", (e) => {
     openVesselDetails(merchant);
     return;
   }
+  const discovery = discoveryAtPoint(
+    world.x,
+    world.y,
+    Math.max(30, 18 / camera.zoom),
+  );
+  if (discovery) {
+    openDiscoveryDetails(discovery);
+    return;
+  }
   const port = nearestKnownPort(
     world.x,
     world.y,
@@ -3127,7 +3237,9 @@ canvas.addEventListener("pointermove", (e) => {
         world.x,
         world.y,
         Math.max(34, 26 / camera.zoom),
-      ) || nearestKnownPort(world.x, world.y, Math.max(45, 34 / camera.zoom))
+      ) ||
+      discoveryAtPoint(world.x, world.y, Math.max(30, 18 / camera.zoom)) ||
+      nearestKnownPort(world.x, world.y, Math.max(45, 34 / camera.zoom))
         ? "pointer"
         : "default";
   }
@@ -4609,6 +4721,82 @@ function handleDiscoveryDisposition(id, disposition) {
   renderLedger();
   saveGameState();
 }
+function openDiscoveryDetails(site) {
+  if (!site) return;
+  renderDiscoveryPanel(site.id);
+  document.getElementById("discoveryPanel").style.display = "grid";
+}
+function closeDiscoveryDetails() {
+  document.getElementById("discoveryPanel").style.display = "none";
+}
+function renderDiscoveryPanel(id) {
+  const site = discoverySites.find((entry) => entry.id === id);
+  const record = game.discoveries.found[id];
+  if (!site || !record) {
+    closeDiscoveryDetails();
+    return;
+  }
+  document.getElementById("discoveryType").textContent = site.type;
+  document.getElementById("discoveryName").textContent =
+    site.icon + " " + site.name;
+  document.getElementById("discoveryDescription").textContent =
+    site.description;
+  document.getElementById("discoveryBenefit").textContent = site.benefit;
+  const meta = document.getElementById("discoveryMeta");
+  meta.innerHTML = "";
+  const metaRows = [
+    ["Found", "Day " + record.foundDay],
+    ["Recorded by", site.faction],
+    ["Chart value", site.saleValue + " crowns"],
+    ["Standing", "+" + site.standingValue + " if shared"],
+  ];
+  if (site.season)
+    metaRows.push([
+      "Season",
+      seasonalSiteActive(site, game.day) ? "In season" : "Out of season",
+    ]);
+  if (site.route)
+    metaRows.push([
+      "Opens route",
+      site.route.origin + " → " + site.route.destination,
+    ]);
+  for (const [label, value] of metaRows) {
+    const item = document.createElement("div");
+    item.className = "summary-item";
+    item.innerHTML = "<b>" + label + "</b><span>" + value + "</span>";
+    meta.append(item);
+  }
+  const dispositionRoot = document.getElementById("discoveryDisposition");
+  dispositionRoot.innerHTML = "";
+  if (record.disposition) {
+    const status = document.createElement("div");
+    status.className = "discovery-status";
+    status.textContent =
+      DISCOVERY_DISPOSITIONS[record.disposition].label +
+      " · resolved Day " +
+      record.resolvedDay;
+    dispositionRoot.append(status);
+  } else {
+    const actions = document.createElement("div");
+    actions.className = "discovery-actions";
+    for (const disposition of ["secret", "sell", "share"]) {
+      const button = document.createElement("button");
+      button.className = "parchment";
+      button.textContent =
+        disposition === "sell"
+          ? "Sell · " + site.saleValue + " crowns"
+          : disposition === "share"
+            ? "Share · +" + site.standingValue + " standing"
+            : "Keep secret";
+      button.addEventListener("click", () => {
+        handleDiscoveryDisposition(id, disposition);
+        renderDiscoveryPanel(id);
+      });
+      actions.append(button);
+    }
+    dispositionRoot.append(actions);
+  }
+}
 function openExploration() {
   if (!nearExplorationSite) return;
   ship.anchored = true;
@@ -4707,6 +4895,13 @@ document
   .addEventListener("click", closeVesselDetails);
 document.getElementById("vesselPanel").addEventListener("click", (e) => {
   if (e.target === document.getElementById("vesselPanel")) closeVesselDetails();
+});
+document
+  .getElementById("closeDiscovery")
+  .addEventListener("click", closeDiscoveryDetails);
+document.getElementById("discoveryPanel").addEventListener("click", (e) => {
+  if (e.target === document.getElementById("discoveryPanel"))
+    closeDiscoveryDetails();
 });
 document
   .getElementById("closeReport")

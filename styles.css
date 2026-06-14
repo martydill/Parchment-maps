@@ -553,6 +553,10 @@ button.parchment {
 .discovery-actions .mini-action {
   flex: 1 1 130px;
 }
+.discovery-actions button.parchment {
+  margin: 0;
+  flex: 1 1 130px;
+}
 .discovery-status {
   padding: 7px 9px;
   border-radius: 4px;
@@ -1547,6 +1551,20 @@ button.parchment {
 }
 .report-scroll {
   width: min(92vw, 650px);
+}
+#discoveryPanel {
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 16px;
+  background: rgba(14, 9, 5, 0.76);
+  backdrop-filter: blur(3px);
+  z-index: 30;
+}
+.discovery-scroll {
+  width: min(92vw, 600px);
 }
 .report-seal {
   width: 94px;

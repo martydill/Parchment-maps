@@ -19,7 +19,7 @@
           <span class="small">Home: Goldhaven</span><br /><span id="speedText"
             >0 knots</span
           >
-          · <span id="windText">Wind E</span><br /><span
+          · <span id="windText">Wind E · 28 knots</span><br /><span
             class="small"
             id="visibilityText"
             >Clear · 12 km sight</span
@@ -446,7 +446,10 @@
       <div class="scroll menu-scroll">
         <h2>Game Menu</h2>
         <div class="ornament">✦ ☙ ⚓ ❧ ✦</div>
-        <p>Your progress is saved automatically at each port, but you can also manage your voyage here.</p>
+        <p>
+          Your progress is saved automatically at each port, but you can also
+          manage your voyage here.
+        </p>
         <div class="menu-options">
           <button class="parchment" id="newGameButton">New Game</button>
           <button class="parchment" id="saveGameButton">Save Game</button>
@@ -502,6 +505,21 @@
           <button class="parchment" id="reportLedger">Open Ledger</button>
           <button class="parchment" id="closeReport">Return to Port</button>
         </div>
+      </div>
+    </div>
+
+    <div id="discoveryPanel">
+      <div class="scroll discovery-scroll">
+        <div class="town-kicker" id="discoveryType">Discovery</div>
+        <h2 id="discoveryName">Discovery</h2>
+        <div class="manifest-grid" id="discoveryMeta"></div>
+        <p id="discoveryDescription"></p>
+        <div class="detail-card">
+          <h3>Significance</h3>
+          <p id="discoveryBenefit"></p>
+        </div>
+        <div id="discoveryDisposition"></div>
+        <button class="parchment" id="closeDiscovery">Close</button>
       </div>
     </div>
 
