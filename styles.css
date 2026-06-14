@@ -800,6 +800,17 @@ button.parchment {
   font-size: 11px;
   opacity: 0.75;
 }
+.cargo-manifest {
+  display: grid;
+  gap: 2px;
+  margin-top: 5px;
+  color: #5a351c;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.cargo-manifest span {
+  display: block;
+}
 .market-condition {
   font-weight: 700;
 }

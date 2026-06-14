@@ -8,6 +8,7 @@ export function createGameState() {
     holdMax: 18,
     shipUpgrades: createShipUpgradeState(),
     cargo: { spice: 0, iron: 0, silk: 0 },
+    cargoLots: [],
     windAngle: 0.12,
     windStrength: 0.28,
     weatherName: "Clear",

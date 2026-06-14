@@ -31,6 +31,15 @@ import {
   serializeSave,
 } from "./core/persistence.js";
 import {
+  ageCargo,
+  cargoLotDescription,
+  cargoValueMultiplier,
+  createCargoLot,
+  normalizeCargoLots,
+  resolveVoyageCargo,
+  syncCargoCounts,
+} from "./core/cargo.js";
+import {
   buyOrEquipUpgrade,
   calculateShipStats,
   normalizeShipUpgradeState,
@@ -99,6 +108,7 @@ const goods = {
   herbs: {
     name: "Medicinal Herbs",
     base: 16,
+    perishRate: 0.045,
     terms: ["herb", "resin", "fungi"],
   },
   spice: { name: "Moonspice", base: 28, terms: ["spice"] },
@@ -119,6 +129,7 @@ const goods = {
     name: "Apothecary Medicines",
     base: 31,
     processed: true,
+    perishRate: 0.08,
     terms: ["medicine"],
   },
   fittings: {
@@ -134,6 +145,11 @@ const goods = {
     terms: ["fashion", "fine cloth", "luxur"],
   },
 };
+goods.silk.premiumPorts = ["Lethariel", "Kingfisher Quay"];
+goods.silk.faction = "Silver Loom Consortium";
+goods.fittings.fragility = 0.2;
+goods.spice.fragility = 0.15;
+goods.medicine.fragility = 0.35;
 const discoverySites = [
   {
     id: "starfall-anchorage",
@@ -2977,6 +2993,7 @@ function initializeCargoState() {
     game.cargo[key] = 0;
     game.cargoCost[key] = [];
   }
+  game.cargoLots = [];
 }
 initializeCargoState();
 initializeEconomy();
@@ -3085,6 +3102,7 @@ function advanceDays(days) {
   days = Math.max(0, Math.floor(days));
   for (let i = 0; i < days; i++) {
     game.day++;
+    ageCargo(game.cargoLots, 1);
     processWorldEventsForDay();
     runEconomyDay();
     for (const route of advanceDiscoveryConsequences(
@@ -4169,6 +4187,7 @@ function loadGameState() {
       ? game.cargoCost[key]
       : [];
   }
+  normalizeCargoLots(game, goods, "Legacy manifest");
   game.productionReports ||= {};
   const freshEconomy = createEconomyState(ports, goods);
   for (const port of ports) {
@@ -6317,7 +6336,39 @@ function openPort() {
   ship.anchored = true;
   if (game.departedFromPort !== null && game.voyageDistance > 35) {
     const days = Math.max(1, Math.ceil(game.voyageDistance / 620));
+    const distance = game.voyageDistance;
     advanceDays(days);
+    const stats = calculateShipStats(game.shipUpgrades);
+    const roughness =
+      (game.weatherName === "Storm"
+        ? 0.8
+        : game.weatherName === "Rain"
+          ? 0.35
+          : 0.12) / stats.stormResistance;
+    const outcome = resolveVoyageCargo(game.cargoLots, {
+      distance,
+      roughness,
+      inspectionRisk: stats.inspectionRisk,
+      seed: game.day + currentPort.name.length,
+    });
+    game.cargoLots = outcome.remaining;
+    syncCargoCounts(game, goods);
+    if (outcome.lost.length)
+      addNews(
+        "Cargo damaged at sea",
+        `${outcome.lost.length} fragile cargo unit${outcome.lost.length === 1 ? "" : "s"} broke during the voyage.`,
+      );
+    if (outcome.confiscated.length) {
+      const reputationLoss = outcome.counterfeits.length * 6;
+      if (reputationLoss)
+        changeStanding(currentPort.factions[0].name, -reputationLoss);
+      addNews(
+        "Customs seizure",
+        `${outcome.confiscated.length} illegal cargo unit${outcome.confiscated.length === 1 ? "" : "s"} confiscated at ${currentPort.name}.${reputationLoss ? " Discovered counterfeits damaged your reputation." : ""}`,
+      );
+      showMessage("CUSTOMS SEIZURE · Illegal goods confiscated.", 4);
+    } else if (outcome.lost.length)
+      showMessage("ROUGH VOYAGE · Fragile cargo was damaged.", 4);
     game.voyageDistance = 0;
     game.departedFromPort = null;
   }
@@ -6337,7 +6388,18 @@ function renderMarket() {
   Object.keys(goods).forEach((key) => {
     const state = economyState(currentPort, key),
       buyQuote = buyPriceFor(currentPort, key),
-      sellQuote = sellPriceFor(currentPort, key),
+      baseSellQuote = sellPriceFor(currentPort, key),
+      lots = game.cargoLots.filter((lot) => lot.key === key),
+      nextLot = lots[0],
+      sellQuote = nextLot
+        ? Math.max(
+            1,
+            Math.round(
+              baseSellQuote *
+                cargoValueMultiplier(nextLot, currentPort.name, goods[key]),
+            ),
+          )
+        : baseSellQuote,
       condition = economyCondition(currentPort, key);
     const row = document.createElement("div");
     row.className = "trade-row";
@@ -6363,7 +6425,17 @@ function renderMarket() {
       condition +
       "</span> · " +
       Math.floor(state.stock) +
-      " units in market</span>";
+      " units in market</span>" +
+      (lots.length
+        ? '<span class="cargo-manifest">' +
+          lots
+            .map(
+              (lot, index) =>
+                `<span><b>#${index + 1}</b> ${cargoLotDescription(lot)}</span>`,
+            )
+            .join("") +
+          "</span>"
+        : "");
     const buy = document.createElement("button");
     buy.textContent = "Buy " + buyQuote;
     buy.title = "Buy one for " + buyQuote + " crowns";
@@ -6376,8 +6448,17 @@ function renderMarket() {
       if (state.stock < 1)
         return showMessage("The market has no more " + goods[key].name + ".");
       game.coins -= livePrice;
-      game.cargo[key]++;
-      game.cargoCost[key].push(livePrice);
+      game.cargoLots.push(
+        createCargoLot({
+          key,
+          cost: livePrice,
+          origin: currentPort.name,
+          day: game.day,
+          sequence: game.cargoLots.length,
+          good: goods[key],
+        }),
+      );
+      syncCargoCounts(game, goods);
       state.stock -= 1;
       renderPortSystems();
       updateHud();
@@ -6388,9 +6469,18 @@ function renderMarket() {
     sell.disabled = game.cargo[key] <= 0;
     sell.onclick = () => {
       if (game.cargo[key] <= 0) return showMessage("None aboard.");
-      const livePrice = sellPriceFor(currentPort, key),
-        cost = game.cargoCost[key].shift() ?? goods[key].base;
-      game.cargo[key]--;
+      const lotIndex = game.cargoLots.findIndex((lot) => lot.key === key);
+      const lot = game.cargoLots[lotIndex];
+      const livePrice = Math.max(
+          1,
+          Math.round(
+            sellPriceFor(currentPort, key) *
+              cargoValueMultiplier(lot, currentPort.name, goods[key]),
+          ),
+        ),
+        cost = lot.cost ?? goods[key].base;
+      game.cargoLots.splice(lotIndex, 1);
+      syncCargoCounts(game, goods);
       game.coins += livePrice;
       state.stock += 1;
       const e = worldEvents.ironShortage;
