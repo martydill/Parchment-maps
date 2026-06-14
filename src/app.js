@@ -29,6 +29,13 @@ import {
   parseSave,
   serializeSave,
 } from "./core/persistence.js";
+import {
+  buyOrEquipUpgrade,
+  calculateShipStats,
+  normalizeShipUpgradeState,
+  SHIP_UPGRADES,
+  UPGRADE_SLOTS,
+} from "./core/upgrades.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -109,6 +116,18 @@ function setWeatherForDay(day) {
 }
 function currentVisibilityKm() {
   return Math.min(visibility.horizonKm, game.weatherVisibilityKm);
+}
+function applyShipUpgrades() {
+  game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
+  const stats = calculateShipStats(game.shipUpgrades);
+  game.holdMax = stats.holdMax;
+  ship.maxSpeed = stats.maxSpeed;
+  ship.accel = stats.accel;
+  ship.turnRate = stats.turnRate;
+  visibility.eyeHeightM = stats.visibilityHeightM;
+  visibility.horizonKm = 3.57 * Math.sqrt(visibility.eyeHeightM);
+  visibility.lastRadius = -1;
+  return stats;
 }
 
 const lands = [
@@ -3790,6 +3809,7 @@ function loadGameState() {
   Object.assign(game, saved.game);
   Object.assign(ship, saved.ship);
   ship.trail = Array.isArray(saved.ship.trail) ? saved.ship.trail : [];
+  applyShipUpgrades();
   merchantShips.length = 0;
   merchantShips.push(...saved.merchants);
   Object.assign(worldEvents, saved.worldEvents);
@@ -5338,7 +5358,9 @@ function update(dt) {
   }
   ship.speed *= Math.pow(inp.active ? 0.992 : 0.978, dt * 60);
   ship.speed = Math.max(0, Math.min(ship.maxSpeed, ship.speed));
-  const windPush = ship.anchored ? 0 : game.windStrength * 18;
+  const windPush = ship.anchored
+    ? 0
+    : game.windStrength * 18 * calculateShipStats(game.shipUpgrades).windDrift;
   const safeWind = limitOutwardWind(
     Math.cos(game.windAngle) * windPush,
     Math.sin(game.windAngle) * windPush,
@@ -5753,7 +5775,86 @@ function renderPortSystems() {
     false,
   );
   renderPolitics();
+  renderShipyard();
   renderMilestone(document.getElementById("milestonePort"));
+}
+function signed(value) {
+  return value > 0 ? "+" + value : String(value);
+}
+function upgradeEffects(item) {
+  const labels = {
+    holdMax: "hold",
+    maxSpeed: "top speed",
+    accel: "acceleration",
+    turnRate: "turning",
+    visibilityHeightM: "lookout height",
+    windDrift: "wind drift",
+    inspectionRisk: "inspection risk",
+    stormResistance: "storm resistance",
+    crewComfort: "crew comfort",
+    defense: "defense",
+  };
+  const effects = Object.entries(item.modifiers).map(
+    ([key, value]) => signed(value) + " " + labels[key],
+  );
+  return effects.length ? effects.join(" · ") : "Balanced baseline";
+}
+function renderShipyard() {
+  const root = document.getElementById("shipyard");
+  root.innerHTML = "";
+  const stats = applyShipUpgrades();
+  document.getElementById("shipStats").textContent =
+    stats.holdMax +
+    " hold · " +
+    Math.round(stats.maxSpeed / 7) +
+    " knots · " +
+    stats.turnRate.toFixed(2) +
+    " turning · " +
+    currentVisibilityKm().toFixed(1) +
+    " km sight · defense " +
+    stats.defense;
+  for (const slot of UPGRADE_SLOTS) {
+    const section = document.createElement("div");
+    section.className = "upgrade-slot";
+    section.innerHTML = "<h4>" + slot.name + "</h4>";
+    for (const item of SHIP_UPGRADES[slot.id]) {
+      const equipped = game.shipUpgrades.equipped[slot.id] === item.id;
+      const owned = game.shipUpgrades.owned.includes(item.id);
+      const row = document.createElement("div");
+      row.className = "upgrade-option" + (equipped ? " equipped" : "");
+      const details = document.createElement("div");
+      details.innerHTML =
+        "<b>" +
+        item.name +
+        '</b><span class="small">' +
+        item.description +
+        '</span><span class="upgrade-effects">' +
+        upgradeEffects(item) +
+        "</span>";
+      const button = document.createElement("button");
+      button.textContent = equipped
+        ? "Fitted"
+        : owned
+          ? "Equip"
+          : "Buy " + item.cost;
+      button.disabled = equipped || (!owned && game.coins < item.cost);
+      button.onclick = () => {
+        const result = buyOrEquipUpgrade(game, slot.id, item.id, cargoCount());
+        if (!result.ok) return showMessage(result.reason);
+        applyShipUpgrades();
+        showMessage(
+          (result.purchased ? "Purchased and fitted " : "Fitted ") +
+            item.name +
+            ".",
+        );
+        renderPortSystems();
+        updateHud();
+      };
+      row.append(details, button);
+      section.append(row);
+    }
+    root.append(section);
+  }
 }
 function openPort() {
   if (!nearPort) return;
@@ -6152,6 +6253,7 @@ minimapWrap.addEventListener("click", (e) => {
 
 const restoredSavedGame = loadGameState();
 if (!restoredSavedGame) {
+  applyShipUpgrades();
   setWeatherForDay(game.day);
   processWorldEventsForDay();
 }
