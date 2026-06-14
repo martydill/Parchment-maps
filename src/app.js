@@ -14,6 +14,7 @@ import {
   edgeInwardVector,
   limitOutwardWind,
   readSailingInput,
+  recoverFromShallows,
 } from "./core/sailing.js";
 import {
   advanceEconomyState,
@@ -2923,8 +2924,31 @@ function update(dt) {
       edgeMessageCooldown = 2.8;
     }
   } else if (hitLand) {
-    ship.speed = 0;
-    showMessage("Shallows ahead — drag the wheel back toward open water.", 1.8);
+    // Back the bow off the shallows. A hard stop here pins the ship against
+    // the coast — wind drift keeps biasing the next proposed step back onto
+    // land — so recover the way the chart-edge branch does: point the bow at
+    // the nearest open water off the seaward normal and march the hull to a
+    // position with clear water ahead, which wind can't immediately undo.
+    const recovered = recoverFromShallows({
+      x: ship.x,
+      y: ship.y,
+      blockedX: nx,
+      blockedY: ny,
+      isOpen: (px, py) => !onLand(px, py),
+    });
+    const diff = normalizeAngle(recovered.heading - ship.angle);
+    const maxTurn = ship.turnRate * 4 * dt;
+    ship.angle += Math.max(-maxTurn, Math.min(maxTurn, diff));
+    ship.speed = Math.min(14, ship.speed * 0.18);
+    ship.x = recovered.x;
+    ship.y = clamp(recovered.y, MAP_MARGIN, WORLD.h - MAP_MARGIN);
+    if (edgeMessageCooldown <= 0) {
+      showMessage(
+        "Shallows ahead — the crew is dragging the bow toward open water.",
+        1.8,
+      );
+      edgeMessageCooldown = 2;
+    }
   } else {
     const oldCycle = Math.floor(ship.x / WORLD.w),
       newCycle = Math.floor(nx / WORLD.w);
