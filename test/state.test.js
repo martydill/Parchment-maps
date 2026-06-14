@@ -7,6 +7,12 @@ import {
   changeStanding,
   createGameState,
 } from "../src/core/state.js";
+import {
+  createSaveData,
+  parseSave,
+  SAVE_VERSION,
+  serializeSave,
+} from "../src/core/persistence.js";
 
 test("createGameState returns independent complete state objects", () => {
   const first = createGameState();
@@ -40,4 +46,46 @@ test("changeStanding initializes, adjusts, and clamps faction standing", () => {
   assert.equal(changeStanding(game, "Guild", 20, clamp), 20);
   assert.equal(changeStanding(game, "Guild", 200, clamp), 100);
   assert.equal(changeStanding(game, "Guild", -250, clamp), -100);
+});
+
+test("full game saves round-trip through JSON", () => {
+  const game = createGameState();
+  game.coins = 777;
+  const save = createSaveData({
+    game,
+    ship: { x: 42, y: 84, trail: [{ x: 40, y: 80 }] },
+    merchants: [{ id: "M1", distance: 125 }],
+    worldEvents: { shortage: { active: true } },
+    exploredMap: "data:image/png;base64,map",
+    gameStarted: true,
+  });
+
+  const restored = parseSave(serializeSave(save));
+  assert.equal(restored.version, SAVE_VERSION);
+  assert.equal(restored.game.coins, 777);
+  assert.equal(restored.ship.x, 42);
+  assert.equal(restored.merchants[0].distance, 125);
+  assert.equal(restored.worldEvents.shortage.active, true);
+  assert.equal(restored.exploredMap, "data:image/png;base64,map");
+  assert.equal(restored.gameStarted, true);
+  assert.match(restored.savedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("invalid or incompatible saves are ignored", () => {
+  assert.equal(parseSave(null), null);
+  assert.equal(parseSave("{broken"), null);
+  assert.equal(parseSave(JSON.stringify({ version: SAVE_VERSION + 1 })), null);
+  assert.equal(
+    parseSave(
+      JSON.stringify({
+        version: SAVE_VERSION,
+        game: {},
+        ship: {},
+        merchants: {},
+        worldEvents: {},
+        gameStarted: true,
+      }),
+    ),
+    null,
+  );
 });
