@@ -811,6 +811,57 @@ button.parchment {
 .cargo-manifest span {
   display: block;
 }
+.cargo-compartment {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(79, 47, 22, 0.28);
+  border-radius: 8px;
+  background: rgba(92, 55, 25, 0.08);
+}
+#cargoPlan {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.cargo-compartment.locked {
+  opacity: 0.62;
+}
+.cargo-compartment-head,
+.cargo-lot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.cargo-compartment-head span {
+  font-weight: 700;
+}
+.cargo-compartment p {
+  margin: 3px 0 7px;
+}
+.cargo-lot-row {
+  padding: 6px 0;
+  border-top: 1px solid rgba(71, 44, 23, 0.16);
+}
+.cargo-lot-row > span {
+  min-width: 0;
+}
+.cargo-lot-row .small {
+  display: block;
+}
+.cargo-lot-row select {
+  max-width: 130px;
+  color: var(--ink);
+  background: #ead7a5;
+  border: 1px solid rgba(75, 43, 20, 0.45);
+  border-radius: 5px;
+  padding: 4px;
+}
+@media (max-width: 620px) {
+  #cargoPlan {
+    grid-template-columns: 1fr;
+  }
+}
 .market-condition {
   font-weight: 700;
 }
@@ -852,6 +903,47 @@ button.parchment {
 }
 .standing-row:last-child {
   border-bottom: 0;
+}
+.component-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+.component-condition {
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  text-align: center;
+  border: 1px solid rgba(79, 47, 22, 0.28);
+  border-radius: 7px;
+  background: rgba(92, 55, 25, 0.08);
+  font-size: 11px;
+}
+.component-condition b {
+  font-size: 14px;
+}
+.component-condition.critical {
+  color: #8d231c;
+  border-color: rgba(141, 35, 28, 0.55);
+  background: rgba(141, 35, 28, 0.09);
+}
+.component-repairs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.component-repairs button.parchment {
+  min-width: 0;
+  margin: 0;
+  padding: 6px 4px;
+  font-size: 11px;
+}
+@media (max-width: 620px) {
+  .component-grid,
+  .component-repairs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .news-card h4 {
   margin: 0 0 4px;

@@ -3,9 +3,14 @@ import test from "node:test";
 
 import {
   ageCargo,
+  bestCargoCompartment,
+  cargoCompartmentCapacities,
   cargoLotDescription,
   cargoValueMultiplier,
+  compartmentUsage,
   createCargoLot,
+  moveCargoLot,
+  normalizeCargoCompartments,
   normalizeCargoLots,
   resolveVoyageCargo,
   syncCargoCounts,
@@ -22,6 +27,7 @@ test("cargo lots carry stable trade properties", () => {
   });
   assert.equal(lot.origin, "Mistmere");
   assert.equal(lot.age, 0);
+  assert.equal(lot.compartment, "main");
   assert.ok(["poor", "common", "fine", "masterwork"].includes(lot.quality));
   assert.equal(
     createCargoLot({
@@ -32,6 +38,147 @@ test("cargo lots carry stable trade properties", () => {
       sequence: 2,
     }).id,
     lot.id,
+  );
+});
+
+test("cargo compartments divide hold capacity and unlock concealed storage", () => {
+  assert.deepEqual(cargoCompartmentCapacities(18), {
+    main: 12,
+    secured: 3,
+    dry: 3,
+    concealed: 0,
+  });
+  assert.deepEqual(cargoCompartmentCapacities(18, { concealedLocker: true }), {
+    main: 10,
+    secured: 3,
+    dry: 3,
+    concealed: 2,
+  });
+  assert.equal(
+    Object.values(
+      cargoCompartmentCapacities(13, { concealedLocker: true }),
+    ).reduce((sum, capacity) => sum + capacity, 0),
+    13,
+  );
+  assert.deepEqual(cargoCompartmentCapacities(-2), {
+    main: 0,
+    secured: 0,
+    dry: 0,
+    concealed: 0,
+  });
+  assert.deepEqual(cargoCompartmentCapacities(2.9), {
+    main: 0,
+    secured: 2,
+    dry: 0,
+    concealed: 0,
+  });
+  assert.deepEqual(cargoCompartmentCapacities(2, { concealedLocker: true }), {
+    main: 0,
+    secured: 2,
+    dry: 0,
+    concealed: 0,
+  });
+});
+
+test("cargo can be moved only into known compartments with free capacity", () => {
+  const lots = [
+    { id: "a", compartment: "main" },
+    { id: "b", compartment: "secured" },
+  ];
+  const capacities = { main: 1, secured: 1, dry: 1, concealed: 0 };
+  assert.deepEqual(compartmentUsage(lots), {
+    main: 1,
+    secured: 1,
+    dry: 0,
+    concealed: 0,
+  });
+  assert.equal(
+    compartmentUsage([{ compartment: "temporary-deck" }])["temporary-deck"],
+    1,
+  );
+  assert.equal(moveCargoLot(lots, "a", "main", capacities).ok, true);
+  assert.equal(moveCargoLot(lots, "a", "secured", capacities).ok, false);
+  assert.equal(
+    moveCargoLot(lots, "a", "concealed", {
+      main: 1,
+      secured: 1,
+      dry: 1,
+    }).ok,
+    false,
+  );
+  assert.equal(moveCargoLot(lots, "missing", "dry", capacities).ok, false);
+  assert.equal(moveCargoLot(lots, "a", "bilge", capacities).ok, false);
+  assert.equal(moveCargoLot(lots, "a", "dry", capacities).ok, true);
+  assert.equal(lots[0].compartment, "dry");
+});
+
+test("normalization repairs invalid and overfilled compartment assignments", () => {
+  const lots = [
+    { id: "a", compartment: "concealed" },
+    { id: "b", compartment: "secured" },
+    { id: "c", compartment: "secured" },
+  ];
+  normalizeCargoCompartments(lots, {
+    main: 1,
+    secured: 1,
+    dry: 1,
+    concealed: 0,
+  });
+  assert.deepEqual(
+    lots.map((lot) => lot.compartment),
+    ["main", "secured", "dry"],
+  );
+  const overflow = [{ id: "overflow", compartment: "unknown" }];
+  normalizeCargoCompartments(overflow, {
+    main: 0,
+    secured: 0,
+    dry: 0,
+    concealed: 0,
+  });
+  assert.equal(overflow[0].compartment, "main");
+});
+
+test("automatic stowage prioritizes protection suited to each cargo lot", () => {
+  const capacities = { main: 3, secured: 1, dry: 1, concealed: 1 };
+  assert.equal(
+    bestCargoCompartment(
+      { legalStatus: "embargoed", fragility: 1, perishRate: 1 },
+      capacities,
+      [],
+    ),
+    "concealed",
+  );
+  assert.equal(
+    bestCargoCompartment(
+      { legalStatus: "legal", fragility: 0, perishRate: 0.1 },
+      capacities,
+      [],
+    ),
+    "dry",
+  );
+  assert.equal(
+    bestCargoCompartment(
+      { legalStatus: "legal", fragility: 1, perishRate: 0 },
+      capacities,
+      [],
+    ),
+    "secured",
+  );
+  assert.equal(
+    bestCargoCompartment(
+      { legalStatus: "legal", fragility: 0, perishRate: 0 },
+      capacities,
+      [],
+    ),
+    "main",
+  );
+  assert.equal(
+    bestCargoCompartment(
+      { legalStatus: "legal", fragility: 0, perishRate: 0 },
+      { main: 0, secured: 0, dry: 0, concealed: 0 },
+      [],
+    ),
+    "main",
   );
 });
 
@@ -92,6 +239,28 @@ test("legacy cargo is normalized into ordinary lots", () => {
   } finally {
     Object.groupBy = originalGroupBy;
   }
+});
+
+test("legacy cargo normalization can assign lots to available compartments", () => {
+  const game = {
+    day: 2,
+    cargo: { iron: 2 },
+    cargoCost: { iron: [10, 12] },
+    cargoLots: [
+      { id: "a", key: "iron", cost: 10, compartment: "concealed" },
+      { id: "b", key: "iron", cost: 12, compartment: "secured" },
+    ],
+  };
+  normalizeCargoLots(game, { iron: { base: 9 } }, "Oldport", {
+    main: 1,
+    secured: 1,
+    dry: 0,
+    concealed: 0,
+  });
+  assert.deepEqual(
+    game.cargoLots.map((lot) => lot.compartment),
+    ["main", "secured"],
+  );
 });
 
 test("deterministic cargo generation covers special qualities and legal states", () => {
@@ -250,6 +419,16 @@ test("aging clamps missing and negative cargo ages", () => {
   assert.deepEqual(lots, [{ age: 0 }, { age: 0 }]);
 });
 
+test("dry storage slows the effective age of perishable cargo", () => {
+  const lots = [
+    { age: 0, compartment: "main" },
+    { age: 0, compartment: "dry" },
+  ];
+  ageCargo(lots, 4);
+  assert.equal(lots[0].age, 4);
+  assert.equal(lots[1].age, 1.8);
+});
+
 test("voyage resolution distinguishes losses, confiscations, and safe cargo", () => {
   const counterfeit = {
     id: "counterfeit",
@@ -281,6 +460,50 @@ test("voyage resolution distinguishes losses, confiscations, and safe cargo", ()
   assert.deepEqual(noInspection.remaining, [embargoed]);
 });
 
+test("secured and concealed compartments reduce voyage cargo risks", () => {
+  const fragile = {
+    id: "fragile",
+    fragility: 1,
+    legalStatus: "legal",
+  };
+  const contraband = {
+    id: "contraband",
+    fragility: 0,
+    legalStatus: "embargoed",
+  };
+  const voyage = {
+    distance: 1800,
+    roughness: 0.7,
+    inspectionRisk: 2,
+  };
+  let securedSavedCargo = false;
+  let concealmentAvoidedSeizure = false;
+  for (let seed = 0; seed < 500; seed += 1) {
+    const unprotected = resolveVoyageCargo(
+      [
+        { ...fragile, compartment: "main" },
+        { ...contraband, compartment: "main" },
+      ],
+      { ...voyage, seed },
+    );
+    const protectedCargo = resolveVoyageCargo(
+      [
+        { ...fragile, compartment: "secured" },
+        { ...contraband, compartment: "concealed" },
+      ],
+      { ...voyage, seed },
+    );
+    securedSavedCargo ||= Boolean(
+      unprotected.lost.length && !protectedCargo.lost.length,
+    );
+    concealmentAvoidedSeizure ||= Boolean(
+      unprotected.confiscated.length && !protectedCargo.confiscated.length,
+    );
+  }
+  assert.equal(securedSavedCargo, true);
+  assert.equal(concealmentAvoidedSeizure, true);
+});
+
 test("cargo descriptions include every optional detail and fallback label", () => {
   assert.equal(
     cargoLotDescription({
@@ -303,5 +526,14 @@ test("cargo descriptions include every optional detail and fallback label", () =
       factionOwner: null,
     }),
     /^Masterwork · from Lethariel · very fragile$/,
+  );
+  assert.match(
+    cargoLotDescription({
+      quality: "common",
+      origin: "Goldhaven",
+      legalStatus: "legal",
+      compartment: "dry",
+    }),
+    /Dry locker$/,
   );
 });

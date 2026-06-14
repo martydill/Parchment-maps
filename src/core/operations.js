@@ -16,10 +16,36 @@ export const FACTION_PRIVILEGES = Object.freeze([
   },
 ]);
 
+export const SHIP_COMPONENTS = Object.freeze({
+  hull: { label: "Hull", repairCost: 2 },
+  rigging: { label: "Rigging", repairCost: 2 },
+  rudder: { label: "Rudder", repairCost: 2 },
+  fittings: { label: "Cargo fittings", repairCost: 2 },
+  weapons: { label: "Weapons", repairCost: 2 },
+});
+
+function freshComponentCondition(value = 100) {
+  return Object.fromEntries(
+    Object.keys(SHIP_COMPONENTS).map((key) => [key, value]),
+  );
+}
+
+export function shipCondition(components) {
+  const values = Object.keys(SHIP_COMPONENTS).map(
+    (key) => components?.[key] ?? 100,
+  );
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function componentEfficiency(condition = 100) {
+  return clamp(0.45 + (clamp(Number(condition), 0, 100) / 100) * 0.55, 0.45, 1);
+}
+
 export function createOperationsState() {
   return {
     provisions: 14,
     condition: 100,
+    components: freshComponentCondition(),
     morale: 75,
     wagesDueDay: 8,
     wageArrears: 0,
@@ -31,9 +57,22 @@ export function createOperationsState() {
 export function normalizeOperationsState(value) {
   const fresh = createOperationsState();
   if (!value || typeof value !== "object") return fresh;
+  const legacyCondition = clamp(
+    Number(value.condition ?? fresh.condition),
+    0,
+    100,
+  );
+  const components = freshComponentCondition(legacyCondition);
+  for (const key of Object.keys(SHIP_COMPONENTS))
+    components[key] = clamp(
+      Number(value.components?.[key] ?? legacyCondition),
+      0,
+      100,
+    );
   return {
     provisions: clamp(Number(value.provisions ?? fresh.provisions), 0, 30),
-    condition: clamp(Number(value.condition ?? fresh.condition), 0, 100),
+    condition: shipCondition(components),
+    components,
     morale: clamp(Number(value.morale ?? fresh.morale), 0, 100),
     wagesDueDay: Math.max(
       1,
@@ -43,6 +82,19 @@ export function normalizeOperationsState(value) {
     obligations: Array.isArray(value.obligations) ? value.obligations : [],
     nextObligationId: Math.max(1, Math.floor(value.nextObligationId ?? 1)),
   };
+}
+
+export function applyComponentDamage(operations, damage = {}) {
+  const next = normalizeOperationsState(operations);
+  const applied = {};
+  for (const key of Object.keys(SHIP_COMPONENTS)) {
+    const amount = clamp(Math.round(Number(damage[key] || 0)), 0, 100);
+    const before = next.components[key];
+    next.components[key] = clamp(before - amount, 0, 100);
+    applied[key] = before - next.components[key];
+  }
+  next.condition = shipCondition(next.components);
+  return { operations: next, applied };
 }
 
 export function factionPrivilege(standing = 0) {
@@ -127,18 +179,24 @@ export function resolveHostileEncounter({
       encountered: false,
       repelled: false,
       conditionDamage: 0,
+      componentDamage: {},
       moraleChange: 0,
       coinsLost: 0,
     };
 
   const attackStrength = 1 + Math.floor(encounterRoll(seed + 1) * 3);
   const repelled = defense >= attackStrength;
+  const conditionDamage = repelled
+    ? Math.max(0, attackStrength - defense)
+    : 3 + attackStrength * 2;
   return {
     encountered: true,
     repelled,
-    conditionDamage: repelled
-      ? Math.max(0, attackStrength - defense)
-      : 3 + attackStrength * 2,
+    conditionDamage,
+    componentDamage: {
+      hull: Math.ceil(conditionDamage * 0.7),
+      weapons: Math.floor(conditionDamage * 0.3),
+    },
     moraleChange: repelled ? 4 : -8 - attackStrength * 2,
     coinsLost: repelled ? 0 : 8 + attackStrength * 7,
   };
@@ -162,7 +220,24 @@ export function resolveVoyageOperations(
     0,
     35,
   );
-  next.condition = clamp(next.condition - damage, 0, 100);
+  const rawWeights = {
+    hull: 1.15 + roughness * 0.2,
+    rigging: 0.9 + roughness * 0.45,
+    rudder: 0.85 + roughness * 0.15,
+    fittings: 0.8 + roughness * 0.25,
+    weapons: 0.45,
+  };
+  const weightAverage =
+    Object.values(rawWeights).reduce((sum, weight) => sum + weight, 0) /
+    Object.keys(rawWeights).length;
+  const componentDamage = Object.fromEntries(
+    Object.entries(rawWeights).map(([key, weight]) => [
+      key,
+      Math.round((damage * weight) / weightAverage),
+    ]),
+  );
+  const damaged = applyComponentDamage(next, componentDamage);
+  Object.assign(next, damaged.operations);
   const comfortRecovery = (stats.crewComfort - 1) * days * 3;
   const moraleChange =
     comfortRecovery - days * 1.5 - shortage * 7 - damage * 0.25;
@@ -174,7 +249,13 @@ export function resolveVoyageOperations(
     provisionsUsed,
     shortage,
     damage,
-    speedMultiplier: clamp(0.7 + next.morale / 250, 0.7, 1.08),
+    componentDamage: damaged.applied,
+    speedMultiplier:
+      clamp(0.7 + next.morale / 250, 0.7, 1.08) *
+      Math.min(
+        componentEfficiency(next.components.rigging),
+        componentEfficiency(next.components.rudder),
+      ),
   };
 }
 
@@ -199,10 +280,40 @@ export function processWages(operations, day, coins, wage = 18) {
 
 export function repairOperations(operations, coins) {
   const next = normalizeOperationsState(operations);
-  const missing = 100 - next.condition;
-  const repair = Math.min(missing, Math.floor(coins / 2));
-  next.condition += repair;
-  return { operations: next, coins: coins - repair * 2, repaired: repair };
+  let repaired = 0;
+  while (coins >= 2 && next.condition < 100) {
+    const key = Object.keys(SHIP_COMPONENTS).sort(
+      (left, right) => next.components[left] - next.components[right],
+    )[0];
+    next.components[key] += 1;
+    coins -= SHIP_COMPONENTS[key].repairCost;
+    repaired += 1;
+    next.condition = shipCondition(next.components);
+  }
+  return { operations: next, coins, repaired };
+}
+
+export function repairShipComponent(operations, coins, component) {
+  const next = normalizeOperationsState(operations);
+  const definition = SHIP_COMPONENTS[component];
+  if (!definition)
+    return {
+      ok: false,
+      reason: "Unknown ship component.",
+      operations: next,
+      coins,
+    };
+  const missing = 100 - next.components[component];
+  const repaired = Math.min(missing, Math.floor(coins / definition.repairCost));
+  next.components[component] += repaired;
+  next.condition = shipCondition(next.components);
+  return {
+    ok: true,
+    operations: next,
+    coins: coins - repaired * definition.repairCost,
+    repaired,
+    component,
+  };
 }
 
 export function buyProvisions(operations, coins, units = 5) {

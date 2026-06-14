@@ -13,6 +13,25 @@ const LEGAL_LABELS = Object.freeze({
   counterfeit: "Counterfeit",
 });
 
+export const CARGO_COMPARTMENTS = Object.freeze({
+  main: {
+    label: "Main hold",
+    description: "General stowage without special protection.",
+  },
+  secured: {
+    label: "Secured racks",
+    description: "Braced storage that halves breakage risk.",
+  },
+  dry: {
+    label: "Dry locker",
+    description: "Ventilated storage that slows spoilage.",
+  },
+  concealed: {
+    label: "Concealed locker",
+    description: "Hidden storage that sharply reduces customs risk.",
+  },
+});
+
 function hash(text) {
   let value = 2166136261;
   for (const character of text) {
@@ -55,10 +74,90 @@ export function createCargoLot({
     factionOwner:
       special && roll % 7 === 0 ? good.faction || "Independent Factors" : null,
     perishRate: good.perishRate || 0,
+    compartment: "main",
   };
 }
 
-export function normalizeCargoLots(game, goods, fallbackOrigin = "Unknown") {
+export function cargoCompartmentCapacities(
+  holdMax,
+  { concealedLocker = false } = {},
+) {
+  const capacity = Math.max(0, Math.floor(holdMax));
+  const secured = Math.min(3, capacity);
+  const dry = Math.min(3, Math.max(0, capacity - secured));
+  const concealed = concealedLocker
+    ? Math.min(2, Math.max(0, capacity - secured - dry))
+    : 0;
+  return {
+    main: Math.max(0, capacity - secured - dry - concealed),
+    secured,
+    dry,
+    concealed,
+  };
+}
+
+export function compartmentUsage(lots) {
+  const usage = Object.fromEntries(
+    Object.keys(CARGO_COMPARTMENTS).map((key) => [key, 0]),
+  );
+  for (const lot of lots)
+    usage[lot.compartment] = (usage[lot.compartment] || 0) + 1;
+  return usage;
+}
+
+export function normalizeCargoCompartments(lots, capacities) {
+  const usage = Object.fromEntries(
+    Object.keys(CARGO_COMPARTMENTS).map((key) => [key, 0]),
+  );
+  for (const lot of lots) {
+    const requested = CARGO_COMPARTMENTS[lot.compartment]
+      ? lot.compartment
+      : "main";
+    const available = Object.keys(CARGO_COMPARTMENTS).find(
+      (key) => usage[key] < (capacities[key] || 0),
+    );
+    const compartment =
+      usage[requested] < (capacities[requested] || 0) ? requested : available;
+    lot.compartment = compartment || "main";
+    usage[lot.compartment] = (usage[lot.compartment] || 0) + 1;
+  }
+  return lots;
+}
+
+export function moveCargoLot(lots, lotId, compartment, capacities) {
+  const lot = lots.find((candidate) => candidate.id === lotId);
+  if (!lot) return { ok: false, reason: "Cargo lot not found." };
+  if (!CARGO_COMPARTMENTS[compartment])
+    return { ok: false, reason: "Unknown cargo compartment." };
+  if (lot.compartment === compartment) return { ok: true, lot };
+  const usage = compartmentUsage(lots);
+  if (usage[compartment] >= (capacities[compartment] || 0))
+    return { ok: false, reason: "That compartment is full." };
+  lot.compartment = compartment;
+  return { ok: true, lot };
+}
+
+export function bestCargoCompartment(lot, capacities, lots) {
+  const usage = compartmentUsage(lots);
+  const preferences =
+    lot.legalStatus !== "legal"
+      ? ["concealed", "secured", "main", "dry"]
+      : lot.perishRate
+        ? ["dry", "secured", "main", "concealed"]
+        : lot.fragility
+          ? ["secured", "main", "dry", "concealed"]
+          : ["main", "secured", "dry", "concealed"];
+  return (
+    preferences.find((key) => usage[key] < (capacities[key] || 0)) || "main"
+  );
+}
+
+export function normalizeCargoLots(
+  game,
+  goods,
+  fallbackOrigin = "Unknown",
+  capacities,
+) {
   game.cargoLots = Array.isArray(game.cargoLots) ? game.cargoLots : [];
   const byKey = Object.groupBy
     ? Object.groupBy(game.cargoLots, (lot) => lot.key)
@@ -82,9 +181,11 @@ export function normalizeCargoLots(game, goods, fallbackOrigin = "Unknown") {
         fragility: 0,
         factionOwner: null,
         perishRate: goods[key].perishRate || 0,
+        compartment: "main",
       });
     }
   }
+  if (capacities) normalizeCargoCompartments(game.cargoLots, capacities);
   syncCargoCounts(game, goods);
   return game.cargoLots;
 }
@@ -111,7 +212,10 @@ export function cargoValueMultiplier(lot, destination, good = {}) {
 }
 
 export function ageCargo(lots, days) {
-  for (const lot of lots) lot.age = Math.max(0, (lot.age || 0) + days);
+  for (const lot of lots) {
+    const protection = lot.compartment === "dry" ? 0.45 : 1;
+    lot.age = Math.max(0, (lot.age || 0) + days * protection);
+  }
 }
 
 export function resolveVoyageCargo(
@@ -125,18 +229,20 @@ export function resolveVoyageCargo(
   for (const lot of lots) {
     const roll =
       (hash(`${lot.id}:${seed}:${Math.round(distance)}`) % 10000) / 10000;
+    const breakProtection = lot.compartment === "secured" ? 0.45 : 1;
     const breakRisk = clamp(
-      (lot.fragility || 0) * roughness * (distance / 1800),
+      (lot.fragility || 0) * breakProtection * roughness * (distance / 1800),
       0,
       0.8,
     );
     const inspectionRoll =
       (hash(`${lot.id}:inspection:${seed}`) % 10000) / 10000;
     const illegal = lot.legalStatus !== "legal";
+    const concealment = lot.compartment === "concealed" ? 0.2 : 1;
     if (roll < breakRisk) lost.push(lot);
     else if (
       illegal &&
-      inspectionRoll < clamp(0.16 * inspectionRisk, 0.02, 1)
+      inspectionRoll < clamp(0.16 * inspectionRisk * concealment, 0.02, 1)
     ) {
       confiscated.push(lot);
       if (lot.legalStatus === "counterfeit") counterfeits.push(lot);
@@ -155,5 +261,7 @@ export function cargoLotDescription(lot) {
     details.push(lot.fragility >= 0.7 ? "very fragile" : "fragile");
   if (lot.legalStatus !== "legal") details.push(LEGAL_LABELS[lot.legalStatus]);
   if (lot.factionOwner) details.push(`${lot.factionOwner} cargo`);
+  if (CARGO_COMPARTMENTS[lot.compartment])
+    details.push(CARGO_COMPARTMENTS[lot.compartment].label);
   return details.join(" · ");
 }
