@@ -135,7 +135,12 @@ import {
   roughSeas,
   weatherPatterns,
 } from "./world-data.js";
-import { createMapRendering, drawMerchantShip, drawShip } from "./rendering.js";
+import {
+  createMapRendering,
+  createRoughSeaParticles,
+  drawMerchantShip,
+  drawShip,
+} from "./rendering.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -1990,6 +1995,8 @@ function onLand(x, y) {
   const wx = wrapX(x);
   return lands.some((land) => pointInPolygon(wx, y, land.poly));
 }
+
+const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
 function buildVisibilityPolygon(force = false) {
   const radius = currentVisibilityKm() * visibility.worldUnitsPerKm;
   const moved = Math.hypot(
@@ -2194,22 +2201,16 @@ function drawAnimatedRoughSeas(c, time, z) {
     )
       continue;
 
-    const rnd = seeded(9300 + seaIndex * 131);
-    const count = Math.round(22 * sea.strength);
-    for (let i = 0; i < count; i++) {
-      const baseX = (rnd() - 0.5) * sea.rx * 1.75;
-      const baseY = (rnd() - 0.5) * sea.ry * 1.75;
-      const phase = time * (0.00042 + rnd() * 0.0002) + rnd() * Math.PI * 2;
-      const swell = 4 + rnd() * 7;
-      const x = nearestX + baseX + Math.cos(phase) * swell;
-      const y = sea.y + baseY + Math.sin(phase * 1.35) * swell * 0.45;
-      if (onLand(x, y)) continue;
-      const scale = 0.7 + rnd() * 0.7;
+    for (const particle of roughSeaParticles[seaIndex]) {
+      const phase = time * particle.speed + particle.phaseOffset;
+      const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
+      const y =
+        sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
       const crest = (Math.sin(phase) + 1) * 0.5;
       c.save();
       c.translate(x, y);
-      c.rotate(sea.angle + (rnd() - 0.5) * 0.24);
-      c.scale(scale, scale);
+      c.rotate(particle.rotation);
+      c.scale(particle.scale, particle.scale);
       c.strokeStyle = `rgba(249,232,184,${0.1 + crest * 0.2})`;
       c.lineWidth = (1.2 + crest) / z;
       c.beginPath();
