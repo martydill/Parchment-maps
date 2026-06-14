@@ -155,10 +155,16 @@ export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
   c.restore();
 }
 
-export function drawShip(c, x, y, a) {
+export function drawShip(c, x, y, a, windAngle = 0, windStrength = 0) {
   c.save();
   c.translate(x, y);
   c.rotate(a + Math.PI / 2);
+
+  const localWind = windAngle - a;
+  const billow = windStrength * 8;
+  const flutter = Math.sin(performance.now() / 150) * (windStrength * 2);
+  const bx = Math.cos(localWind) * (billow + flutter);
+  const by = Math.sin(localWind) * (billow + flutter);
 
   c.fillStyle = "rgba(37,25,14,.2)";
   c.beginPath();
@@ -236,8 +242,8 @@ export function drawShip(c, x, y, a) {
   c.fillStyle = "#ead9aa";
   c.beginPath();
   c.moveTo(1, -12);
-  c.quadraticCurveTo(12, -5, 17, 6);
-  c.quadraticCurveTo(9, 5, 1, 10);
+  c.quadraticCurveTo(12 + bx, -5 + by, 17 + bx, 6 + by);
+  c.quadraticCurveTo(9 + bx, 5 + by, 1, 10);
   c.closePath();
   c.fill();
   strokeHandDrawn(
@@ -245,8 +251,8 @@ export function drawShip(c, x, y, a) {
     () => {
       c.beginPath();
       c.moveTo(1, -12);
-      c.quadraticCurveTo(12, -5, 17, 6);
-      c.quadraticCurveTo(9, 5, 1, 10);
+      c.quadraticCurveTo(12 + bx, -5 + by, 17 + bx, 6 + by);
+      c.quadraticCurveTo(9 + bx, 5 + by, 1, 10);
       c.closePath();
     },
     "#493321",
@@ -258,9 +264,9 @@ export function drawShip(c, x, y, a) {
     () => {
       c.beginPath();
       c.moveTo(3, -8);
-      c.quadraticCurveTo(8, -5, 13, 1);
+      c.quadraticCurveTo(8 + bx * 0.5, -5 + by * 0.5, 13 + bx, 1 + by);
       c.moveTo(3, 5);
-      c.quadraticCurveTo(8, 3, 14, 4);
+      c.quadraticCurveTo(8 + bx * 0.5, 3 + by * 0.5, 14 + bx, 4 + by);
     },
     "rgba(122,88,49,.55)",
     0.7,
@@ -268,8 +274,10 @@ export function drawShip(c, x, y, a) {
 
   c.fillStyle = "#9c3d2c";
   c.beginPath();
+  const jbx = bx * 0.4;
+  const jby = by * 0.4;
   c.moveTo(2, -5);
-  c.quadraticCurveTo(8, -2, 12, 0);
+  c.quadraticCurveTo(8 + jbx, -2 + jby, 12 + jbx, 0 + jby);
   c.lineTo(2, 3);
   c.closePath();
   c.fill();

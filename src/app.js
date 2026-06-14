@@ -2867,7 +2867,7 @@ function render() {
   ctx.translate(vw / 2, vh / 2);
   ctx.scale(z, z);
   ctx.translate(-camera.x, -camera.y);
-  drawShip(ctx, ship.x, ship.y, ship.angle);
+  drawShip(ctx, ship.x, ship.y, ship.angle, game.windAngle, game.windStrength);
   if (nearPort) {
     const px = nearestWrappedX(nearPort.x, ship.x);
     ctx.strokeStyle = "rgba(173,54,39,.85)";
