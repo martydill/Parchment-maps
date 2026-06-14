@@ -2593,6 +2593,21 @@ function drawCompassRose(c, cx, cy, r = 86) {
   c.fillText("E", r + 18, 7);
   c.restore();
 }
+
+function roundedRectPath(c, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  c.moveTo(x + safeRadius, y);
+  c.lineTo(x + width - safeRadius, y);
+  c.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  c.lineTo(x + width, y + height - safeRadius);
+  c.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  c.lineTo(x + safeRadius, y + height);
+  c.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  c.lineTo(x, y + safeRadius);
+  c.quadraticCurveTo(x, y, x + safeRadius, y);
+  c.closePath();
+}
+
 function drawParchmentBase(c) {
   c.clearRect(0, 0, WORLD.w, WORLD.h);
   const base = c.createLinearGradient(0, 0, 0, WORLD.h);
@@ -3006,7 +3021,7 @@ function buildMapLayer() {
   m.fillStyle = "rgba(222,195,135,.25)";
   m.lineWidth = 2;
   m.beginPath();
-  m.roundRect(-130, -45, 260, 90, 18);
+  roundedRectPath(m, -130, -45, 260, 90, 18);
   m.fill();
   m.stroke();
   m.fillStyle = "rgba(47,29,15,.78)";
