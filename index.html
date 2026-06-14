@@ -58,6 +58,14 @@
       >
         📜
       </button>
+      <button
+        id="menuButton"
+        class="main-icon-button"
+        aria-label="Open game menu"
+        data-tooltip="Menu"
+      >
+        ☰
+      </button>
       <div
         id="joystick"
         aria-label="Drag toward the direction you want to sail"
@@ -73,7 +81,8 @@
         direction you drag. Release to coast.
       </div>
       <div id="steeringStatus">AT ANCHOR · DRAG THE WHEEL TO SAIL</div>
-      <button id="dockButton">DOCK</button>
+      <button id="townButton" data-tooltip="Inspect town">TOWN</button>
+      <button id="dockButton" data-tooltip="Dock and trade">DOCK</button>
       <button id="exploreButton">EXPLORE</button>
     </div>
 
@@ -430,6 +439,20 @@
           <div id="newsLedger"></div>
         </div>
         <button class="parchment" id="closeLedger">Close Ledger</button>
+      </div>
+    </div>
+
+    <div id="menuPanel">
+      <div class="scroll menu-scroll">
+        <h2>Game Menu</h2>
+        <div class="ornament">✦ ☙ ⚓ ❧ ✦</div>
+        <p>Your progress is saved automatically at each port, but you can also manage your voyage here.</p>
+        <div class="menu-options">
+          <button class="parchment" id="newGameButton">New Game</button>
+          <button class="parchment" id="saveGameButton">Save Game</button>
+          <button class="parchment" id="loadGameButton">Load Game</button>
+        </div>
+        <button class="parchment" id="closeMenu">Close Menu</button>
       </div>
     </div>
 

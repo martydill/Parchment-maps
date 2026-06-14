@@ -2267,6 +2267,7 @@ const ui = {
   day: document.getElementById("dayText"),
   hold: document.getElementById("holdText"),
   dock: document.getElementById("dockButton"),
+  town: document.getElementById("townButton"),
   explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
   controlHint: document.getElementById("controlHint"),
@@ -2286,6 +2287,7 @@ function beginGame() {
   gameStarted = true;
   intro.style.display = "none";
   ui.dock.style.display = "block";
+  ui.town.style.display = "block";
   revealCurrentView(true);
   addNews(
     "The first commission",
@@ -3003,6 +3005,7 @@ function update(dt) {
     }
   }
   ui.dock.style.display = nearPort ? "block" : "none";
+  ui.town.style.display = nearPort ? "block" : "none";
   nearExplorationSite = null;
   if (!nearPort && ship.speed < 8) {
     let nearestSiteDistance = Infinity;
@@ -4682,6 +4685,7 @@ function undertakeExpedition(site, approach) {
 }
 
 ui.dock.addEventListener("click", openPort);
+ui.town.addEventListener("click", () => openTownDetails(nearPort));
 ui.explore.addEventListener("click", openExploration);
 document
   .getElementById("closeExploration")
@@ -4777,6 +4781,39 @@ document
   .addEventListener("click", () => (ledgerPanel.style.display = "none"));
 ledgerPanel.addEventListener("click", (e) => {
   if (e.target === ledgerPanel) ledgerPanel.style.display = "none";
+});
+
+const menuButton = document.getElementById("menuButton"),
+  menuPanel = document.getElementById("menuPanel");
+menuButton.addEventListener("click", () => {
+  menuPanel.style.display = "grid";
+});
+document
+  .getElementById("closeMenu")
+  .addEventListener("click", () => (menuPanel.style.display = "none"));
+menuPanel.addEventListener("click", (e) => {
+  if (e.target === menuPanel) menuPanel.style.display = "none";
+});
+document.getElementById("newGameButton").addEventListener("click", () => {
+  if (confirm("Begin a new voyage? Your current progress will be lost.")) {
+    gameStarted = false;
+    localStorage.removeItem(SAVE_KEY);
+    location.reload();
+  }
+});
+document.getElementById("saveGameButton").addEventListener("click", () => {
+  saveGameState();
+  showMessage("Voyage progress saved.");
+  menuPanel.style.display = "none";
+});
+document.getElementById("loadGameButton").addEventListener("click", () => {
+  if (loadGameState()) {
+    updateHud();
+    if (gameStarted) {
+      document.getElementById("intro").style.display = "none";
+    }
+    menuPanel.style.display = "none";
+  }
 });
 function renderChart() {
   buildVisibilityPolygon(true);
@@ -4900,6 +4937,7 @@ if (restoredSavedGame && gameStarted) {
       (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
     ) || null;
   ui.dock.style.display = nearPort ? "block" : "none";
+  ui.town.style.display = nearPort ? "block" : "none";
   revealCurrentView(true);
   showMessage("Voyage restored from this browser.", 3);
 } else if (new URLSearchParams(location.search).has("autostart")) {

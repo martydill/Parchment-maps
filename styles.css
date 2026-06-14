@@ -84,6 +84,7 @@ body {
 #message.show {
   opacity: 1;
 }
+#townButton,
 #dockButton,
 #exploreButton,
 #mapButton {
@@ -110,9 +111,25 @@ body {
 }
 #dockButton {
   bottom: calc(24px + env(safe-area-inset-bottom));
-  width: 74px;
-  height: 74px;
+  width: 50px;
+  height: 50px;
   display: none;
+}
+#townButton {
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  width: 50px;
+  height: 50px;
+  display: none;
+  background: radial-gradient(
+    circle at 42% 30%,
+    rgba(91, 116, 158, 0.96),
+    rgba(42, 54, 82, 0.98) 58%,
+    rgba(21, 28, 46, 0.99) 100%
+  );
+}
+#dockButton,
+#townButton {
+  font-size: 11px;
 }
 #exploreButton {
   pointer-events: auto;
@@ -153,7 +170,9 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.main-icon-button::after {
+.main-icon-button::after,
+#dockButton::after,
+#townButton::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 50%;
@@ -182,7 +201,11 @@ body {
   z-index: 2;
 }
 .main-icon-button:hover::after,
-.main-icon-button:focus-visible::after {
+.main-icon-button:focus-visible::after,
+#dockButton:hover::after,
+#dockButton:focus-visible::after,
+#townButton:hover::after,
+#townButton:focus-visible::after {
   transform: translateY(-50%) translateX(0);
   opacity: 1;
 }
@@ -919,10 +942,6 @@ button.parchment {
   #joystick {
     opacity: 0.35;
   }
-  #dockButton {
-    width: 66px;
-    height: 66px;
-  }
 }
 
 #ledgerButton {
@@ -947,6 +966,28 @@ button.parchment {
     inset 0 -8px 16px rgba(0, 0, 0, 0.3);
   font-size: 21px;
 }
+#menuButton {
+  pointer-events: auto;
+  position: absolute;
+  right: 18px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 177px);
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(245, 216, 143, 0.76);
+  border-radius: 50%;
+  color: #fff0c5;
+  background: radial-gradient(
+    circle at 42% 30%,
+    rgba(66, 66, 66, 0.95),
+    rgba(33, 33, 33, 0.97) 58%,
+    rgba(15, 15, 15, 0.98) 100%
+  );
+  box-shadow:
+    0 5px 18px rgba(0, 0, 0, 0.52),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.12),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.3);
+  font-size: 21px;
+}
 #objectiveText {
   display: block;
   margin-top: 3px;
@@ -955,7 +996,8 @@ button.parchment {
   max-width: 180px;
   white-space: normal;
 }
-#ledgerPanel {
+#ledgerPanel,
+#menuPanel {
   pointer-events: auto;
   position: fixed;
   inset: 0;
@@ -966,8 +1008,22 @@ button.parchment {
   backdrop-filter: blur(2px);
 }
 .ledger-scroll,
+.menu-scroll,
 .port-scroll {
   width: min(94vw, 760px);
+}
+.menu-scroll {
+  text-align: center;
+}
+.menu-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 24px auto;
+  max-width: 300px;
+}
+.menu-options button {
+  width: 100%;
 }
 /* Dock panel: a compact header and a section tab bar sit above a single
    scrolling body, so each port area is one tap away instead of one long
@@ -1392,6 +1448,9 @@ button.parchment {
 @media (max-width: 560px) {
   #ledgerButton {
     top: calc(max(10px, env(safe-area-inset-top)) + 116px);
+  }
+  #menuButton {
+    top: calc(max(10px, env(safe-area-inset-top)) + 172px);
   }
   .contract-head,
   .law-head {
