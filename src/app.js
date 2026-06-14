@@ -44,20 +44,33 @@ import {
   bestCargoCompartment,
   cargoCompartmentCapacities,
   CARGO_COMPARTMENTS,
+  cargoCondition,
   cargoLotDescription,
   cargoValueMultiplier,
   createCargoLot,
   moveCargoLot,
   normalizeCargoCompartments,
+  normalizeCargoLot,
   normalizeCargoLots,
   resolveVoyageCargo,
   syncCargoCounts,
 } from "./core/cargo.js";
 import {
+  ageWarehouseCargo,
+  depositCargo,
+  leaseWarehouse,
+  normalizeWarehouseState,
+  warehouseAt,
+  warehouseLeaseCost,
+  withdrawCargo,
+} from "./core/warehouses.js";
+import {
   buyOrEquipUpgrade,
+  buyOrSelectShipClass,
   calculateShipIdentity,
   calculateShipStats,
   normalizeShipUpgradeState,
+  SHIP_CLASSES,
   SHIP_IDENTITIES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
@@ -234,6 +247,8 @@ function currentWeather() {
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
+  document.getElementById("shipName").textContent =
+    SHIP_CLASSES[game.shipUpgrades.activeClass].vesselName;
   const stats = operationalShipStats();
   game.holdMax = stats.holdMax;
   ship.maxSpeed = stats.maxSpeed;
@@ -257,6 +272,10 @@ function operationalShipStats() {
   stats.stormResistance *= hull;
   stats.defense *= componentEfficiency(components.weapons);
   return stats;
+}
+
+function activeShipClass() {
+  return SHIP_CLASSES[game.shipUpgrades.activeClass];
 }
 
 function cargoCapacities() {
@@ -1169,6 +1188,7 @@ function advanceDays(days) {
   for (let i = 0; i < days; i++) {
     game.day++;
     ageCargo(game.cargoLots, 1);
+    ageWarehouseCargo(game.warehouses, 1);
     const wages = processWages(game.operations, game.day, game.coins);
     game.operations = wages.operations;
     game.coins = wages.coins;
@@ -2073,6 +2093,7 @@ function loadGameState() {
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
   game.legal = normalizeLegalState(game.legal);
+  game.warehouses = normalizeWarehouseState(game.warehouses);
   game.regionalEconomy = normalizeRegionalState(
     game.regionalEconomy,
     regionalPortSpecifications(),
@@ -2085,6 +2106,19 @@ function loadGameState() {
       : [];
   }
   normalizeCargoLots(game, goods, "Legacy manifest", cargoCapacities());
+  for (const [portName, warehouse] of Object.entries(game.warehouses))
+    warehouse.lots = warehouse.lots
+      .filter((lot) => goods[lot?.key])
+      .map((lot, index) =>
+        normalizeCargoLot(
+          lot,
+          lot.key,
+          goods[lot.key],
+          portName,
+          game.day,
+          index,
+        ),
+      );
   game.productionReports ||= {};
   const freshEconomy = createEconomyState(ports, goods);
   for (const port of ports) {
@@ -3323,6 +3357,7 @@ function renderPortSystems() {
   renderMarket();
   renderCustomsOffice();
   renderCargoPlan();
+  renderWarehouse();
   renderProductionChains();
   renderPortEvent();
   renderIntelOffice();
@@ -3447,6 +3482,133 @@ function renderCargoPlan() {
     }
     root.append(section);
   }
+}
+
+function localWarehouseStanding() {
+  return Math.max(
+    0,
+    ...currentPort.factions.map(
+      (faction) => game.factionStanding[faction.name] || 0,
+    ),
+  );
+}
+
+function renderWarehouse() {
+  const root = document.getElementById("warehouse");
+  root.innerHTML = "";
+  const warehouse = warehouseAt(game.warehouses, currentPort.name);
+  if (!warehouse?.leased) {
+    const standing = localWarehouseStanding();
+    const cost = warehouseLeaseCost(standing);
+    const note = document.createElement("p");
+    note.className = "empty-note";
+    note.textContent =
+      standing >= 10
+        ? "Trusted local factors offer you a reduced permanent lease."
+        : "A permanent lease stores up to 24 cargo lots at this port.";
+    const lease = document.createElement("button");
+    lease.className = "parchment";
+    lease.textContent = `Lease warehouse · ${cost} crowns`;
+    lease.disabled = game.coins < cost;
+    lease.onclick = () => {
+      const result = leaseWarehouse(
+        game.warehouses,
+        currentPort.name,
+        game.coins,
+        localWarehouseStanding(),
+      );
+      if (!result.ok) return showMessage(result.reason);
+      game.coins = result.coins;
+      addNews(
+        `Warehouse leased at ${currentPort.name}`,
+        `${result.cost} crowns secured permanent storage for 24 cargo lots.`,
+      );
+      renderPortSystems();
+      updateHud();
+    };
+    root.append(note, lease);
+    return;
+  }
+
+  const summary = document.createElement("div");
+  summary.className = "warehouse-summary";
+  summary.innerHTML = `<b>${warehouse.lots.length}/${warehouse.capacity} lots stored</b><span>Permanent local inventory · sheltered aging</span>`;
+  root.append(summary);
+
+  const grid = document.createElement("div");
+  grid.className = "warehouse-grid";
+  const aboard = document.createElement("section");
+  const stored = document.createElement("section");
+  aboard.className = "warehouse-column";
+  stored.className = "warehouse-column";
+  aboard.innerHTML = `<h4>Aboard ${activeShipClass().vesselName}</h4>`;
+  stored.innerHTML = `<h4>${currentPort.name} warehouse</h4>`;
+
+  if (!game.cargoLots.length)
+    aboard.insertAdjacentHTML(
+      "beforeend",
+      '<p class="empty-note">No trade cargo aboard.</p>',
+    );
+  for (const lot of game.cargoLots) {
+    const row = document.createElement("div");
+    row.className = "warehouse-lot-row";
+    const details = document.createElement("span");
+    details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
+    const button = document.createElement("button");
+    button.textContent = "Store";
+    button.disabled = warehouse.lots.length >= warehouse.capacity;
+    button.onclick = () => {
+      const result = depositCargo(
+        game.warehouses,
+        currentPort.name,
+        game.cargoLots,
+        lot.id,
+      );
+      if (!result.ok) return showMessage(result.reason);
+      syncCargoCounts(game, goods);
+      renderPortSystems();
+      updateHud();
+    };
+    row.append(details, button);
+    aboard.append(row);
+  }
+
+  if (!warehouse.lots.length)
+    stored.insertAdjacentHTML(
+      "beforeend",
+      '<p class="empty-note">The warehouse is empty.</p>',
+    );
+  for (const lot of warehouse.lots) {
+    const row = document.createElement("div");
+    row.className = "warehouse-lot-row";
+    const details = document.createElement("span");
+    details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
+    const button = document.createElement("button");
+    button.textContent = "Load";
+    button.disabled = cargoCount() >= game.holdMax;
+    button.onclick = () => {
+      const result = withdrawCargo(
+        game.warehouses,
+        currentPort.name,
+        game.cargoLots,
+        lot.id,
+        game.holdMax - cargoCount(),
+      );
+      if (!result.ok) return showMessage(result.reason);
+      result.lot.compartment = bestCargoCompartment(
+        result.lot,
+        cargoCapacities(),
+        game.cargoLots.filter((item) => item.id !== result.lot.id),
+      );
+      syncCargoCounts(game, goods);
+      renderPortSystems();
+      updateHud();
+    };
+    row.append(details, button);
+    stored.append(row);
+  }
+  grid.append(aboard, stored);
+  root.append(grid);
 }
 
 function renderReadiness() {
@@ -3648,11 +3810,18 @@ function renderShipyard() {
   root.innerHTML = "";
   const stats = applyShipUpgrades();
   const identity = calculateShipIdentity(game.shipUpgrades);
+  const activeClass = SHIP_CLASSES[game.shipUpgrades.activeClass];
   const shipStats = document.getElementById("shipStats");
   shipStats.innerHTML =
     "<strong>" +
-    identity.name +
+    activeClass.vesselName +
+    " · " +
+    activeClass.name +
     "</strong><span>" +
+    activeClass.description +
+    "</span><span>Fitting identity: <b>" +
+    identity.name +
+    "</b> · " +
     identity.description +
     "</span><span>" +
     stats.holdMax +
@@ -3665,6 +3834,47 @@ function renderShipyard() {
     " km sight · defense " +
     stats.defense +
     "</span>";
+  const classSection = document.createElement("div");
+  classSection.className = "ship-class-section";
+  classSection.innerHTML =
+    '<h4>Vessels</h4><p class="small">Purchase ships once, then change vessels freely while docked. Fittings transfer between your owned ships.</p>';
+  const classGrid = document.createElement("div");
+  classGrid.className = "ship-class-grid";
+  for (const item of Object.values(SHIP_CLASSES)) {
+    const active = game.shipUpgrades.activeClass === item.id;
+    const owned = game.shipUpgrades.ownedClasses.includes(item.id);
+    const row = document.createElement("div");
+    row.className = "ship-class-option" + (active ? " active" : "");
+    const details = document.createElement("div");
+    details.innerHTML =
+      `<b>${item.name}</b><span class="ship-name">${item.vesselName}</span>` +
+      `<span class="small">${item.description}</span>` +
+      `<span class="upgrade-effects">${upgradeEffects(item)}</span>`;
+    const button = document.createElement("button");
+    button.textContent = active
+      ? "Active"
+      : owned
+        ? "Select"
+        : `Buy ${item.cost}`;
+    button.disabled = active || (!owned && game.coins < item.cost);
+    button.onclick = () => {
+      const result = buyOrSelectShipClass(game, item.id, cargoCount());
+      if (!result.ok) return showMessage(result.reason);
+      applyShipUpgrades();
+      normalizeCargoCompartments(game.cargoLots, cargoCapacities());
+      showMessage(
+        result.purchased
+          ? `Purchased ${item.vesselName}, a ${item.name.toLowerCase()}.`
+          : `${item.vesselName} is now your active vessel.`,
+      );
+      renderPortSystems();
+      updateHud();
+    };
+    row.append(details, button);
+    classGrid.append(row);
+  }
+  classSection.append(classGrid);
+  root.append(classSection);
   for (const slot of UPGRADE_SLOTS) {
     const section = document.createElement("div");
     section.className = "upgrade-slot";
@@ -3761,7 +3971,9 @@ function openPort() {
       const coinsLost = Math.min(game.coins, encounter.coinsLost);
       game.coins -= coinsLost;
       addNews(
-        encounter.repelled ? "Raiders repelled" : "Raiders board The Wren",
+        encounter.repelled
+          ? "Raiders repelled"
+          : `Raiders board ${activeShipClass().vesselName}`,
         encounter.repelled
           ? `The ship's defensive armament drove off attackers. Crew morale rose after the victory.`
           : `Attackers caused ${encounter.conditionDamage}% damage and stole ${coinsLost} crowns. Better defensive armament could deter or repel future raids.`,
@@ -3933,10 +4145,13 @@ function renderMarket() {
       (lots.length
         ? '<span class="cargo-manifest">' +
           lots
-            .map(
-              (lot, index) =>
-                `<span><b>#${index + 1}</b> ${cargoLotDescription(lot)}</span>`,
-            )
+            .map((lot, index) => {
+              const value = Math.round(
+                cargoValueMultiplier(lot, currentPort.name, goods[key]) * 100,
+              );
+              const condition = cargoCondition(lot, goods[key]);
+              return `<span class="cargo-quality quality-${lot.quality} condition-${condition.id}"><b>#${index + 1}</b> ${cargoLotDescription(lot)} · ${value}% market value</span>`;
+            })
             .join("") +
           "</span>"
         : "");

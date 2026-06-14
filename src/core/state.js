@@ -5,6 +5,7 @@ import { applyStandingChange } from "./factions.js";
 import { createExplorationState } from "./exploration.js";
 import { createCrisisState } from "./crises.js";
 import { createLegalState } from "./jurisdictions.js";
+import { createWarehouseState } from "./warehouses.js";
 
 export function createGameState() {
   return {
@@ -51,6 +52,7 @@ export function createGameState() {
     operations: createOperationsState(),
     regionalEconomy: {},
     legal: createLegalState(),
+    warehouses: createWarehouseState(),
   };
 }
 

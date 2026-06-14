@@ -11,6 +11,82 @@ export const BASE_SHIP_STATS = Object.freeze({
   defense: 0,
 });
 
+export const SHIP_CLASSES = Object.freeze({
+  cutter: shipClass(
+    "cutter",
+    "Merchant cutter",
+    "The Wren",
+    0,
+    "A balanced coastal trader: inexpensive, responsive, and adaptable.",
+    {},
+  ),
+  sloop: shipClass(
+    "sloop",
+    "Courier sloop",
+    "The Peregrine",
+    260,
+    "A narrow, fast dispatch vessel with limited room for speculative cargo.",
+    { maxSpeed: 24, accel: 18, turnRate: 0.24, holdMax: -5 },
+  ),
+  carrack: shipClass(
+    "carrack",
+    "Deepwater carrack",
+    "The Atlas",
+    360,
+    "A broad-beamed ocean carrier that exchanges speed and agility for capacity.",
+    {
+      holdMax: 12,
+      maxSpeed: -18,
+      accel: -14,
+      turnRate: -0.34,
+      stormResistance: 0.12,
+    },
+  ),
+  barque: shipClass(
+    "barque",
+    "Survey barque",
+    "The Far Horizon",
+    320,
+    "A long-range exploration vessel with a tall observation platform and hardened hull.",
+    {
+      visibilityHeightM: 7,
+      stormResistance: 0.22,
+      crewComfort: 0.18,
+      holdMax: -3,
+      maxSpeed: -6,
+    },
+  ),
+  brig: shipClass(
+    "brig",
+    "Armed merchant brig",
+    "The Resolute",
+    420,
+    "A guarded trader built to discourage raiders, though its weight attracts scrutiny.",
+    {
+      defense: 2,
+      holdMax: 3,
+      maxSpeed: -12,
+      turnRate: -0.2,
+      inspectionRisk: 0.14,
+    },
+  ),
+  dhow: shipClass(
+    "dhow",
+    "Shallow-draft dhow",
+    "The Sandpiper",
+    300,
+    "An agile, discreet trader suited to uncertain coasts and evasive landfalls.",
+    {
+      turnRate: 0.42,
+      accel: 10,
+      inspectionRisk: -0.16,
+      windDrift: -0.12,
+      holdMax: -2,
+      stormResistance: -0.08,
+    },
+  ),
+});
+
 export const UPGRADE_SLOTS = Object.freeze([
   { id: "hull", name: "Hull" },
   { id: "sails", name: "Sails" },
@@ -299,6 +375,17 @@ function identity(name, description, modifiers) {
   return Object.freeze({ name, description, modifiers });
 }
 
+function shipClass(id, name, vesselName, cost, description, modifiers) {
+  return Object.freeze({
+    id,
+    name,
+    vesselName,
+    cost,
+    description,
+    modifiers: Object.freeze(modifiers),
+  });
+}
+
 export function createShipUpgradeState() {
   const equipped = {};
   const owned = [];
@@ -307,12 +394,24 @@ export function createShipUpgradeState() {
     equipped[slot.id] = standard.id;
     owned.push(standard.id);
   }
-  return { equipped, owned };
+  return {
+    activeClass: "cutter",
+    ownedClasses: ["cutter"],
+    equipped,
+    owned,
+  };
 }
 
 export function normalizeShipUpgradeState(state) {
   const normalized = createShipUpgradeState();
   if (!state || typeof state !== "object") return normalized;
+  const ownedClasses = new Set(
+    Array.isArray(state.ownedClasses) ? state.ownedClasses : [],
+  );
+  const selectedClass = SHIP_CLASSES[state.activeClass];
+  if (selectedClass) normalized.activeClass = selectedClass.id;
+  ownedClasses.add(normalized.activeClass);
+  normalized.ownedClasses = [...ownedClasses].filter((id) => SHIP_CLASSES[id]);
   const owned = new Set(Array.isArray(state.owned) ? state.owned : []);
   for (const slot of UPGRADE_SLOTS) {
     const choices = SHIP_UPGRADES[slot.id];
@@ -368,6 +467,10 @@ export function calculateShipIdentity(upgradeState) {
 export function calculateShipStats(upgradeState) {
   const stats = { ...BASE_SHIP_STATS };
   const state = normalizeShipUpgradeState(upgradeState);
+  for (const [stat, amount] of Object.entries(
+    SHIP_CLASSES[state.activeClass].modifiers,
+  ))
+    stats[stat] += amount;
   for (const id of Object.values(state.equipped)) {
     const item = findUpgrade(id);
     for (const [stat, amount] of Object.entries(item.modifiers))
@@ -378,6 +481,32 @@ export function calculateShipStats(upgradeState) {
   ))
     stats[stat] += amount;
   return stats;
+}
+
+export function buyOrSelectShipClass(game, classId, cargoAboard = 0) {
+  const shipClass = SHIP_CLASSES[classId];
+  if (!shipClass) return { ok: false, reason: "Unknown ship class." };
+
+  game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
+  if (game.shipUpgrades.activeClass === classId)
+    return { ok: false, reason: "That ship is already active." };
+  const owned = game.shipUpgrades.ownedClasses.includes(classId);
+  if (!owned && game.coins < shipClass.cost)
+    return { ok: false, reason: "Not enough crowns." };
+
+  const candidate = normalizeShipUpgradeState(game.shipUpgrades);
+  candidate.activeClass = classId;
+  if (!candidate.ownedClasses.includes(classId))
+    candidate.ownedClasses.push(classId);
+  if (calculateShipStats(candidate).holdMax < cargoAboard)
+    return {
+      ok: false,
+      reason: "Unload cargo before changing to this ship class.",
+    };
+
+  if (!owned) game.coins -= shipClass.cost;
+  game.shipUpgrades = candidate;
+  return { ok: true, purchased: !owned, shipClass };
 }
 
 export function buyOrEquipUpgrade(game, slotId, upgradeId, cargoAboard = 0) {
