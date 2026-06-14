@@ -3626,6 +3626,12 @@ const seaRegionLabels = [
   ["THE JADEWATER", 4200, 1260, 27],
   ["THE STORMWARD OCEAN", 5550, 1480, 27],
 ];
+const roughSeas = [
+  { x: 2720, y: 1060, rx: 470, ry: 300, angle: -0.08, strength: 1 },
+  { x: 5480, y: 1480, rx: 520, ry: 330, angle: 0.12, strength: 1.15 },
+  { x: 6200, y: 1120, rx: 270, ry: 430, angle: -0.18, strength: 0.9 },
+  { x: 1780, y: 1180, rx: 300, ry: 190, angle: -0.22, strength: 0.72 },
+];
 
 function pointInPoly(x, y, poly) {
   let inside = false;
@@ -3990,6 +3996,28 @@ function drawWaveGlyph(c, x, y, s = 1, alpha = 0.18) {
   c.stroke();
   c.restore();
 }
+function drawRoughWaterMark(c, x, y, s, angle = 0, alpha = 0.32) {
+  c.save();
+  c.translate(x, y);
+  c.rotate(angle);
+  c.scale(s, s);
+  c.strokeStyle = `rgba(43,48,39,${alpha})`;
+  c.lineCap = "round";
+  c.lineWidth = 1.35;
+  c.beginPath();
+  c.moveTo(-14, 3);
+  c.quadraticCurveTo(-8, -8, -2, 1);
+  c.quadraticCurveTo(4, 10, 11, -2);
+  c.quadraticCurveTo(15, -7, 20, 1);
+  c.stroke();
+  c.globalAlpha = 0.58;
+  c.beginPath();
+  c.moveTo(-9, 8);
+  c.quadraticCurveTo(-3, 3, 3, 8);
+  c.quadraticCurveTo(9, 13, 15, 7);
+  c.stroke();
+  c.restore();
+}
 function drawRock(c, x, y, s = 8) {
   c.save();
   c.translate(x, y);
@@ -4285,6 +4313,25 @@ function buildMapLayer() {
         );
     }
   }
+  roughSeas.forEach((sea, seaIndex) => {
+    const seaRnd = seeded(8200 + seaIndex * 97);
+    for (let i = 0; i < 155 * sea.strength; i++) {
+      const theta = seaRnd() * Math.PI * 2;
+      const radius = Math.sqrt(seaRnd());
+      const x = sea.x + Math.cos(theta) * sea.rx * radius;
+      const y = sea.y + Math.sin(theta) * sea.ry * radius;
+      if (!onLand(x, y)) {
+        drawRoughWaterMark(
+          m,
+          x,
+          y,
+          0.55 + seaRnd() * 0.75,
+          sea.angle + (seaRnd() - 0.5) * 0.32,
+          0.15 + seaRnd() * 0.14,
+        );
+      }
+    }
+  });
 
   // ancient trade routes beneath labels
   drawRoute(
@@ -4434,6 +4481,29 @@ function buildMapLayer() {
     }
     m.restore();
 
+    // Short, irregular hachures give the shore the engraved depth of a
+    // navigator's hand-inked chart without obscuring ports or terrain.
+    m.save();
+    m.strokeStyle = "rgba(48,34,20,.25)";
+    m.lineWidth = 1;
+    for (let i = 0; i < l.poly.length; i += 3) {
+      const [x, y] = l.poly[i];
+      const cent = polygonCentroid(l.poly);
+      const dx = x - cent.x,
+        dy = y - cent.y,
+        distance = Math.hypot(dx, dy) || 1,
+        nx = dx / distance,
+        ny = dy / distance;
+      for (let hatch = 0; hatch < 3; hatch++) {
+        const shift = hatch * 5;
+        m.beginPath();
+        m.moveTo(x + nx * (9 + shift), y + ny * (9 + shift));
+        m.lineTo(x + nx * (18 + shift), y + ny * (18 + shift));
+        m.stroke();
+      }
+    }
+    m.restore();
+
     if (l.name) {
       const cent = polygonCentroid(l.poly);
       m.fillStyle = "rgba(46,34,20,.58)";
@@ -4562,6 +4632,60 @@ function buildMapLayer() {
   m.restore();
 }
 buildMapLayer();
+
+function drawAnimatedRoughSeas(c, time, z) {
+  c.save();
+  c.lineCap = "round";
+  for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
+    const sea = roughSeas[seaIndex];
+    const nearestX = nearestWrappedX(sea.x, camera.x);
+    const left = nearestX - sea.rx;
+    const right = nearestX + sea.rx;
+    const top = sea.y - sea.ry;
+    const bottom = sea.y + sea.ry;
+    if (
+      right < camera.x - vw / (2 * z) ||
+      left > camera.x + vw / (2 * z) ||
+      bottom < camera.y - vh / (2 * z) ||
+      top > camera.y + vh / (2 * z)
+    )
+      continue;
+
+    const rnd = seeded(9300 + seaIndex * 131);
+    const count = Math.round(22 * sea.strength);
+    for (let i = 0; i < count; i++) {
+      const baseX = (rnd() - 0.5) * sea.rx * 1.75;
+      const baseY = (rnd() - 0.5) * sea.ry * 1.75;
+      const phase = time * (0.00042 + rnd() * 0.0002) + rnd() * Math.PI * 2;
+      const swell = 4 + rnd() * 7;
+      const x = nearestX + baseX + Math.cos(phase) * swell;
+      const y = sea.y + baseY + Math.sin(phase * 1.35) * swell * 0.45;
+      if (onLand(x, y)) continue;
+      const scale = 0.7 + rnd() * 0.7;
+      const crest = (Math.sin(phase) + 1) * 0.5;
+      c.save();
+      c.translate(x, y);
+      c.rotate(sea.angle + (rnd() - 0.5) * 0.24);
+      c.scale(scale, scale);
+      c.strokeStyle = `rgba(249,232,184,${0.1 + crest * 0.2})`;
+      c.lineWidth = (1.2 + crest) / z;
+      c.beginPath();
+      c.moveTo(-15, 3);
+      c.quadraticCurveTo(-8, -7 - crest * 3, -1, 1);
+      c.quadraticCurveTo(6, 9, 14, -2 - crest * 2);
+      c.stroke();
+      c.strokeStyle = `rgba(57,61,47,${0.12 + crest * 0.11})`;
+      c.lineWidth = 1 / z;
+      c.beginPath();
+      c.moveTo(-10, 8);
+      c.quadraticCurveTo(-3, 4, 4, 8);
+      c.quadraticCurveTo(10, 12, 16, 7);
+      c.stroke();
+      c.restore();
+    }
+  }
+  c.restore();
+}
 
 const mapButton = document.getElementById("mapButton");
 const minimapWrap = document.getElementById("minimapWrap");
@@ -5034,6 +5158,7 @@ function render() {
   ctx.translate(-camera.x, -camera.y);
   for (const offset of worldCopiesNear(camera.x))
     ctx.drawImage(mapLayer, offset, 0);
+  drawAnimatedRoughSeas(ctx, performance.now(), z);
   drawDynamicTradeWorld(ctx, z);
   // wake
   if (ship.trail.length > 1) {
