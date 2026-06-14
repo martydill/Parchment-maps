@@ -1,6 +1,8 @@
 // Static world, economy catalog, and map annotation data.
 // Keep browser state and rendering behavior in app.js; this module is data-only.
 
+import { ruggedCoast } from "./core/coastlines.js";
+
 export const HOME_PORT = {
   name: "Goldhaven",
   x: 650,
@@ -684,40 +686,6 @@ lands.push(
   },
 );
 
-// Subdivide the broad hand-authored silhouettes into irregular coves, points,
-// beaches, and headlands. Original vertices stay fixed so ports and established
-// sea lanes retain their authored positions, while deterministic intermediate
-// points replace the old long, ruler-straight coastal edges.
-function ruggedCoast(poly, seed, roughness = 1) {
-  const detailed = [];
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i],
-      b = poly[(i + 1) % poly.length],
-      dx = b[0] - a[0],
-      dy = b[1] - a[1],
-      length = Math.hypot(dx, dy) || 1;
-    const nx = -dy / length,
-      ny = dx / length;
-    detailed.push(a);
-    for (const [step, t] of [
-      [0, 0.22],
-      [1, 0.48],
-      [2, 0.76],
-    ]) {
-      const wave = Math.sin((seed + i * 7 + step * 13) * 12.9898) * 43758.5453;
-      const random = wave - Math.floor(wave);
-      const alternating = (i + step) % 2 ? 1 : -1;
-      const displacement =
-        (7 + random * 19) * roughness * alternating * Math.min(1, length / 115);
-      const along = (random - 0.5) * Math.min(18, length * 0.08);
-      detailed.push([
-        a[0] + dx * t + (dx / length) * along + nx * displacement,
-        a[1] + dy * t + (dy / length) * along + ny * displacement,
-      ]);
-    }
-  }
-  return detailed;
-}
 function coastalIsland(cx, cy, rx, ry, seed, color = "#82784e") {
   const poly = [];
   for (let i = 0; i < 11; i++) {
