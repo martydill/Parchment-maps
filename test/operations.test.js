@@ -71,7 +71,7 @@ test("intelligence visibly decays before expiry", () => {
 
 test("voyages consume supplies and convert comfort and weather into consequences", () => {
   assert.deepEqual(
-    estimateVoyageReadiness(createOperationsState(), 621, {
+    estimateVoyageReadiness(621, {
       crewComfort: 1,
       stormResistance: 1,
     }),

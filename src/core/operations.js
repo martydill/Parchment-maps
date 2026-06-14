@@ -79,16 +79,26 @@ export function intelligenceFreshness(report, day) {
   return { label: "Current", reliability };
 }
 
-export function estimateVoyageReadiness(operations, distance, stats) {
-  const days = Math.max(1, Math.ceil(distance / 620));
+function voyageRequirements(
+  distance,
+  stats,
+  days = Math.max(1, Math.ceil(distance / 620)),
+) {
   const provisionsNeeded = Math.max(
     1,
     Math.ceil((days * 2) / Math.max(0.7, stats.crewComfort)),
   );
-  const conditionRisk = Math.ceil(
-    distance / 260 / Math.max(0.5, stats.stormResistance),
-  );
-  return { days, provisionsNeeded, conditionRisk };
+  return { days, provisionsNeeded };
+}
+
+export function estimateVoyageReadiness(distance, stats) {
+  const requirements = voyageRequirements(distance, stats);
+  return {
+    ...requirements,
+    conditionRisk: Math.ceil(
+      distance / 260 / Math.max(0.5, stats.stormResistance),
+    ),
+  };
 }
 
 export function weatherRoughness(weather, stormResistance = 1) {
@@ -139,10 +149,7 @@ export function resolveVoyageOperations(
   { distance, days, roughness, stats },
 ) {
   const next = normalizeOperationsState(operations);
-  const provisionsNeeded = Math.max(
-    1,
-    Math.ceil((days * 2) / Math.max(0.7, stats.crewComfort)),
-  );
+  const { provisionsNeeded } = voyageRequirements(distance, stats, days);
   const provisionsUsed = Math.min(next.provisions, provisionsNeeded);
   const shortage = provisionsNeeded - provisionsUsed;
   next.provisions -= provisionsUsed;
