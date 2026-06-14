@@ -1,0 +1,256 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  advanceRegionalResources,
+  chooseRecipe,
+  createRegionalState,
+  infrastructureCapacity,
+  inputQuality,
+  investInIndustry,
+  investmentCost,
+  normalizeRegionalState,
+  regionalSummary,
+  runRegionalIndustries,
+} from "../src/core/regional.js";
+
+const ports = [
+  {
+    name: "Forgeport",
+    infrastructure: 2,
+    labor: 1.1,
+    extractiveGoods: ["ore"],
+  },
+  { name: "Oldport", extractiveGoods: [] },
+  { name: "Unmapped" },
+];
+const chains = [
+  {
+    id: "forge",
+    inputs: { ore: 2 },
+    alternatives: [{ id: "scrap", inputs: { iron: 1.5 }, outputScale: 0.7 }],
+    outputs: { iron: 1 },
+    rate: 1,
+    fuel: 0.2,
+  },
+];
+
+function states() {
+  return {
+    ore: { stock: 10, target: 20, production: 1 },
+    iron: { stock: 1, target: 20, production: 0 },
+    timber: { stock: 10, target: 20, production: 1 },
+    grain: { stock: 20, target: 20, production: 1 },
+  };
+}
+
+test("regional state reflects port specialties and repairs old saves", () => {
+  const fresh = createRegionalState(ports, chains);
+  assert.equal(fresh.Forgeport.infrastructure, 2);
+  assert.equal(fresh.Forgeport.resourceHealth.ore, 1);
+  assert.equal(fresh.Oldport.industries.forge.investment, 0);
+  assert.deepEqual(fresh.Unmapped.resourceHealth, {});
+  assert.deepEqual(normalizeRegionalState(null, ports, chains), fresh);
+  assert.deepEqual(normalizeRegionalState({}, ports, chains), fresh);
+
+  const normalized = normalizeRegionalState(
+    {
+      Forgeport: {
+        infrastructure: 9,
+        labor: 0,
+        resourceHealth: { ore: 0 },
+        industries: { forge: { investment: 8 } },
+      },
+      Oldport: "invalid",
+    },
+    ports,
+    chains,
+  );
+  assert.equal(normalized.Forgeport.infrastructure, 3);
+  assert.equal(normalized.Forgeport.labor, 0.35);
+  assert.equal(normalized.Forgeport.resourceHealth.ore, 0.2);
+  assert.equal(normalized.Forgeport.industries.forge.investment, 3);
+  const partial = normalizeRegionalState(
+    {
+      Forgeport: {
+        resourceHealth: {},
+        industries: {},
+      },
+    },
+    ports,
+    chains,
+  );
+  assert.equal(partial.Forgeport.infrastructure, 2);
+  assert.equal(partial.Forgeport.labor, 1.1);
+  assert.equal(partial.Forgeport.resourceHealth.ore, 1);
+});
+
+test("infrastructure and investment produce bounded progression", () => {
+  assert.equal(infrastructureCapacity(-2), 0.55);
+  assert.equal(infrastructureCapacity(2), 1.35);
+  assert.equal(infrastructureCapacity(8), 1.7);
+  const regional = createRegionalState(ports, chains).Forgeport;
+  assert.equal(investmentCost(regional.industries.forge), 90);
+  assert.equal(investInIndustry(regional, "missing", 500).ok, false);
+  assert.equal(investInIndustry(regional, "forge", 50).ok, false);
+  const first = investInIndustry(regional, "forge", 500);
+  assert.equal(first.ok, true);
+  assert.equal(first.coins, 410);
+  investInIndustry(regional, "forge", 500);
+  const third = investInIndustry(regional, "forge", 500);
+  assert.equal(third.level, 3);
+  assert.equal(regional.infrastructure, 3);
+  assert.equal(investInIndustry(regional, "forge", 500).ok, false);
+});
+
+test("recipes adapt to available inputs and input stocks affect quality", () => {
+  const market = states();
+  assert.equal(chooseRecipe(market, chains[0]).id, "standard");
+  market.ore.stock = 0;
+  market.iron.stock = 9;
+  assert.equal(chooseRecipe(market, chains[0]).id, "scrap");
+  assert.ok(inputQuality(market, chains[0].alternatives[0]) > 0.8);
+  assert.equal(inputQuality({}, { inputs: {} }), 0.8);
+  assert.equal(inputQuality({}, { inputs: { missing: 1 } }), 0.8);
+  assert.equal(
+    chooseRecipe(states(), {
+      inputs: {},
+    }).availability,
+    0,
+  );
+  assert.equal(
+    chooseRecipe(states(), {
+      inputs: { grain: 0 },
+    }).availability,
+    2000,
+  );
+  const noScaleAlternative = chooseRecipe(
+    { grain: { stock: 0 }, herbs: { stock: 5 } },
+    {
+      inputs: { grain: 1 },
+      alternatives: [{ id: "herbs", inputs: { herbs: 1 } }],
+    },
+  );
+  assert.equal(noScaleAlternative.id, "herbs");
+});
+
+test("regional industries consume inputs, fuel, and create quality-adjusted output", () => {
+  const market = states();
+  const regional = createRegionalState(ports, chains).Forgeport;
+  const reports = runRegionalIndustries(market, chains, { forge: 1 }, regional);
+  assert.equal(reports.length, 1);
+  assert.ok(reports[0].batches > 0);
+  assert.equal(reports[0].recipeId, "standard");
+  assert.ok(market.ore.stock < 10);
+  assert.ok(market.timber.stock < 10);
+  assert.ok(market.iron.stock > 1);
+
+  market.timber.stock = 0;
+  const limited = runRegionalIndustries(
+    market,
+    chains,
+    { forge: 1 },
+    regional,
+  )[0];
+  assert.equal(limited.fuelLimited, true);
+  assert.equal(limited.batches, 0);
+
+  const sparseMarket = {
+    grain: { stock: 10, target: 20 },
+    provisions: { stock: 0, target: 20 },
+  };
+  const simpleChain = {
+    id: "kitchen",
+    inputs: { grain: 1, missing: 1 },
+    outputs: { provisions: 1, absent: 1 },
+    rate: 1,
+  };
+  const sparseRegional = {
+    infrastructure: 1,
+    labor: 1,
+    resourceHealth: {},
+    industries: {},
+  };
+  const sparse = runRegionalIndustries(
+    sparseMarket,
+    [simpleChain],
+    {},
+    sparseRegional,
+  )[0];
+  assert.equal(sparse.batches, 0);
+  assert.equal(sparse.fuelLimited, false);
+  assert.equal(sparse.investment, 0);
+
+  const noScaleMarket = {
+    herbs: { stock: 5 },
+    medicine: { stock: 0, target: 20 },
+  };
+  const noScale = runRegionalIndustries(
+    noScaleMarket,
+    [
+      {
+        id: "tonic",
+        inputs: { missing: 1 },
+        alternatives: [{ id: "herbs", inputs: { herbs: 1 } }],
+        outputs: { medicine: 1 },
+        rate: 1,
+      },
+    ],
+    { tonic: 1 },
+    {
+      infrastructure: 1,
+      labor: 1,
+      resourceHealth: {},
+      industries: {},
+    },
+  )[0];
+  assert.ok(noScaleMarket.medicine.stock > 0);
+  assert.equal(noScale.recipeId, "herbs");
+
+  const noTimber = runRegionalIndustries(
+    {
+      ore: { stock: 10, target: 20 },
+      iron: { stock: 0, target: 20 },
+    },
+    chains,
+    { forge: 1 },
+    createRegionalState(ports, chains).Forgeport,
+  )[0];
+  assert.equal(noTimber.fuelLimited, true);
+});
+
+test("extractive resources deplete under pressure and labor follows shortages", () => {
+  const regional = createRegionalState(ports, chains).Forgeport;
+  const market = states();
+  market.ore.production = 4;
+  market.grain.stock = 1;
+  const modifiers = advanceRegionalResources(regional, market);
+  assert.ok(regional.resourceHealth.ore < 1);
+  assert.ok(modifiers.ore.production < 0);
+  assert.ok(regional.labor < 1.1);
+
+  market.ore.production = 0;
+  market.grain.stock = 20;
+  market.ore.stock = 20;
+  const previous = regional.resourceHealth.ore;
+  advanceRegionalResources(regional, market);
+  assert.ok(regional.resourceHealth.ore > previous);
+  const missingMarket = {};
+  const missingModifier = advanceRegionalResources(regional, missingMarket);
+  assert.equal(missingModifier.ore.production, 0);
+  advanceRegionalResources(regional, {
+    ore: { stock: 20, production: 1 },
+  });
+  const summary = regionalSummary(regional);
+  assert.equal(summary.infrastructure, "Industrial");
+  assert.ok(summary.laborPercent > 0);
+  assert.ok(summary.resourcePercent <= 100);
+  assert.equal(
+    regionalSummary({
+      infrastructure: -1,
+      labor: 1,
+      resourceHealth: {},
+    }).infrastructure,
+    "Subsistence",
+  );
+});

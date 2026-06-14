@@ -10,7 +10,6 @@ import {
   buyPrice,
   createEconomyState,
   economyCondition as classifyEconomy,
-  runProductionChains,
   sellPrice,
 } from "./core/economy.js";
 import {
@@ -55,6 +54,30 @@ import {
   resolveDiscovery,
   seasonalSiteActive,
 } from "./core/discoveries.js";
+import {
+  adjustedIntelCost,
+  buyProvisions,
+  contractOutcome,
+  estimateVoyageReadiness,
+  factionPrivilege,
+  fulfillObligationsAtPort,
+  intelligenceFreshness,
+  maybeCreateObligation,
+  normalizeOperationsState,
+  processObligations,
+  processWages,
+  repairOperations,
+  resolveVoyageOperations,
+} from "./core/operations.js";
+import {
+  advanceRegionalResources,
+  createRegionalState,
+  investInIndustry,
+  investmentCost,
+  normalizeRegionalState,
+  regionalSummary,
+  runRegionalIndustries,
+} from "./core/regional.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -338,13 +361,30 @@ const productionChains = [
     id: "forge",
     name: "Foundry",
     inputs: { ore: 1.5 },
+    alternatives: [
+      {
+        id: "scrap",
+        label: "Scrap remelting",
+        inputs: { iron: 1.25 },
+        outputScale: 0.72,
+      },
+    ],
     outputs: { iron: 1 },
     rate: 1.4,
+    fuel: 0.16,
   },
   {
     id: "victualler",
     name: "Victualling houses",
     inputs: { grain: 1.4, spice: 0.08 },
+    alternatives: [
+      {
+        id: "salted",
+        label: "Salted herb stores",
+        inputs: { grain: 1.15, herbs: 0.3 },
+        outputScale: 0.86,
+      },
+    ],
     outputs: { provisions: 1 },
     rate: 1.25,
   },
@@ -352,6 +392,14 @@ const productionChains = [
     id: "apothecary",
     name: "Apothecaries",
     inputs: { herbs: 1.25 },
+    alternatives: [
+      {
+        id: "spiced-tonic",
+        label: "Spiced tonics",
+        inputs: { herbs: 0.7, spice: 0.35 },
+        outputScale: 0.9,
+      },
+    ],
     outputs: { medicine: 1 },
     rate: 0.9,
   },
@@ -359,13 +407,30 @@ const productionChains = [
     id: "shipwright",
     name: "Shipwrights",
     inputs: { timber: 1.3, iron: 0.55 },
+    alternatives: [
+      {
+        id: "iron-frame",
+        label: "Iron-framed fittings",
+        inputs: { timber: 0.65, iron: 1 },
+        outputScale: 0.92,
+      },
+    ],
     outputs: { fittings: 1 },
     rate: 0.75,
+    fuel: 0.12,
   },
   {
     id: "tailor",
     name: "Luxury ateliers",
     inputs: { silk: 1.15, spice: 0.12 },
+    alternatives: [
+      {
+        id: "herbal-dyes",
+        label: "Herbal dyes",
+        inputs: { silk: 1, herbs: 0.4 },
+        outputScale: 0.88,
+      },
+    ],
     outputs: { garments: 1 },
     rate: 0.7,
   },
@@ -2949,6 +3014,10 @@ function dynamicEventModifiers(port, key) {
 function initializeEconomy() {
   configurePortIndustries();
   game.economy = createEconomyState(ports, goods);
+  game.regionalEconomy = createRegionalState(
+    regionalPortSpecifications(),
+    productionChains,
+  );
   // Deliberately strong regional identities make trade intelligence useful.
   game.economy["Rimegate"].iron.stock = 48;
   game.economy["Khaz Vhar"].iron.stock = 52;
@@ -2956,6 +3025,29 @@ function initializeEconomy() {
   game.economy["Glasswater"].spice.stock = 47;
   game.economy["Goldhaven"].iron.stock = 15;
   game.economy["Kingfisher Quay"].silk.stock = 9;
+}
+function prosperityInfrastructure(port) {
+  if (port.prosperity.includes("Very high") || port.prosperity === "Booming")
+    return 2;
+  if (port.prosperity === "High") return 1;
+  if (port.prosperity.includes("Poor")) return 0;
+  return 1;
+}
+function regionalPortSpecifications() {
+  return ports.map((port) => {
+    const resourceText = port.resources.join(" ").toLowerCase();
+    return {
+      name: port.name,
+      infrastructure: prosperityInfrastructure(port),
+      labor: clampNumber(0.65 + port.population / 120000, 0.7, 1.35),
+      extractiveGoods: Object.entries(goods)
+        .filter(([, good]) =>
+          good.terms.some((term) => resourceText.includes(term)),
+        )
+        .map(([key]) => key)
+        .filter((key) => !goods[key].processed),
+    };
+  });
 }
 function portTradeText(port) {
   return [...port.resources, ...port.exports, ...port.imports]
@@ -3020,15 +3112,24 @@ function lawPriceMultiplier(port, key) {
 }
 function runEconomyDay() {
   for (const port of ports) {
+    const regional = game.regionalEconomy[port.name];
+    const resourceModifiers = advanceRegionalResources(
+      regional,
+      game.economy[port.name],
+    );
     for (const key of Object.keys(goods)) {
       const state = economyState(port, key),
         mods = dynamicEventModifiers(port, key);
-      advanceEconomyState(state, mods);
+      advanceEconomyState(state, {
+        production: mods.production + (resourceModifiers[key]?.production || 0),
+        consumption: mods.consumption,
+      });
     }
-    game.productionReports[port.name] = runProductionChains(
+    game.productionReports[port.name] = runRegionalIndustries(
       game.economy[port.name],
       productionChains,
       port.industries,
+      regional,
     );
   }
   if (game.laws.amberConvoy) {
@@ -3103,6 +3204,16 @@ function advanceDays(days) {
   for (let i = 0; i < days; i++) {
     game.day++;
     ageCargo(game.cargoLots, 1);
+    const wages = processWages(game.operations, game.day, game.coins);
+    game.operations = wages.operations;
+    game.coins = wages.coins;
+    if (wages.paid)
+      addNews("Crew paid", `${wages.paid} crowns paid in weekly wages.`);
+    if (wages.missed)
+      addNews(
+        "Wages missed",
+        `${wages.missed} crowns entered arrears. Crew morale has fallen.`,
+      );
     processWorldEventsForDay();
     runEconomyDay();
     for (const route of advanceDiscoveryConsequences(
@@ -3123,6 +3234,15 @@ function advanceDays(days) {
           ".",
       );
     }
+  }
+  const obligations = processObligations(game.operations, game.day);
+  game.operations = obligations.operations;
+  for (const obligation of obligations.failed) {
+    changeStanding(obligation.faction, -8);
+    addNews(
+      "Faction obligation broken",
+      `You failed to call on ${obligation.faction} before Day ${obligation.dueDay}.`,
+    );
   }
   if (days) {
     game.windAngle += 0.62 * days;
@@ -3262,10 +3382,12 @@ function resolveContractsAtPort(port) {
       remaining.push(contract);
       continue;
     }
-    if (game.day <= contract.deadline) {
-      game.coins += contract.reward;
+    const standing = game.factionStanding[contract.faction] || 0;
+    const outcome = contractOutcome(contract, game.day, standing);
+    game.coins += outcome.reward;
+    changeStanding(contract.faction, outcome.standing);
+    if (outcome.completed) {
       game.completedContracts++;
-      changeStanding(contract.faction, contract.influence);
       if (
         contract.origin === "Goldhaven" &&
         contract.faction !== "Guild of Gilded Oars"
@@ -3276,24 +3398,33 @@ function resolveContractsAtPort(port) {
         "Contract fulfilled",
         contract.title +
           " earned " +
-          contract.reward +
+          outcome.reward +
           " crowns and +" +
           contract.influence +
           " influence with " +
           contract.faction +
           ".",
       );
+      const obligation = maybeCreateObligation(
+        game.operations,
+        contract.faction,
+        game.factionStanding[contract.faction] || 0,
+        game.day,
+      );
+      game.operations = obligation.operations;
+      if (obligation.obligation)
+        addNews(
+          "Favor carries an obligation",
+          `${contract.faction} now expects you to call at one of its ports by Day ${obligation.obligation.dueDay}.`,
+        );
     } else {
-      const consolation = Math.round(contract.reward * 0.3);
-      game.coins += consolation;
       game.failedContracts++;
-      changeStanding(contract.faction, -2);
       addNews(
-        "Late delivery",
+        outcome.grade + " delivery",
         contract.title +
-          " arrived late. You received only " +
-          consolation +
-          " crowns.",
+          (outcome.reward
+            ? " arrived late. You received " + outcome.reward + " crowns."
+            : " was refused without payment."),
       );
     }
   }
@@ -3794,9 +3925,16 @@ function buyIntel(id) {
   const offers = ensureIntelOffers(currentPort),
     offer = offers.find((o) => o.id === id);
   if (!offer) return;
-  if (game.coins < offer.cost)
+  const localStanding = Math.max(
+    0,
+    ...currentPort.factions.map(
+      (faction) => game.factionStanding[faction.name] || 0,
+    ),
+  );
+  const cost = adjustedIntelCost(offer.cost, localStanding);
+  if (game.coins < cost)
     return showMessage("You cannot afford that intelligence report.");
-  game.coins -= offer.cost;
+  game.coins -= cost;
   offer.boughtDay = game.day;
   offer.origin = currentPort.name;
   const purchased = { ...offer };
@@ -3827,7 +3965,7 @@ function buyIntel(id) {
       " acquired in " +
       currentPort.name +
       " for " +
-      offer.cost +
+      cost +
       " crowns.",
   );
   renderPortSystems();
@@ -3842,13 +3980,20 @@ function renderIntelOffice() {
     root.innerHTML =
       '<p class="empty-note">Your informants have nothing new until their network refreshes.</p>';
   for (const offer of offers) {
+    const localStanding = Math.max(
+      0,
+      ...currentPort.factions.map(
+        (faction) => game.factionStanding[faction.name] || 0,
+      ),
+    );
+    const cost = adjustedIntelCost(offer.cost, localStanding);
     const card = document.createElement("div");
     card.className = "intel-card";
     card.innerHTML =
       '<div class="intel-head"><h4>' +
       offer.title +
       '</h4><span class="contract-tag">' +
-      offer.cost +
+      cost +
       ' crowns</span></div><div class="intel-meta">Source confidence: ' +
       offer.confidence +
       "% · useful through Day " +
@@ -4181,6 +4326,12 @@ function loadGameState() {
 
   Object.assign(game, saved.game);
   game.discoveries = normalizeDiscoveryState(game.discoveries);
+  game.operations = normalizeOperationsState(game.operations);
+  game.regionalEconomy = normalizeRegionalState(
+    game.regionalEconomy,
+    regionalPortSpecifications(),
+    productionChains,
+  );
   for (const key of Object.keys(goods)) {
     game.cargo[key] ??= 0;
     game.cargoCost[key] = Array.isArray(game.cargoCost[key])
@@ -6168,7 +6319,9 @@ function renderPolitics() {
     row.innerHTML =
       "<span>" +
       f.name +
-      "</span><b>" +
+      '<span class="small">' +
+      factionPrivilege(game.factionStanding[f.name] || 0).label +
+      "</span></span><b>" +
       (game.factionStanding[f.name] || 0) +
       "</b>";
     standings.append(row);
@@ -6208,7 +6361,59 @@ function renderPortSystems() {
   );
   renderPolitics();
   renderShipyard();
+  renderReadiness();
   renderMilestone(document.getElementById("milestonePort"));
+}
+
+function renderReadiness() {
+  const root = document.getElementById("voyageReadiness");
+  const ops = game.operations;
+  const stats = calculateShipStats(game.shipUpgrades);
+  const nearbyRoutes = routesFrom(currentPort.name);
+  const estimates = nearbyRoutes.map((route) => {
+    const destination = route.a === currentPort.name ? route.b : route.a;
+    const distance = pathLength(
+      orientRoute(route, currentPort.name, destination),
+    );
+    return { destination, ...estimateVoyageReadiness(ops, distance, stats) };
+  });
+  root.innerHTML =
+    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
+    estimates
+      .slice(0, 3)
+      .map(
+        (estimate) =>
+          `<div class="standing-row"><span>${estimate.destination}<span class="small">${estimate.days}d · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span></span></div>`,
+      )
+      .join("");
+  const actions = document.createElement("div");
+  actions.className = "town-actions";
+  const provision = document.createElement("button");
+  provision.className = "parchment";
+  provision.textContent = "Buy provisions · 3 each";
+  provision.disabled = game.coins < 3 || ops.provisions >= 30;
+  provision.onclick = () => {
+    const result = buyProvisions(game.operations, game.coins);
+    game.operations = result.operations;
+    game.coins = result.coins;
+    showMessage(`Loaded ${result.purchased} provisions.`);
+    renderPortSystems();
+    updateHud();
+  };
+  const repair = document.createElement("button");
+  repair.className = "parchment";
+  repair.textContent = "Repair ship · 2 per point";
+  repair.disabled = game.coins < 2 || ops.condition >= 100;
+  repair.onclick = () => {
+    const result = repairOperations(game.operations, game.coins);
+    game.operations = result.operations;
+    game.coins = result.coins;
+    showMessage(`Repaired ${result.repaired}% ship condition.`);
+    renderPortSystems();
+    updateHud();
+  };
+  actions.append(provision, repair);
+  root.append(actions);
 }
 
 function formatChainGoods(entries) {
@@ -6219,6 +6424,12 @@ function formatChainGoods(entries) {
 function renderProductionChains() {
   const root = document.getElementById("productionChains");
   root.innerHTML = "";
+  const regional = game.regionalEconomy[currentPort.name];
+  const summary = regionalSummary(regional);
+  const overview = document.createElement("div");
+  overview.className = "ship-stats";
+  overview.textContent = `${summary.infrastructure} infrastructure · ${summary.laborPercent}% labor availability · ${summary.resourcePercent}% resource health`;
+  root.append(overview);
   const reports = Object.fromEntries(
     (game.productionReports[currentPort.name] || []).map((report) => [
       report.id,
@@ -6228,6 +6439,7 @@ function renderProductionChains() {
   for (const chain of productionChains) {
     const efficiency = currentPort.industries[chain.id];
     const report = reports[chain.id];
+    const industry = regional.industries[chain.id];
     const card = document.createElement("div");
     card.className = "production-chain";
     const status = report
@@ -6235,6 +6447,12 @@ function renderProductionChains() {
         ? "Input-starved"
         : "Operating"
       : "Awaiting daily cycle";
+    const recipe =
+      report?.recipeId === "standard"
+        ? "standard recipe"
+        : chain.alternatives?.find(
+            (alternative) => alternative.id === report?.recipeId,
+          )?.label || "standard recipe";
     card.innerHTML =
       "<div><b>" +
       chain.name +
@@ -6242,11 +6460,34 @@ function renderProductionChains() {
       formatChainGoods(chain.inputs) +
       " → " +
       formatChainGoods(chain.outputs) +
-      '</span></div><span class="contract-tag">' +
+      `</span><span class="small">${recipe} · quality ${Math.round((report?.quality || 1) * 100)}%${report?.fuelLimited ? " · fuel-starved" : ""}</span></div><span class="contract-tag">` +
       status +
       " · " +
       Math.round(efficiency * 100) +
       "%</span>";
+    const invest = document.createElement("button");
+    const cost = investmentCost(industry);
+    invest.className = "parchment";
+    invest.textContent =
+      industry.investment >= 3
+        ? "Fully developed"
+        : `Invest ${cost} · level ${industry.investment}/3`;
+    invest.disabled = industry.investment >= 3 || game.coins < cost;
+    invest.onclick = () => {
+      const result = investInIndustry(regional, chain.id, game.coins);
+      if (!result.ok) return showMessage(result.reason);
+      game.coins = result.coins;
+      addNews(
+        `Investment in ${chain.name}`,
+        `Your capital raised ${currentPort.name}'s ${chain.name.toLowerCase()} industry to level ${result.level}.`,
+      );
+      showMessage(
+        `${chain.name} expanded to investment level ${result.level}.`,
+      );
+      renderPortSystems();
+      updateHud();
+    };
+    card.append(invest);
     root.append(card);
   }
 }
@@ -6345,6 +6586,13 @@ function openPort() {
         : game.weatherName === "Rain"
           ? 0.35
           : 0.12) / stats.stormResistance;
+    const operations = resolveVoyageOperations(game.operations, {
+      distance,
+      days,
+      roughness,
+      stats,
+    });
+    game.operations = operations.operations;
     const outcome = resolveVoyageCargo(game.cargoLots, {
       distance,
       roughness,
@@ -6369,8 +6617,31 @@ function openPort() {
       showMessage("CUSTOMS SEIZURE · Illegal goods confiscated.", 4);
     } else if (outcome.lost.length)
       showMessage("ROUGH VOYAGE · Fragile cargo was damaged.", 4);
+    if (operations.shortage)
+      addNews(
+        "Provisions exhausted",
+        `The crew went short by ${operations.shortage} provisions. Morale fell sharply.`,
+      );
+    if (operations.damage)
+      addNews(
+        "Voyage wear",
+        `The passage consumed ${operations.provisionsUsed} provisions and caused ${operations.damage}% wear.`,
+      );
     game.voyageDistance = 0;
     game.departedFromPort = null;
+  }
+  const obligations = fulfillObligationsAtPort(
+    game.operations,
+    currentPort.factions.map((faction) => faction.name),
+    game.day,
+  );
+  game.operations = obligations.operations;
+  for (const obligation of obligations.fulfilled) {
+    changeStanding(obligation.faction, 4);
+    addNews(
+      "Faction obligation honored",
+      `Your call at ${currentPort.name} satisfied ${obligation.faction}.`,
+    );
   }
   resolveContractsAtPort(currentPort);
   document.getElementById("portName").textContent = currentPort.name;
@@ -6529,9 +6800,30 @@ function renderLedger() {
     standings.forEach(([name, value]) => {
       const row = document.createElement("div");
       row.className = "standing-row";
-      row.innerHTML = "<span>" + name + "</span><b>" + value + "</b>";
+      row.innerHTML =
+        "<span>" +
+        name +
+        '<span class="small">' +
+        factionPrivilege(value).label +
+        "</span></span><b>" +
+        value +
+        "</b>";
       factions.append(row);
     });
+  const obligations = game.operations.obligations.filter(
+    (item) => !item.fulfilled && !item.failed,
+  );
+  if (obligations.length) {
+    const heading = document.createElement("h4");
+    heading.textContent = "Outstanding obligations";
+    factions.append(heading);
+    for (const obligation of obligations) {
+      const row = document.createElement("div");
+      row.className = "standing-row";
+      row.innerHTML = `<span>Call on ${obligation.faction}</span><b>Day ${obligation.dueDay}</b>`;
+      factions.append(row);
+    }
+  }
   const intel = document.getElementById("intelLedger");
   intel.innerHTML = "";
   if (!game.intelligence.length)
@@ -6539,7 +6831,8 @@ function renderLedger() {
       '<p class="empty-note">Buy reports from a port Whisper Network.</p>';
   else
     game.intelligence.forEach((report) => {
-      const expired = game.day > report.expiresDay,
+      const freshness = intelligenceFreshness(report, game.day),
+        expired = freshness.label === "Expired",
         card = document.createElement("div");
       card.className =
         "intel-card intel-known" + (expired ? " intel-expired" : "");
@@ -6547,7 +6840,7 @@ function renderLedger() {
         '<div class="intel-head"><h4>' +
         report.title +
         '</h4><span class="contract-tag">' +
-        (expired ? "Expired" : "Valid to Day " + report.expiresDay) +
+        freshness.label +
         '</span></div><p class="small">' +
         report.body +
         '</p><div class="intel-meta">Purchased Day ' +
