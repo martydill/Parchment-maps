@@ -28,6 +28,7 @@ export function normalizeDiscoveryState(value) {
 export function discoverNearby(state, catalog, position, day, distance) {
   const discovered = [];
   for (const site of catalog) {
+    if (site.requiresExpedition) continue;
     if (state.found[site.id]) continue;
     if (distance(position.x, position.y, site.x, site.y) > site.radius)
       continue;

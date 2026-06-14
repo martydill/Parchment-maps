@@ -70,6 +70,11 @@ import {
   seasonalSiteActive,
 } from "./core/discoveries.js";
 import {
+  EXPLORATION_APPROACHES,
+  normalizeExplorationState,
+  resolveExpedition,
+} from "./core/exploration.js";
+import {
   applyComponentDamage,
   adjustedIntelCost,
   buyProvisions,
@@ -110,6 +115,7 @@ import {
 } from "./core/factions.js";
 import {
   discoverySites,
+  explorationSites,
   goods,
   HOME_PORT,
   lands,
@@ -131,6 +137,7 @@ const keys = new Set();
 let last = performance.now();
 let gameStarted = false;
 let nearPort = null;
+let nearExplorationSite = null;
 let currentPort = null;
 let selectedTown = null;
 let messageTimer = 0;
@@ -2064,6 +2071,7 @@ function loadGameState() {
 
   Object.assign(game, saved.game);
   game.discoveries = normalizeDiscoveryState(game.discoveries);
+  game.exploration = normalizeExplorationState(game.exploration);
   game.operations = normalizeOperationsState(game.operations);
   game.regionalEconomy = normalizeRegionalState(
     game.regionalEconomy,
@@ -2209,6 +2217,7 @@ const ui = {
   day: document.getElementById("dayText"),
   hold: document.getElementById("holdText"),
   dock: document.getElementById("dockButton"),
+  explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
   controlHint: document.getElementById("controlHint"),
   steeringStatus: document.getElementById("steeringStatus"),
@@ -2887,6 +2896,18 @@ function update(dt) {
     }
   }
   ui.dock.style.display = nearPort ? "block" : "none";
+  nearExplorationSite = null;
+  if (!nearPort && ship.speed < 8) {
+    let nearestSiteDistance = Infinity;
+    for (const site of explorationSites) {
+      const distance = wrappedDistance(ship.x, ship.y, site.x, site.y);
+      if (distance <= site.radius && distance < nearestSiteDistance) {
+        nearestSiteDistance = distance;
+        nearExplorationSite = site;
+      }
+    }
+  }
+  ui.explore.style.display = nearExplorationSite ? "block" : "none";
   if (messageTimer > 0) {
     messageTimer -= dt;
     if (messageTimer <= 0) ui.message.classList.remove("show");
@@ -4075,7 +4096,95 @@ function handleDiscoveryDisposition(id, disposition) {
   renderLedger();
   saveGameState();
 }
+function openExploration() {
+  if (!nearExplorationSite) return;
+  ship.anchored = true;
+  ship.speed = 0;
+  const site = nearExplorationSite;
+  document.getElementById("explorationName").textContent = site.name;
+  document.getElementById("explorationObjective").textContent = site.objective;
+  document.getElementById("explorationHazards").textContent =
+    "Hazards: " + site.hazards;
+  const progress = game.exploration.sites[site.id];
+  document.getElementById("explorationStatus").textContent = progress
+    ? `${progress.status} · ${progress.visits} previous expedition${progress.visits === 1 ? "" : "s"}`
+    : "This coast has not been surveyed.";
+  const options = document.getElementById("explorationApproaches");
+  options.innerHTML = "";
+  for (const [approach, plan] of Object.entries(EXPLORATION_APPROACHES)) {
+    const button = document.createElement("button");
+    button.className = "parchment expedition-option";
+    button.disabled = game.operations.provisions < plan.provisions;
+    button.innerHTML =
+      `<b>${plan.label}</b><span>${plan.days} day${plan.days === 1 ? "" : "s"}</span>` +
+      `<span class="small">${plan.provisions} provisions · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
+    button.addEventListener("click", () => undertakeExpedition(site, approach));
+    options.append(button);
+  }
+  document.getElementById("explorationPanel").style.display = "grid";
+}
+
+function undertakeExpedition(site, approach) {
+  const result = resolveExpedition({
+    state: game.exploration,
+    site,
+    approach,
+    day: game.day,
+    provisions: game.operations.provisions,
+    morale: game.operations.morale,
+  });
+  if (!result.ok) {
+    showMessage(result.reason);
+    return;
+  }
+  game.operations.provisions -= result.provisionsUsed;
+  advanceDays(result.days);
+  game.operations.morale = clamp(
+    game.operations.morale + result.moraleChange,
+    0,
+    100,
+  );
+  game.coins += result.record.reward;
+  const discovery = discoverySites.find(
+    (entry) => entry.id === result.discoveryId,
+  );
+  if (discovery && !game.discoveries.found[discovery.id]) {
+    game.discoveries.found[discovery.id] = {
+      id: discovery.id,
+      foundDay: game.day,
+      disposition: null,
+      resolvedDay: null,
+    };
+  }
+  const outcome = result.record.success
+    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. ${result.record.reward} crowns of specimens and salvage were recovered.`
+    : `The expedition returned without completing its objective. ${result.record.injuries} crew members were injured.`;
+  addNews("Shore expedition: " + site.name, outcome);
+  showMessage(
+    result.record.success
+      ? `EXPEDITION SUCCESS · ${site.name} · +${result.record.reward} crowns`
+      : `EXPEDITION FAILED · ${site.name}`,
+    4.5,
+  );
+  document.getElementById("explorationPanel").style.display = "none";
+  updateHud();
+  saveGameState();
+}
+
 ui.dock.addEventListener("click", openPort);
+ui.explore.addEventListener("click", openExploration);
+document
+  .getElementById("closeExploration")
+  .addEventListener(
+    "click",
+    () => (document.getElementById("explorationPanel").style.display = "none"),
+  );
+document
+  .getElementById("explorationPanel")
+  .addEventListener("click", (event) => {
+    if (event.target === document.getElementById("explorationPanel"))
+      document.getElementById("explorationPanel").style.display = "none";
+  });
 document
   .getElementById("closeTown")
   .addEventListener("click", closeTownDetails);
