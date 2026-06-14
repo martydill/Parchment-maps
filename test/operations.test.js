@@ -16,7 +16,9 @@ import {
   processObligations,
   processWages,
   repairOperations,
+  resolveHostileEncounter,
   resolveVoyageOperations,
+  weatherRoughness,
 } from "../src/core/operations.js";
 
 test("operations state normalizes old and invalid saves", () => {
@@ -106,6 +108,65 @@ test("voyages consume supplies and convert comfort and weather into consequences
   assert.equal(capped.damage, 35);
   assert.equal(capped.operations.condition, 65);
   assert.equal(capped.speedMultiplier, 0.7);
+});
+
+test("weather roughness uses explicit weather data and storm resistance", () => {
+  assert.equal(weatherRoughness({ roughness: 0.5 }, 2), 0.25);
+  assert.equal(weatherRoughness({ roughness: 0.5 }, 0.1), 1);
+  assert.equal(weatherRoughness({}, 1), 0);
+});
+
+test("defensive armament deters and repels hostile encounters", () => {
+  let encounterSeed = 0;
+  while (
+    !resolveHostileEncounter({
+      distance: 1600,
+      risk: 0.8,
+      defense: 0,
+      seed: encounterSeed,
+    }).encountered
+  )
+    encounterSeed += 1;
+
+  const unarmed = resolveHostileEncounter({
+    distance: 1600,
+    risk: 0.8,
+    defense: 0,
+    seed: encounterSeed,
+  });
+  assert.equal(unarmed.encountered, true);
+  assert.equal(unarmed.repelled, false);
+  assert.ok(unarmed.conditionDamage > 0);
+  assert.ok(unarmed.coinsLost > 0);
+  assert.ok(unarmed.moraleChange < 0);
+
+  const armed = resolveHostileEncounter({
+    distance: 1600,
+    risk: 0.8,
+    defense: 3,
+    seed: encounterSeed,
+  });
+  if (armed.encountered) {
+    assert.equal(armed.repelled, true);
+    assert.equal(armed.coinsLost, 0);
+    assert.ok(armed.moraleChange > 0);
+  }
+
+  assert.deepEqual(
+    resolveHostileEncounter({
+      distance: 0,
+      risk: 0.8,
+      defense: 0,
+      seed: encounterSeed,
+    }),
+    {
+      encountered: false,
+      repelled: false,
+      conditionDamage: 0,
+      moraleChange: 0,
+      coinsLost: 0,
+    },
+  );
 });
 
 test("weekly wages, provisions, and repairs create predictable operating costs", () => {
