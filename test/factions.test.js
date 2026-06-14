@@ -5,9 +5,39 @@ import {
   applyStandingChange,
   chooseFactionCharter,
   contractConflict,
+  factionLore,
   factionRivals,
   factionsAreRivals,
 } from "../src/core/factions.js";
+
+test("faction lore gives major and local factions a complete profile", () => {
+  const delvers = factionLore({ name: "Deep Delvers’ Union" });
+  assert.match(delvers.backstory, /secret compact/);
+  assert.match(delvers.history, /Nine-Day Cave-In/);
+  assert.match(delvers.motivations, /safety rules/);
+
+  const local = factionLore(
+    { name: "Harbor Council", note: "Controls the customs vote" },
+    {
+      name: "Farport",
+      realm: "the Western League",
+    },
+  );
+  assert.match(local.backstory, /Farport/);
+  assert.match(local.backstory, /Controls the customs vote\./);
+  assert.match(local.history, /Western League/);
+  assert.match(local.motivations, /Harbor Council/);
+
+  const sparse = factionLore({}, {});
+  assert.match(sparse.backstory, /This faction/);
+  assert.doesNotMatch(sparse.backstory, /undefined/);
+
+  const punctuated = factionLore({
+    name: "Dock Wardens",
+    note: "Keeps the harbor lights burning.",
+  });
+  assert.doesNotMatch(punctuated.backstory, /burning\.\./);
+});
 
 test("rivalries are reciprocal and positive standing shifts have consequences", () => {
   assert.equal(
