@@ -6406,7 +6406,7 @@ function renderReadiness() {
     const distance = pathLength(
       orientRoute(route, currentPort.name, destination),
     );
-    return { destination, ...estimateVoyageReadiness(ops, distance, stats) };
+    return { destination, ...estimateVoyageReadiness(distance, stats) };
   });
   root.innerHTML =
     `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
