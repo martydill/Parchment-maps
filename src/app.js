@@ -55,8 +55,10 @@ import {
 } from "./core/cargo.js";
 import {
   buyOrEquipUpgrade,
+  calculateShipIdentity,
   calculateShipStats,
   normalizeShipUpgradeState,
+  SHIP_IDENTITIES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
 } from "./core/upgrades.js";
@@ -74,6 +76,15 @@ import {
   normalizeExplorationState,
   resolveExpedition,
 } from "./core/exploration.js";
+import {
+  advanceCrises,
+  applyCrisisAftermath,
+  CRISIS_TEMPLATES,
+  crisisAtPort,
+  crisisEconomyModifiers,
+  interveneInCrisis,
+  normalizeCrisisState,
+} from "./core/crises.js";
 import {
   applyComponentDamage,
   adjustedIntelCost,
@@ -905,7 +916,37 @@ function dynamicEventModifiers(port, key) {
       consumption += t.consumptionDelta;
     }
   }
+  const crisis = crisisEconomyModifiers(game.regionalCrises, port.name, key);
+  price *= crisis.price;
+  production += crisis.production;
+  consumption += crisis.consumption;
   return { price, production, consumption };
+}
+function processRegionalCrisesForDay() {
+  const result = advanceCrises(game.regionalCrises, game.day);
+  game.regionalCrises = result.state;
+  for (const transition of result.transitions) {
+    const arc = game.regionalCrises.arcs[transition.id];
+    const template = CRISIS_TEMPLATES[transition.id];
+    if (transition.phase === "warning") {
+      addNews(template.title + ": warning signs", template.warning);
+      continue;
+    }
+    if (transition.phase === "active") {
+      const stock = game.economy[template.port]?.[template.good];
+      if (stock) stock.stock = clampNumber(stock.stock - 8, 0, 70);
+      addNews(template.title, template.active);
+      showMessage(`REGIONAL CRISIS · ${template.title} in ${template.port}`, 5);
+      continue;
+    }
+    applyCrisisAftermath(
+      game.regionalEconomy[template.port],
+      template,
+      transition.outcome,
+    );
+    addNews(template.title + ": lasting aftermath", template.ignored);
+    arc.outcome = transition.outcome;
+  }
 }
 function initializeEconomy() {
   configurePortIndustries();
@@ -1113,6 +1154,7 @@ function advanceDays(days) {
         `${wages.missed} crowns entered arrears. Crew morale has fallen.`,
       );
     processWorldEventsForDay();
+    processRegionalCrisesForDay();
     runEconomyDay();
     for (const route of advanceDiscoveryConsequences(
       game.discoveries,
@@ -2072,6 +2114,7 @@ function loadGameState() {
   Object.assign(game, saved.game);
   game.discoveries = normalizeDiscoveryState(game.discoveries);
   game.exploration = normalizeExplorationState(game.exploration);
+  game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
   game.regionalEconomy = normalizeRegionalState(
     game.regionalEconomy,
@@ -3171,6 +3214,67 @@ function renderPortEvent() {
   root.innerHTML = "";
   const e = worldEvents.ironShortage;
   if (currentPort)
+    for (const arc of crisisAtPort(
+      game.regionalCrises,
+      currentPort.name,
+    ).reverse()) {
+      const box = document.createElement("div");
+      box.className =
+        "event-banner " + (arc.phase === "active" ? "event-live" : "");
+      const heading =
+        arc.phase === "warning"
+          ? "WARNING"
+          : arc.phase === "active"
+            ? `CRISIS · through Day ${arc.endDay}`
+            : arc.outcome === "resolved"
+              ? "RECOVERY"
+              : "LASTING AFTERMATH";
+      const body =
+        arc.phase === "warning"
+          ? arc.template.warning
+          : arc.phase === "active"
+            ? arc.template.active
+            : arc.outcome === "resolved"
+              ? arc.template.intervention.result
+              : arc.template.ignored;
+      box.innerHTML = `<b>${arc.template.title} · ${heading}</b>${body}`;
+      if (arc.phase === "active") {
+        const action = document.createElement("button");
+        action.className = "parchment crisis-action";
+        action.textContent = arc.template.intervention.label;
+        action.disabled = game.coins < arc.template.intervention.cost;
+        action.onclick = () => {
+          const result = interveneInCrisis(
+            game.regionalCrises,
+            arc.id,
+            game.coins,
+            game.day,
+          );
+          if (!result.ok) return showMessage(result.reason);
+          game.regionalCrises = result.state;
+          game.coins = result.coins;
+          applyCrisisAftermath(
+            game.regionalEconomy[currentPort.name],
+            result.template,
+            "resolved",
+          );
+          changeStanding(dominantFaction(currentPort).name, 6);
+          addNews(
+            result.template.title + ": intervention succeeds",
+            result.template.intervention.result,
+          );
+          showMessage(
+            `STORY ARC RESOLVED · ${result.template.title} leaves a lasting recovery.`,
+            5,
+          );
+          renderPortSystems();
+          updateHud();
+        };
+        box.append(action);
+      }
+      root.append(box);
+    }
+  if (currentPort)
     for (const event of activeEventsAt(currentPort.name)) {
       const t = eventTemplates[event.templateId],
         box = document.createElement("div");
@@ -3523,11 +3627,22 @@ function upgradeEffects(item) {
   );
   return effects.length ? effects.join(" · ") : "Balanced baseline";
 }
+function upgradeAffinities(item) {
+  if (!item.affinities.length) return "No specialist alignment";
+  return item.affinities.map((id) => SHIP_IDENTITIES[id].name).join(" · ");
+}
 function renderShipyard() {
   const root = document.getElementById("shipyard");
   root.innerHTML = "";
   const stats = applyShipUpgrades();
-  document.getElementById("shipStats").textContent =
+  const identity = calculateShipIdentity(game.shipUpgrades);
+  const shipStats = document.getElementById("shipStats");
+  shipStats.innerHTML =
+    "<strong>" +
+    identity.name +
+    "</strong><span>" +
+    identity.description +
+    "</span><span>" +
     stats.holdMax +
     " hold · " +
     Math.round(stats.maxSpeed / 7) +
@@ -3536,7 +3651,8 @@ function renderShipyard() {
     " turning · " +
     currentVisibilityKm().toFixed(1) +
     " km sight · defense " +
-    stats.defense;
+    stats.defense +
+    "</span>";
   for (const slot of UPGRADE_SLOTS) {
     const section = document.createElement("div");
     section.className = "upgrade-slot";
@@ -3554,6 +3670,8 @@ function renderShipyard() {
         item.description +
         '</span><span class="upgrade-effects">' +
         upgradeEffects(item) +
+        '</span><span class="upgrade-affinities">Identity: ' +
+        upgradeAffinities(item) +
         "</span>";
       const button = document.createElement("button");
       button.textContent = equipped

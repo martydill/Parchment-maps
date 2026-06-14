@@ -654,6 +654,14 @@ button.parchment {
   font-size: 12px;
   font-weight: 700;
 }
+.ship-stats span {
+  display: block;
+  margin-top: 3px;
+}
+.ship-stats strong {
+  color: #5a321b;
+  font-size: 14px;
+}
 .upgrade-slot {
   margin-top: 12px;
 }
@@ -675,13 +683,20 @@ button.parchment {
   box-shadow: inset 3px 0 #546b3f;
 }
 .upgrade-option .small,
-.upgrade-effects {
+.upgrade-effects,
+.upgrade-affinities {
   display: block;
 }
 .upgrade-effects {
   margin-top: 3px;
   color: #74401e;
   font-size: 11px;
+  font-weight: 700;
+}
+.upgrade-affinities {
+  margin-top: 3px;
+  color: #59643b;
+  font-size: 10px;
   font-weight: 700;
 }
 .upgrade-option button {
@@ -1052,6 +1067,10 @@ button.parchment {
   background: rgba(142, 65, 29, 0.12);
   border-radius: 8px;
   margin: 10px 0;
+}
+.crisis-action {
+  display: block;
+  margin-top: 8px;
 }
 .event-banner b {
   display: block;

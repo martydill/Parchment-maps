@@ -21,6 +21,56 @@ export const UPGRADE_SLOTS = Object.freeze([
   { id: "armament", name: "Defensive armament" },
 ]);
 
+export const SHIP_IDENTITIES = Object.freeze({
+  courier: identity(
+    "Swift courier",
+    "Built to outrun schedules, competitors, and trouble.",
+    { maxSpeed: 12, accel: 8, holdMax: -2 },
+  ),
+  freighter: identity(
+    "Deepwater freighter",
+    "A heavy carrier that turns cargo space into profit at the expense of agility.",
+    { holdMax: 4, turnRate: -0.18, accel: -6 },
+  ),
+  stormrunner: identity(
+    "Storm runner",
+    "A weatherwise vessel prepared to endure hard passages rather than avoid them.",
+    { stormResistance: 0.22, windDrift: -0.08, maxSpeed: -6 },
+  ),
+  smuggler: identity(
+    "Silent trader",
+    "A discreet ship made for hidden cargo and evasive landfalls.",
+    { inspectionRisk: -0.18, turnRate: 0.16, holdMax: -1 },
+  ),
+  explorer: identity(
+    "Survey barque",
+    "A far-seeing expedition ship whose specialist gear consumes working space.",
+    { visibilityHeightM: 4, stormResistance: 0.1, holdMax: -2 },
+  ),
+  escort: identity(
+    "Armed escort",
+    "A guarded merchant vessel that accepts weight and scrutiny for security.",
+    { defense: 1, inspectionRisk: 0.12, maxSpeed: -5 },
+  ),
+});
+
+const UPGRADE_AFFINITIES = Object.freeze({
+  "narrow-hull": ["courier", "smuggler"],
+  "reinforced-hull": ["freighter", "stormrunner", "escort"],
+  "lateen-sails": ["courier", "stormrunner", "smuggler", "explorer"],
+  "towering-sails": ["courier", "freighter", "escort"],
+  "balanced-rudder": ["courier", "smuggler"],
+  "deep-rudder": ["stormrunner", "explorer", "escort"],
+  "reinforced-hold": ["freighter"],
+  "smugglers-lockers": ["smuggler"],
+  "expanded-quarters": ["freighter", "stormrunner", "explorer"],
+  "hammock-deck": ["courier", "escort"],
+  "brass-sextant": ["courier", "explorer"],
+  "tall-mast": ["stormrunner", "smuggler", "explorer"],
+  "swivel-guns": ["escort"],
+  "culverin-battery": ["escort", "freighter"],
+});
+
 export const SHIP_UPGRADES = Object.freeze({
   hull: [
     upgrade(
@@ -235,7 +285,18 @@ export const SHIP_UPGRADES = Object.freeze({
 });
 
 function upgrade(id, name, cost, description, modifiers = {}) {
-  return Object.freeze({ id, name, cost, description, modifiers });
+  return Object.freeze({
+    id,
+    name,
+    cost,
+    description,
+    modifiers,
+    affinities: Object.freeze(UPGRADE_AFFINITIES[id] || []),
+  });
+}
+
+function identity(name, description, modifiers) {
+  return Object.freeze({ name, description, modifiers });
 }
 
 export function createShipUpgradeState() {
@@ -275,6 +336,35 @@ export function findUpgrade(id) {
   return null;
 }
 
+export function calculateShipIdentity(upgradeState) {
+  const state = normalizeShipUpgradeState(upgradeState);
+  const scores = Object.fromEntries(
+    Object.keys(SHIP_IDENTITIES).map((id) => [id, 0]),
+  );
+  for (const id of Object.values(state.equipped)) {
+    for (const affinity of findUpgrade(id).affinities) scores[affinity] += 1;
+  }
+  const ranking = Object.entries(scores).sort(
+    ([leftId, leftScore], [rightId, rightScore]) =>
+      rightScore - leftScore ||
+      Object.keys(SHIP_IDENTITIES).indexOf(leftId) -
+        Object.keys(SHIP_IDENTITIES).indexOf(rightId),
+  );
+  const [id, score] = ranking[0];
+  const active = score >= 3;
+  return {
+    id: active ? id : null,
+    name: active ? SHIP_IDENTITIES[id].name : "General merchantman",
+    description: active
+      ? SHIP_IDENTITIES[id].description
+      : "Fit three compatible specialist upgrades to establish a ship identity.",
+    score,
+    required: 3,
+    scores,
+    modifiers: active ? SHIP_IDENTITIES[id].modifiers : {},
+  };
+}
+
 export function calculateShipStats(upgradeState) {
   const stats = { ...BASE_SHIP_STATS };
   const state = normalizeShipUpgradeState(upgradeState);
@@ -283,6 +373,10 @@ export function calculateShipStats(upgradeState) {
     for (const [stat, amount] of Object.entries(item.modifiers))
       stats[stat] += amount;
   }
+  for (const [stat, amount] of Object.entries(
+    calculateShipIdentity(state).modifiers,
+  ))
+    stats[stat] += amount;
   return stats;
 }
 

@@ -5,9 +5,11 @@ import { createGameState } from "../src/core/state.js";
 import {
   BASE_SHIP_STATS,
   buyOrEquipUpgrade,
+  calculateShipIdentity,
   calculateShipStats,
   createShipUpgradeState,
   normalizeShipUpgradeState,
+  SHIP_IDENTITIES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
 } from "../src/core/upgrades.js";
@@ -53,6 +55,45 @@ test("equipped upgrades combine benefits and drawbacks", () => {
   assert.equal(stats.holdMax, 21);
   assert.equal(stats.maxSpeed, 187);
   assert.ok(Math.abs(stats.stormResistance - 0.82) < 1e-12);
+});
+
+test("three aligned fittings establish a ship identity with another tradeoff", () => {
+  const state = createShipUpgradeState();
+  state.equipped.hull = "narrow-hull";
+  state.equipped.sails = "lateen-sails";
+  state.equipped.rudder = "balanced-rudder";
+  const identity = calculateShipIdentity(state);
+  assert.equal(identity.id, "courier");
+  assert.equal(identity.name, "Swift courier");
+  assert.equal(identity.score, 3);
+  assert.equal(identity.required, 3);
+  assert.equal(identity.scores.courier, 3);
+  assert.deepEqual(identity.modifiers, SHIP_IDENTITIES.courier.modifiers);
+
+  const stats = calculateShipStats(state);
+  assert.equal(stats.maxSpeed, 189);
+  assert.equal(stats.accel, 144);
+  assert.equal(stats.holdMax, 13);
+});
+
+test("mixed fittings remain a general merchantman without identity modifiers", () => {
+  const state = createShipUpgradeState();
+  state.equipped.hull = "narrow-hull";
+  state.equipped.cargo = "reinforced-hold";
+  const identity = calculateShipIdentity(state);
+  assert.equal(identity.id, null);
+  assert.equal(identity.name, "General merchantman");
+  assert.equal(identity.score, 1);
+  assert.deepEqual(identity.modifiers, {});
+  assert.match(identity.description, /three compatible/i);
+});
+
+test("identity ties resolve consistently by catalog order", () => {
+  const state = createShipUpgradeState();
+  state.equipped.hull = "reinforced-hull";
+  state.equipped.sails = "towering-sails";
+  state.equipped.quarters = "expanded-quarters";
+  assert.equal(calculateShipIdentity(state).id, "freighter");
 });
 
 test("buying deducts coins while owned upgrades can be refitted for free", () => {
