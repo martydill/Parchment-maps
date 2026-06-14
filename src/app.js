@@ -37,6 +37,15 @@ import {
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
 } from "./core/upgrades.js";
+import {
+  activeDiscoveryTrade,
+  advanceDiscoveryConsequences,
+  discoverNearby,
+  DISCOVERY_DISPOSITIONS,
+  normalizeDiscoveryState,
+  resolveDiscovery,
+  seasonalSiteActive,
+} from "./core/discoveries.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -125,6 +134,189 @@ const goods = {
     terms: ["fashion", "fine cloth", "luxur"],
   },
 };
+const discoverySites = [
+  {
+    id: "starfall-anchorage",
+    type: "Uncharted anchorage",
+    name: "Starfall Anchorage",
+    x: 1080,
+    y: 570,
+    radius: 46,
+    icon: "⚓",
+    description:
+      "A deep, storm-sheltered bowl behind black skerries, absent from every Admiralty chart.",
+    benefit:
+      "A public chart will shorten the northern packet and attract timber traffic.",
+    saleValue: 95,
+    faction: "Free Keel Brotherhood",
+    standingValue: 8,
+    route: {
+      origin: "Goldhaven",
+      destination: "Rimegate",
+      good: "timber",
+      units: 1.1,
+      delay: 4,
+    },
+  },
+  {
+    id: "moon-iron",
+    type: "Hidden resource deposit",
+    name: "Moon-Iron Seam",
+    x: 1270,
+    y: 930,
+    radius: 42,
+    icon: "◆",
+    description:
+      "Blue-grey ore glitters in a wave-cut cliff, rich enough to feed a small foundry.",
+    benefit: "Disclosure will establish a new iron supply into Khaz Vhar.",
+    saleValue: 140,
+    faction: "Deep Delvers’ Union",
+    standingValue: 10,
+    route: {
+      origin: "Goldhaven",
+      destination: "Khaz Vhar",
+      good: "ore",
+      units: 1.8,
+      delay: 6,
+    },
+  },
+  {
+    id: "drowned-observatory",
+    type: "Ruins",
+    name: "Drowned Observatory",
+    x: 2160,
+    y: 570,
+    radius: 48,
+    icon: "✦",
+    description:
+      "A tidal stair descends to a brass orrery whose surviving plates correct old longitude errors.",
+    benefit: "Scholars can turn its bearings into a safer Glasswater passage.",
+    saleValue: 125,
+    faction: "Lantern League",
+    standingValue: 9,
+    route: {
+      origin: "Lethariel",
+      destination: "Glasswater",
+      good: "silk",
+      units: 1.2,
+      delay: 5,
+    },
+  },
+  {
+    id: "velvet-cove",
+    type: "Smuggler cove",
+    name: "Velvet Cove",
+    x: 1760,
+    y: 690,
+    radius: 44,
+    icon: "☠",
+    description:
+      "False mangroves screen a lamp-lit inlet, hidden storehouses, and a quay with no customs seal.",
+    benefit:
+      "Revealing it redirects illicit spice into Glasswater's public market.",
+    saleValue: 110,
+    faction: "Mirror Knives",
+    standingValue: 9,
+    route: {
+      origin: "Lethariel",
+      destination: "Glasswater",
+      good: "spice",
+      units: 1.4,
+      delay: 3,
+    },
+  },
+  {
+    id: "needle-thread",
+    type: "Reef shortcut",
+    name: "Needle’s Thread",
+    x: 1190,
+    y: 620,
+    radius: 38,
+    icon: "↝",
+    description:
+      "Two pale stones align to reveal a navigable cut through reefs marked impassable.",
+    benefit:
+      "Merchants will adopt the cut and increase traffic between northern ports.",
+    saleValue: 160,
+    faction: "Guild of Gilded Oars",
+    standingValue: 12,
+    route: {
+      origin: "Rimegate",
+      destination: "Lethariel",
+      good: "iron",
+      units: 1.7,
+      delay: 4,
+    },
+  },
+  {
+    id: "silverfin-run",
+    type: "Seasonal fishing ground",
+    name: "Silverfin Run",
+    x: 830,
+    y: 710,
+    radius: 52,
+    icon: "◀",
+    description:
+      "A cold current turns white with migrating silverfin for only a few days each cycle.",
+    benefit: "In season, public knowledge adds provisions to Goldhaven.",
+    saleValue: 75,
+    faction: "Tideborn Commons",
+    standingValue: 7,
+    season: { cycle: 12, start: 3, end: 7 },
+    route: {
+      origin: "Rimegate",
+      destination: "Goldhaven",
+      good: "provisions",
+      units: 1.5,
+      delay: 2,
+    },
+  },
+  {
+    id: "gilded-wreck",
+    type: "Salvage site",
+    name: "Wreck of the Gilded Hart",
+    x: 1875,
+    y: 940,
+    radius: 46,
+    icon: "⚒",
+    description:
+      "A royal carrack lies upright in clear water, its fittings visible between split decks.",
+    benefit: "Salvagers can recover fittings and seed a regular repair trade.",
+    saleValue: 180,
+    faction: "Pearl Senate",
+    standingValue: 10,
+    route: {
+      origin: "Glasswater",
+      destination: "Khaz Vhar",
+      good: "fittings",
+      units: 1,
+      delay: 5,
+    },
+  },
+  {
+    id: "new-candle",
+    type: "Emerging settlement",
+    name: "New Candle",
+    x: 2260,
+    y: 900,
+    radius: 52,
+    icon: "⌂",
+    description:
+      "Pilots, pearl fishers, and their families have built a permanent quay on an unnamed island.",
+    benefit:
+      "Recognition will turn the settlement into a feeder port for Glasswater.",
+    saleValue: 150,
+    faction: "Divers’ Communion",
+    standingValue: 12,
+    route: {
+      origin: "Goldhaven",
+      destination: "Glasswater",
+      good: "grain",
+      units: 1.6,
+      delay: 7,
+    },
+  },
+];
 const productionChains = [
   {
     id: "forge",
@@ -2829,6 +3021,28 @@ function runEconomyDay() {
     source.stock -= moved;
     dest.stock = clampNumber(dest.stock + moved, 0, 70);
   }
+  for (const trade of activeDiscoveryTrade(game.discoveries)) {
+    const site = discoverySites.find((entry) => entry.id === trade.discoveryId);
+    if (site?.season && !seasonalSiteActive(site, game.day)) continue;
+    const origin = getPortByName(trade.origin);
+    const destination = getPortByName(trade.destination);
+    if (
+      !origin ||
+      !destination ||
+      !game.economy[destination.name]?.[trade.good]
+    )
+      continue;
+    const source = game.economy[origin.name]?.[trade.good];
+    const moved = source
+      ? Math.min(trade.units, Math.max(0, source.stock - 5))
+      : trade.units;
+    if (source) source.stock -= moved;
+    game.economy[destination.name][trade.good].stock = clampNumber(
+      game.economy[destination.name][trade.good].stock + moved,
+      0,
+      70,
+    );
+  }
 }
 function maybeStartShortage() {
   const e = worldEvents.ironShortage;
@@ -2873,6 +3087,24 @@ function advanceDays(days) {
     game.day++;
     processWorldEventsForDay();
     runEconomyDay();
+    for (const route of advanceDiscoveryConsequences(
+      game.discoveries,
+      game.day,
+    )) {
+      const site = discoverySites.find(
+        (entry) => entry.id === route.discoveryId,
+      );
+      addNews(
+        site.name + " enters common use",
+        "Merchants now work the route between " +
+          route.origin +
+          " and " +
+          route.destination +
+          ", changing the supply of " +
+          goods[route.good].name +
+          ".",
+      );
+    }
   }
   if (days) {
     game.windAngle += 0.62 * days;
@@ -3930,6 +4162,7 @@ function loadGameState() {
   if (!saved) return false;
 
   Object.assign(game, saved.game);
+  game.discoveries = normalizeDiscoveryState(game.discoveries);
   for (const key of Object.keys(goods)) {
     game.cargo[key] ??= 0;
     game.cargoCost[key] = Array.isArray(game.cargoCost[key])
@@ -5246,6 +5479,29 @@ function renderFog() {
 
 function drawDynamicTradeWorld(c, z) {
   c.save();
+  for (const site of discoverySites) {
+    const record = game.discoveries.found[site.id];
+    if (!record) continue;
+    const x = nearestWrappedX(site.x, camera.x);
+    c.save();
+    c.translate(x, site.y);
+    c.fillStyle =
+      record.disposition === "secret"
+        ? "rgba(65,45,25,.92)"
+        : "rgba(159,91,38,.95)";
+    c.strokeStyle = "rgba(244,218,157,.9)";
+    c.lineWidth = 2 / z;
+    c.beginPath();
+    c.arc(0, 0, 14 / z, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#fff0c0";
+    c.font = 13 / z + "px Georgia";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(site.icon, 0, 0);
+    c.restore();
+  }
   if (game.laws.amberConvoy) {
     const off = Math.round((camera.x - 650) / WORLD.w) * WORLD.w;
     c.save();
@@ -5563,6 +5819,26 @@ function update(dt) {
   visibility.revealCooldown -= dt;
   if (visibility.revealCooldown <= 0) {
     revealCurrentView();
+    const found = discoverNearby(
+      game.discoveries,
+      discoverySites,
+      ship,
+      game.day,
+      wrappedDistance,
+    );
+    for (const discovery of found) {
+      addNews(
+        "Discovery: " + discovery.site.name,
+        discovery.site.description +
+          " Decide in the Captain’s Ledger whether to keep, sell, or share it.",
+      );
+      showMessage(
+        "DISCOVERY · " +
+          discovery.site.name +
+          " — recorded in the Captain’s Ledger",
+        4.5,
+      );
+    }
     visibility.revealCooldown = 0.12;
   }
   ship.trail.unshift({
@@ -6150,6 +6426,7 @@ function renderLedger() {
     game.activeContracts,
     true,
   );
+  renderDiscoveries();
   const factions = document.getElementById("factionLedger");
   factions.innerHTML = "";
   const standings = Object.entries(game.factionStanding)
@@ -6238,6 +6515,111 @@ function renderLedger() {
         "</p>";
       news.append(card);
     });
+}
+function renderDiscoveries() {
+  const root = document.getElementById("discoveryLedger");
+  root.innerHTML = "";
+  const records = Object.values(game.discoveries.found).sort(
+    (a, b) => b.foundDay - a.foundDay,
+  );
+  if (!records.length) {
+    root.innerHTML =
+      '<p class="empty-note">No hidden places recorded. Sail beyond familiar coasts and investigate close sightings.</p>';
+    return;
+  }
+  for (const record of records) {
+    const site = discoverySites.find((entry) => entry.id === record.id);
+    if (!site) continue;
+    const card = document.createElement("div");
+    card.className = "discovery-card";
+    const season = site.season
+      ? '<span class="contract-tag">' +
+        (seasonalSiteActive(site, game.day) ? "In season" : "Out of season") +
+        "</span>"
+      : "";
+    card.innerHTML =
+      '<div class="intel-head"><h4>' +
+      site.icon +
+      " " +
+      site.name +
+      "</h4>" +
+      season +
+      '</div><div class="town-kicker">' +
+      site.type +
+      " · found Day " +
+      record.foundDay +
+      '</div><p class="small">' +
+      site.description +
+      "</p><p><b>Consequence:</b> " +
+      site.benefit +
+      "</p>";
+    if (record.disposition) {
+      const status = document.createElement("div");
+      status.className = "discovery-status";
+      status.textContent =
+        DISCOVERY_DISPOSITIONS[record.disposition].label +
+        " · resolved Day " +
+        record.resolvedDay;
+      card.append(status);
+    } else {
+      const actions = document.createElement("div");
+      actions.className = "discovery-actions";
+      for (const disposition of ["secret", "sell", "share"]) {
+        const button = document.createElement("button");
+        button.className = "mini-action";
+        button.textContent =
+          disposition === "sell"
+            ? "Sell · " + site.saleValue + " crowns"
+            : disposition === "share"
+              ? "Share · +" + site.standingValue + " standing"
+              : "Keep secret";
+        button.addEventListener("click", () =>
+          handleDiscoveryDisposition(site.id, disposition),
+        );
+        actions.append(button);
+      }
+      card.append(actions);
+    }
+    root.append(card);
+  }
+}
+function handleDiscoveryDisposition(id, disposition) {
+  const result = resolveDiscovery(
+    game.discoveries,
+    discoverySites,
+    id,
+    disposition,
+    game.day,
+  );
+  if (!result.ok) {
+    showMessage(result.reason);
+    return;
+  }
+  game.coins += result.consequence.coins;
+  if (result.consequence.standing)
+    changeStanding(
+      result.consequence.standing.faction,
+      result.consequence.standing.amount,
+    );
+  const outcome =
+    disposition === "secret"
+      ? "The coordinates remain in your private log."
+      : result.consequence.route
+        ? "Merchants are preparing to exploit the route; local markets will change."
+        : "The information is now public.";
+  addNews("Fate of " + result.site.name, outcome);
+  showMessage(
+    result.site.name +
+      " · " +
+      DISCOVERY_DISPOSITIONS[disposition].label +
+      (result.consequence.coins
+        ? " · +" + result.consequence.coins + " crowns"
+        : ""),
+    3.5,
+  );
+  updateHud();
+  renderLedger();
+  saveGameState();
 }
 ui.dock.addEventListener("click", openPort);
 document

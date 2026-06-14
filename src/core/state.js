@@ -1,4 +1,5 @@
 import { createShipUpgradeState } from "./upgrades.js";
+import { createDiscoveryState } from "./discoveries.js";
 
 export function createGameState() {
   return {
@@ -37,6 +38,7 @@ export function createGameState() {
     merchantSightings: {},
     voyageDistance: 0,
     departedFromPort: null,
+    discoveries: createDiscoveryState(),
   };
 }
 
