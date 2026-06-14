@@ -67,7 +67,9 @@ import {
   processObligations,
   processWages,
   repairOperations,
+  resolveHostileEncounter,
   resolveVoyageOperations,
+  weatherRoughness,
 } from "./core/operations.js";
 import {
   advanceRegionalResources,
@@ -439,14 +441,14 @@ const productionChains = [
 // Visibility uses the real-world geometric horizon from an observer near the
 // top of the mast, then applies a lower weather limit when haze or fog closes in.
 const weatherPatterns = [
-  { name: "Clear", visibilityKm: 24 },
-  { name: "High haze", visibilityKm: 9.5 },
-  { name: "Rain squalls", visibilityKm: 6.2 },
-  { name: "Sea mist", visibilityKm: 3.4 },
-  { name: "Bright", visibilityKm: 18 },
-  { name: "Low cloud", visibilityKm: 7.4 },
-  { name: "Clear", visibilityKm: 22 },
-  { name: "Morning fog", visibilityKm: 4.6 },
+  { name: "Clear", visibilityKm: 24, roughness: 0.08 },
+  { name: "High haze", visibilityKm: 9.5, roughness: 0.12 },
+  { name: "Rain squalls", visibilityKm: 6.2, roughness: 0.5 },
+  { name: "Sea mist", visibilityKm: 3.4, roughness: 0.16 },
+  { name: "Bright", visibilityKm: 18, roughness: 0.06 },
+  { name: "Low cloud", visibilityKm: 7.4, roughness: 0.2 },
+  { name: "Clear", visibilityKm: 22, roughness: 0.09 },
+  { name: "Morning fog", visibilityKm: 4.6, roughness: 0.14 },
 ];
 const visibility = {
   eyeHeightM: 12,
@@ -468,6 +470,9 @@ function setWeatherForDay(day) {
 }
 function currentVisibilityKm() {
   return Math.min(visibility.horizonKm, game.weatherVisibilityKm);
+}
+function currentWeather() {
+  return weatherPatterns[(game.day - 1) % weatherPatterns.length];
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
@@ -3449,6 +3454,32 @@ function routeRisk(route) {
   return game.laws.amberConvoy && route.name === "The Amber Run"
     ? "Low · Crown convoy"
     : route.risk;
+}
+function hostileRiskBetween(originName, destinationName) {
+  const route = merchantRoutePaths.find(
+    (candidate) =>
+      (candidate.a === originName && candidate.b === destinationName) ||
+      (candidate.a === destinationName && candidate.b === originName),
+  );
+  const description = route
+    ? routeRisk(
+        getPortByName(originName).routes.find(
+          (candidate) =>
+            candidate.to.includes(destinationName) ||
+            destinationName.includes(candidate.to),
+        ) || { name: "", risk: "Moderate" },
+      )
+    : "Moderate";
+  const normalized = description.toLowerCase();
+  if (normalized.includes("low") || normalized.includes("safe")) return 0.1;
+  if (
+    normalized.includes("high") ||
+    normalized.includes("severe") ||
+    normalized.includes("pirate") ||
+    normalized.includes("beast")
+  )
+    return 0.34;
+  return 0.2;
 }
 function currentLawText(port) {
   if (port.name === "Goldhaven")
@@ -6580,12 +6611,7 @@ function openPort() {
     const distance = game.voyageDistance;
     advanceDays(days);
     const stats = calculateShipStats(game.shipUpgrades);
-    const roughness =
-      (game.weatherName === "Storm"
-        ? 0.8
-        : game.weatherName === "Rain"
-          ? 0.35
-          : 0.12) / stats.stormResistance;
+    const roughness = weatherRoughness(currentWeather(), stats.stormResistance);
     const operations = resolveVoyageOperations(game.operations, {
       distance,
       days,
@@ -6593,6 +6619,38 @@ function openPort() {
       stats,
     });
     game.operations = operations.operations;
+    const encounter = resolveHostileEncounter({
+      distance,
+      risk: hostileRiskBetween(game.departedFromPort, currentPort.name),
+      defense: stats.defense,
+      seed: game.day + currentPort.name.length + game.departedFromPort.length,
+    });
+    if (encounter.encountered) {
+      game.operations.condition = clampNumber(
+        game.operations.condition - encounter.conditionDamage,
+        0,
+        100,
+      );
+      game.operations.morale = clampNumber(
+        game.operations.morale + encounter.moraleChange,
+        0,
+        100,
+      );
+      const coinsLost = Math.min(game.coins, encounter.coinsLost);
+      game.coins -= coinsLost;
+      addNews(
+        encounter.repelled ? "Raiders repelled" : "Raiders board The Wren",
+        encounter.repelled
+          ? `The ship's defensive armament drove off attackers. Crew morale rose after the victory.`
+          : `Attackers caused ${encounter.conditionDamage}% damage and stole ${coinsLost} crowns. Better defensive armament could deter or repel future raids.`,
+      );
+      showMessage(
+        encounter.repelled
+          ? "RAIDERS REPELLED · The ship's armament proved its worth."
+          : "HOSTILE BOARDING · Raiders damaged the ship and stole crowns.",
+        4,
+      );
+    }
     const outcome = resolveVoyageCargo(game.cargoLots, {
       distance,
       roughness,

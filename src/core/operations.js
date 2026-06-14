@@ -91,6 +91,49 @@ export function estimateVoyageReadiness(operations, distance, stats) {
   return { days, provisionsNeeded, conditionRisk };
 }
 
+export function weatherRoughness(weather, stormResistance = 1) {
+  return (
+    Math.max(0, Number(weather?.roughness || 0)) /
+    Math.max(0.5, stormResistance)
+  );
+}
+
+function encounterRoll(seed) {
+  const value = Math.sin(Number(seed || 0) * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+export function resolveHostileEncounter({
+  distance,
+  risk = 0.18,
+  defense = 0,
+  seed = 0,
+}) {
+  const exposure = clamp((distance / 1600) * risk, 0, 0.82);
+  const deterrence = clamp(defense * 0.16, 0, 0.55);
+  const encountered = encounterRoll(seed) < exposure * (1 - deterrence);
+  if (!encountered)
+    return {
+      encountered: false,
+      repelled: false,
+      conditionDamage: 0,
+      moraleChange: 0,
+      coinsLost: 0,
+    };
+
+  const attackStrength = 1 + Math.floor(encounterRoll(seed + 1) * 3);
+  const repelled = defense >= attackStrength;
+  return {
+    encountered: true,
+    repelled,
+    conditionDamage: repelled
+      ? Math.max(0, attackStrength - defense)
+      : 3 + attackStrength * 2,
+    moraleChange: repelled ? 4 : -8 - attackStrength * 2,
+    coinsLost: repelled ? 0 : 8 + attackStrength * 7,
+  };
+}
+
 export function resolveVoyageOperations(
   operations,
   { distance, days, roughness, stats },
