@@ -146,6 +146,7 @@ export const discoverySites = [
   },
   {
     id: "moon-iron",
+    requiresExpedition: true,
     type: "Hidden resource deposit",
     name: "Moon-Iron Seam",
     x: 1270,
@@ -168,6 +169,7 @@ export const discoverySites = [
   },
   {
     id: "drowned-observatory",
+    requiresExpedition: true,
     type: "Ruins",
     name: "Drowned Observatory",
     x: 2160,
@@ -301,6 +303,33 @@ export const discoverySites = [
       units: 1.6,
       delay: 7,
     },
+  },
+];
+
+export const explorationSites = [
+  {
+    id: "moon-iron-uplands",
+    name: "Moon-Iron Cliffs",
+    objective: "Prospect the blue-grey seam above the wave-cut cliffs.",
+    x: 1270,
+    y: 930,
+    radius: 76,
+    difficulty: 8,
+    reward: 45,
+    discoveryId: "moon-iron",
+    hazards: "Loose basalt, exposed anchorage",
+  },
+  {
+    id: "observatory-tideway",
+    name: "Drowned Observatory",
+    objective: "Cross the tidal stair and recover the surviving star plates.",
+    x: 2160,
+    y: 570,
+    radius: 80,
+    difficulty: 11,
+    reward: 60,
+    discoveryId: "drowned-observatory",
+    hazards: "Rising tide, unstable chambers",
   },
 ];
 

@@ -45,6 +45,15 @@ test("nearby discoveries are recorded once", () => {
   );
 });
 
+test("expedition discoveries are not revealed by sailing nearby", () => {
+  const state = createDiscoveryState();
+  const expeditionCatalog = [{ ...catalog[0], requiresExpedition: true }];
+  assert.deepEqual(
+    discoverNearby(state, expeditionCatalog, { x: 10, y: 10 }, 1, distance),
+    [],
+  );
+});
+
 test("selling a discovery pays and schedules a public route consequence", () => {
   const state = createDiscoveryState();
   discoverNearby(state, catalog, { x: 10, y: 10 }, 1, distance);

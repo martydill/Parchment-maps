@@ -85,6 +85,7 @@ body {
   opacity: 1;
 }
 #dockButton,
+#exploreButton,
 #mapButton {
   pointer-events: auto;
   position: absolute;
@@ -113,12 +114,63 @@ body {
   height: 74px;
   display: none;
 }
+#exploreButton {
+  pointer-events: auto;
+  position: absolute;
+  right: 18px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  width: 86px;
+  height: 86px;
+  display: none;
+  border: 1px solid rgba(245, 216, 143, 0.76);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 42% 30%,
+    rgba(95, 123, 67, 0.96),
+    rgba(43, 61, 30, 0.98) 58%,
+    rgba(23, 31, 17, 0.99) 100%
+  );
+  color: #fff0c5;
+  font:
+    700 13px Georgia,
+    serif;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.52);
+}
 #mapButton {
   top: calc(max(10px, env(safe-area-inset-top)) + 61px);
   width: 50px;
   height: 50px;
   display: block;
   font-size: 20px;
+}
+
+#explorationPanel {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 16px;
+  overflow: auto;
+  background: rgba(14, 9, 5, 0.78);
+  z-index: 20;
+}
+.exploration-scroll {
+  width: min(620px, 100%);
+  max-height: min(760px, 92vh);
+}
+.expedition-options {
+  display: grid;
+  gap: 10px;
+}
+.expedition-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  text-align: left;
+}
+.expedition-option .small {
+  grid-column: 1 / -1;
 }
 #joystick {
   pointer-events: auto;
