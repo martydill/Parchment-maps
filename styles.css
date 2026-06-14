@@ -609,6 +609,21 @@ button.parchment {
   border-left: 3px solid rgba(91, 58, 33, 0.65);
   background: rgba(255, 244, 205, 0.13);
 }
+.production-chain {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(71, 44, 23, 0.24);
+}
+.production-chain:last-child {
+  border-bottom: 0;
+}
+.production-chain .small {
+  display: block;
+  margin-top: 2px;
+}
 #closePort {
   margin-top: 18px;
 }

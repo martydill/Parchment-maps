@@ -13,6 +13,7 @@ export function createGameState() {
     weatherVisibilityKm: 24,
     cargoCost: { spice: [], iron: [], silk: [] },
     economy: {},
+    productionReports: {},
     contractOffers: {},
     activeContracts: [],
     completedContracts: 0,

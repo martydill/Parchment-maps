@@ -7,6 +7,7 @@ import {
   createEconomyState,
   economyCondition,
   marketReferenceValue,
+  runProductionChains,
   sellPrice,
 } from "../src/core/economy.js";
 
@@ -21,12 +22,22 @@ const baseOptions = {
 test("createEconomyState builds bounded state for every port and good", () => {
   const result = createEconomyState(
     [{ name: "Port", bias: { iron: 1, silk: 0.5 } }],
-    { iron: {}, silk: {} },
+    { iron: {}, silk: {}, grain: {} },
   );
-  assert.deepEqual(Object.keys(result.Port), ["iron", "silk"]);
+  assert.deepEqual(Object.keys(result.Port), ["iron", "silk", "grain"]);
   assert.equal(result.Port.iron.target, 26);
   assert.ok(result.Port.silk.stock <= 52);
   assert.ok(result.Port.iron.production >= 0.2);
+});
+
+test("processed goods depend on chains instead of appearing as native production", () => {
+  const result = createEconomyState(
+    [{ name: "Port", bias: { ore: 0.8, iron: 1.2 } }],
+    { ore: {}, iron: { processed: true, target: 30 } },
+  );
+  assert.ok(result.Port.ore.production > 0);
+  assert.equal(result.Port.iron.production, 0);
+  assert.equal(result.Port.iron.target, 30);
 });
 
 test("economyCondition classifies stock ratios at every band", () => {
@@ -64,4 +75,95 @@ test("advanceEconomyState applies modifiers and clamps stock", () => {
     advanceEconomyState({ stock: 1, production: 0, consumption: 5 }).stock,
     0,
   );
+});
+
+test("production chains consume inputs and create downstream goods", () => {
+  const states = {
+    ore: { stock: 10 },
+    iron: { stock: 2 },
+  };
+  const reports = runProductionChains(
+    states,
+    [
+      {
+        id: "forge",
+        inputs: { ore: 2 },
+        outputs: { iron: 1 },
+        rate: 3,
+      },
+    ],
+    { forge: 1 },
+  );
+  assert.equal(states.ore.stock, 4);
+  assert.equal(states.iron.stock, 5);
+  assert.deepEqual(reports, [{ id: "forge", batches: 3, utilization: 1 }]);
+});
+
+test("production chains bottleneck on scarce inputs and honor disabled industries", () => {
+  const states = {
+    timber: { stock: 1 },
+    iron: { stock: 20 },
+    fittings: { stock: 69.8 },
+  };
+  const recipes = [
+    {
+      id: "shipwright",
+      inputs: { timber: 2, iron: 1 },
+      outputs: { fittings: 1 },
+      rate: 2,
+    },
+    {
+      id: "disabled",
+      inputs: { iron: 1 },
+      outputs: { fittings: 1 },
+      rate: 1,
+    },
+  ];
+  const reports = runProductionChains(states, recipes, {
+    shipwright: 3,
+    disabled: 0,
+  });
+  assert.equal(states.timber.stock, 0);
+  assert.equal(states.iron.stock, 19.5);
+  assert.equal(states.fittings.stock, 70);
+  assert.equal(reports[0].batches, 0.5);
+  assert.equal(reports[0].utilization, 0.125);
+  assert.equal(reports.length, 1);
+});
+
+test("production chains handle missing inputs, capped efficiency, and zero-rate recipes", () => {
+  const states = {
+    ore: { stock: 3 },
+    iron: { stock: 0 },
+  };
+  const reports = runProductionChains(
+    states,
+    [
+      {
+        id: "missing-input",
+        inputs: { coal: 1 },
+        outputs: { iron: 1 },
+        rate: 1,
+      },
+      {
+        id: "zero-rate",
+        inputs: { ore: 1 },
+        outputs: { iron: 1, slag: 1 },
+        rate: 0,
+      },
+      {
+        id: "unspecified",
+        inputs: { ore: 1 },
+        outputs: { iron: 1 },
+        rate: 1,
+      },
+    ],
+    { "missing-input": 5, "zero-rate": 1 },
+  );
+  assert.deepEqual(reports, [
+    { id: "missing-input", batches: 0, utilization: 0 },
+    { id: "zero-rate", batches: 0, utilization: 0 },
+  ]);
+  assert.equal(states.ore.stock, 3);
+  assert.equal(states.iron.stock, 0);
 });
