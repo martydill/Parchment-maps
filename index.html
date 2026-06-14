@@ -34,8 +34,30 @@
         </div>
       </div>
       <div id="message"></div>
-      <button id="mapButton" aria-label="Open chart">⌖</button>
-      <button id="ledgerButton" aria-label="Open captain’s ledger">📜</button>
+      <button
+        id="mapButton"
+        class="main-icon-button"
+        aria-label="Open chart"
+        data-tooltip="Map"
+      >
+        <svg
+          class="main-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="m3 5 5-2 8 3 5-2v15l-5 2-8-3-5 2V5Z" />
+          <path d="M8 3v15M16 6v15" />
+        </svg>
+      </button>
+      <button
+        id="ledgerButton"
+        class="main-icon-button"
+        aria-label="Open captain’s ledger"
+        data-tooltip="Captain’s ledger"
+      >
+        📜
+      </button>
       <div
         id="joystick"
         aria-label="Drag toward the direction you want to sail"
