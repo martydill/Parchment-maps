@@ -7,6 +7,21 @@ export const QUALITY_GRADES = Object.freeze({
   masterwork: { label: "Masterwork", value: 1.55 },
 });
 
+export const PROVENANCE_GRADES = Object.freeze({
+  ordinary: { label: "Ordinary provenance", value: 1 },
+  notable: { label: "Notable provenance", value: 1.08 },
+  renowned: { label: "Renowned provenance", value: 1.18 },
+});
+
+const PRODUCER_TITLES = Object.freeze([
+  "Harbor Factors",
+  "Guildhall Lot",
+  "Old Quay House",
+  "Crown Exchange",
+  "Seaward Cooperative",
+  "Lantern Market",
+]);
+
 const LEGAL_LABELS = Object.freeze({
   legal: "Legal",
   embargoed: "Embargoed",
@@ -55,6 +70,8 @@ export function createCargoLot({
   const quality = special
     ? qualityKeys[(roll >>> 5) % qualityKeys.length]
     : "common";
+  const provenanceGrade =
+    roll % 29 === 0 ? "renowned" : roll % 7 === 0 ? "notable" : "ordinary";
   let legalStatus = "legal";
   if (special && roll % 17 === 0) legalStatus = "counterfeit";
   else if (special && roll % 11 === 0) legalStatus = "embargoed";
@@ -67,6 +84,10 @@ export function createCargoLot({
     acquiredDay: day,
     age: 0,
     quality,
+    provenance: {
+      producer: `${origin} ${PRODUCER_TITLES[(roll >>> 12) % PRODUCER_TITLES.length]}`,
+      grade: provenanceGrade,
+    },
     legalStatus,
     fragility: special
       ? clamp(good.fragility || ((roll >>> 9) % 4) / 4, 0, 1)
@@ -76,6 +97,62 @@ export function createCargoLot({
     perishRate: good.perishRate || 0,
     compartment: "main",
   };
+}
+
+export function normalizeCargoLot(
+  lot,
+  key,
+  good = {},
+  fallbackOrigin = "Unknown",
+  day = 1,
+  sequence = 0,
+) {
+  const source = lot && typeof lot === "object" ? lot : {};
+  const origin =
+    typeof source.origin === "string" && source.origin
+      ? source.origin
+      : fallbackOrigin;
+  const provenance =
+    source.provenance && typeof source.provenance === "object"
+      ? source.provenance
+      : {};
+  source.id ||= `legacy-${key}-${sequence}`;
+  source.key = key;
+  source.cost = Number.isFinite(Number(source.cost))
+    ? Number(source.cost)
+    : good.base || 0;
+  source.origin = origin;
+  const acquiredDay = Number(source.acquiredDay);
+  source.acquiredDay =
+    Number.isFinite(acquiredDay) && acquiredDay >= 1
+      ? Math.floor(acquiredDay)
+      : Math.max(1, Math.floor(Number(day) || 1));
+  source.age = Math.max(0, Number(source.age) || 0);
+  source.quality = QUALITY_GRADES[source.quality] ? source.quality : "common";
+  source.provenance = {
+    producer:
+      typeof provenance.producer === "string" && provenance.producer
+        ? provenance.producer
+        : `${origin} Harbor Factors`,
+    grade: PROVENANCE_GRADES[provenance.grade] ? provenance.grade : "ordinary",
+  };
+  source.legalStatus = LEGAL_LABELS[source.legalStatus]
+    ? source.legalStatus
+    : "legal";
+  source.fragility = clamp(Number(source.fragility) || 0, 0, 1);
+  source.factionOwner =
+    typeof source.factionOwner === "string" && source.factionOwner
+      ? source.factionOwner
+      : null;
+  const perishRate = Number(source.perishRate);
+  source.perishRate =
+    Number.isFinite(perishRate) && perishRate >= 0
+      ? perishRate
+      : Math.max(0, Number(good.perishRate) || 0);
+  source.compartment = CARGO_COMPARTMENTS[source.compartment]
+    ? source.compartment
+    : "main";
+  return source;
 }
 
 export function cargoCompartmentCapacities(
@@ -158,7 +235,9 @@ export function normalizeCargoLots(
   fallbackOrigin = "Unknown",
   capacities,
 ) {
-  game.cargoLots = Array.isArray(game.cargoLots) ? game.cargoLots : [];
+  game.cargoLots = Array.isArray(game.cargoLots)
+    ? game.cargoLots.filter((lot) => lot && typeof lot === "object")
+    : [];
   const byKey = Object.groupBy
     ? Object.groupBy(game.cargoLots, (lot) => lot.key)
     : game.cargoLots.reduce((groups, lot) => {
@@ -169,22 +248,32 @@ export function normalizeCargoLots(
     const expected = Math.max(0, game.cargo[key] || 0);
     const existing = byKey[key] || [];
     for (let index = existing.length; index < expected; index += 1) {
-      game.cargoLots.push({
-        id: `legacy-${key}-${index}`,
-        key,
-        cost: game.cargoCost[key]?.[index] ?? goods[key].base,
-        origin: fallbackOrigin,
-        acquiredDay: game.day,
-        age: 0,
-        quality: "common",
-        legalStatus: "legal",
-        fragility: 0,
-        factionOwner: null,
-        perishRate: goods[key].perishRate || 0,
-        compartment: "main",
-      });
+      game.cargoLots.push(
+        normalizeCargoLot(
+          {
+            cost: game.cargoCost[key]?.[index] ?? goods[key].base,
+          },
+          key,
+          goods[key],
+          fallbackOrigin,
+          game.day,
+          index,
+        ),
+      );
     }
   }
+  game.cargoLots = game.cargoLots
+    .filter((lot) => goods[lot.key])
+    .map((lot, index) =>
+      normalizeCargoLot(
+        lot,
+        lot.key,
+        goods[lot.key],
+        fallbackOrigin,
+        game.day,
+        index,
+      ),
+    );
   if (capacities) normalizeCargoCompartments(game.cargoLots, capacities);
   syncCargoCounts(game, goods);
   return game.cargoLots;
@@ -200,6 +289,7 @@ export function syncCargoCounts(game, goods) {
 
 export function cargoValueMultiplier(lot, destination, good = {}) {
   let multiplier = QUALITY_GRADES[lot.quality]?.value || 1;
+  multiplier *= PROVENANCE_GRADES[lot.provenance?.grade]?.value || 1;
   multiplier *= Math.max(
     0.25,
     1 - lot.age * (lot.perishRate || good.perishRate || 0),
@@ -209,6 +299,19 @@ export function cargoValueMultiplier(lot, destination, good = {}) {
   if (lot.legalStatus === "counterfeit") multiplier *= 0.82;
   if (good.premiumPorts?.includes(destination)) multiplier *= 1.22;
   return multiplier;
+}
+
+export function cargoCondition(lot, good = {}) {
+  const perishRate = Math.max(
+    0,
+    Number(lot.perishRate) || good.perishRate || 0,
+  );
+  if (!perishRate) return { id: "stable", label: "Shelf-stable", freshness: 1 };
+  const freshness = Math.max(0, 1 - (Number(lot.age) || 0) * perishRate);
+  if (freshness >= 0.85) return { id: "fresh", label: "Fresh", freshness };
+  if (freshness >= 0.6) return { id: "sound", label: "Sound", freshness };
+  if (freshness >= 0.3) return { id: "stale", label: "Stale", freshness };
+  return { id: "spoiled", label: "Spoiled", freshness };
 }
 
 export function ageCargo(lots, days) {
@@ -252,10 +355,15 @@ export function resolveVoyageCargo(
 }
 
 export function cargoLotDescription(lot) {
+  const condition = cargoCondition(lot);
   const details = [
     QUALITY_GRADES[lot.quality]?.label || "Common",
-    `from ${lot.origin}`,
+    condition.label,
+    lot.provenance?.producer || `from ${lot.origin}`,
   ];
+  const provenance = PROVENANCE_GRADES[lot.provenance?.grade];
+  if (provenance && lot.provenance.grade !== "ordinary")
+    details.push(provenance.label);
   if (lot.age) details.push(`${lot.age}d old`);
   if (lot.fragility)
     details.push(lot.fragility >= 0.7 ? "very fragile" : "fragile");

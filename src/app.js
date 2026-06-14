@@ -44,11 +44,13 @@ import {
   bestCargoCompartment,
   cargoCompartmentCapacities,
   CARGO_COMPARTMENTS,
+  cargoCondition,
   cargoLotDescription,
   cargoValueMultiplier,
   createCargoLot,
   moveCargoLot,
   normalizeCargoCompartments,
+  normalizeCargoLot,
   normalizeCargoLots,
   resolveVoyageCargo,
   syncCargoCounts,
@@ -2104,6 +2106,19 @@ function loadGameState() {
       : [];
   }
   normalizeCargoLots(game, goods, "Legacy manifest", cargoCapacities());
+  for (const [portName, warehouse] of Object.entries(game.warehouses))
+    warehouse.lots = warehouse.lots
+      .filter((lot) => goods[lot?.key])
+      .map((lot, index) =>
+        normalizeCargoLot(
+          lot,
+          lot.key,
+          goods[lot.key],
+          portName,
+          game.day,
+          index,
+        ),
+      );
   game.productionReports ||= {};
   const freshEconomy = createEconomyState(ports, goods);
   for (const port of ports) {
@@ -4130,10 +4145,13 @@ function renderMarket() {
       (lots.length
         ? '<span class="cargo-manifest">' +
           lots
-            .map(
-              (lot, index) =>
-                `<span><b>#${index + 1}</b> ${cargoLotDescription(lot)}</span>`,
-            )
+            .map((lot, index) => {
+              const value = Math.round(
+                cargoValueMultiplier(lot, currentPort.name, goods[key]) * 100,
+              );
+              const condition = cargoCondition(lot, goods[key]);
+              return `<span class="cargo-quality quality-${lot.quality} condition-${condition.id}"><b>#${index + 1}</b> ${cargoLotDescription(lot)} · ${value}% market value</span>`;
+            })
             .join("") +
           "</span>"
         : "");

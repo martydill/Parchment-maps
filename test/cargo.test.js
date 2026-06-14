@@ -5,12 +5,14 @@ import {
   ageCargo,
   bestCargoCompartment,
   cargoCompartmentCapacities,
+  cargoCondition,
   cargoLotDescription,
   cargoValueMultiplier,
   compartmentUsage,
   createCargoLot,
   moveCargoLot,
   normalizeCargoCompartments,
+  normalizeCargoLot,
   normalizeCargoLots,
   resolveVoyageCargo,
   syncCargoCounts,
@@ -28,6 +30,8 @@ test("cargo lots carry stable trade properties", () => {
   assert.equal(lot.origin, "Mistmere");
   assert.equal(lot.age, 0);
   assert.equal(lot.compartment, "main");
+  assert.match(lot.provenance.producer, /^Mistmere /);
+  assert.ok(["ordinary", "notable", "renowned"].includes(lot.provenance.grade));
   assert.ok(["poor", "common", "fine", "masterwork"].includes(lot.quality));
   assert.equal(
     createCargoLot({
@@ -206,6 +210,89 @@ test("perishable cargo ages and loses value while premium origins retain market 
   );
 });
 
+test("cargo condition communicates shelf life as lots age", () => {
+  assert.deepEqual(cargoCondition({ age: 99, perishRate: 0 }), {
+    id: "stable",
+    label: "Shelf-stable",
+    freshness: 1,
+  });
+  assert.equal(cargoCondition({ age: 1, perishRate: 0.1 }).id, "fresh");
+  assert.equal(cargoCondition({ age: 2, perishRate: 0.1 }).id, "sound");
+  assert.equal(cargoCondition({ age: 5, perishRate: 0.1 }).id, "stale");
+  assert.equal(cargoCondition({ age: 8, perishRate: 0.1 }).id, "spoiled");
+  assert.equal(cargoCondition({ age: "bad" }, { perishRate: 0.1 }).id, "fresh");
+});
+
+test("cargo normalization migrates quality, age, and provenance fields", () => {
+  const lot = normalizeCargoLot(
+    {
+      cost: "12",
+      origin: "",
+      acquiredDay: -4,
+      age: -2,
+      quality: "mythic",
+      provenance: { producer: "", grade: "invented" },
+      legalStatus: "unknown",
+      fragility: 8,
+      factionOwner: "",
+      perishRate: -1,
+      compartment: "deck",
+    },
+    "fruit",
+    { base: 9, perishRate: 0.08 },
+    "Goldhaven",
+    6,
+    3,
+  );
+  assert.deepEqual(lot, {
+    id: "legacy-fruit-3",
+    key: "fruit",
+    cost: 12,
+    origin: "Goldhaven",
+    acquiredDay: 6,
+    age: 0,
+    quality: "common",
+    provenance: {
+      producer: "Goldhaven Harbor Factors",
+      grade: "ordinary",
+    },
+    legalStatus: "legal",
+    fragility: 1,
+    factionOwner: null,
+    perishRate: 0.08,
+    compartment: "main",
+  });
+
+  const preserved = normalizeCargoLot(
+    {
+      id: "fine-lot",
+      cost: null,
+      origin: "Rimegate",
+      acquiredDay: 3,
+      age: 2,
+      quality: "fine",
+      provenance: { producer: "Rimegate Forge", grade: "renowned" },
+      legalStatus: "embargoed",
+      fragility: 0.4,
+      factionOwner: "Guild",
+      perishRate: 0.02,
+      compartment: "dry",
+    },
+    "iron",
+    { base: 18 },
+  );
+  assert.equal(preserved.id, "fine-lot");
+  assert.equal(preserved.cost, 0);
+  assert.equal(preserved.provenance.grade, "renowned");
+  assert.equal(preserved.compartment, "dry");
+
+  const empty = normalizeCargoLot(null, "iron", { base: 18 }, "Unknown", 0);
+  assert.equal(empty.acquiredDay, 1);
+  assert.equal(empty.cost, 18);
+  assert.equal(empty.perishRate, 0);
+  assert.equal(normalizeCargoLot(null, "unknown").cost, 0);
+});
+
 test("rough voyages can break fragile cargo and customs can confiscate illegal lots", () => {
   const fragile = { id: "fragile", fragility: 1, legalStatus: "legal" };
   const embargoed = { id: "illegal", fragility: 0, legalStatus: "embargoed" };
@@ -234,7 +321,7 @@ test("legacy cargo is normalized into ordinary lots", () => {
     assert.deepEqual(game.cargoCost.iron, [10, 12]);
     assert.match(
       cargoLotDescription(game.cargoLots[1]),
-      /Common · from Oldport/,
+      /Common · Shelf-stable · Oldport Harbor Factors/,
     );
   } finally {
     Object.groupBy = originalGroupBy;
@@ -339,6 +426,15 @@ test("normalization preserves existing lots and fills all legacy defaults", () =
   normalizeCargoLots(emptyLegacyGame, { silk: { base: 34 } });
   assert.deepEqual(emptyLegacyGame.cargoLots, []);
   assert.equal(emptyLegacyGame.cargo.silk, 0);
+
+  const invalidKeyGame = {
+    day: 1,
+    cargo: { iron: 0 },
+    cargoCost: { iron: [] },
+    cargoLots: [{ key: "unknown", cost: 4 }, null],
+  };
+  normalizeCargoLots(invalidKeyGame, { iron: { base: 18 } });
+  assert.deepEqual(invalidKeyGame.cargoLots, []);
 });
 
 test("normalization supports runtimes with Object.groupBy", () => {
@@ -390,6 +486,17 @@ test("cargo valuation covers quality, provenance, legality, and spoilage", () =>
     legalStatus: "legal",
   };
   assert.equal(cargoValueMultiplier(base, "Rimegate"), 1);
+  assert.equal(
+    cargoValueMultiplier(
+      {
+        ...base,
+        quality: "fine",
+        provenance: { grade: "renowned" },
+      },
+      "Rimegate",
+    ),
+    1.24 * 1.18,
+  );
   assert.equal(cargoValueMultiplier(base, "Goldhaven"), 0.94);
   assert.equal(
     cargoValueMultiplier({ ...base, legalStatus: "embargoed" }, "Rimegate"),
@@ -514,7 +621,7 @@ test("cargo descriptions include every optional detail and fallback label", () =
       legalStatus: "embargoed",
       factionOwner: "Mirror Knives",
     }),
-    "Common · from Mistmere · 4d old · fragile · Embargoed · Mirror Knives cargo",
+    "Common · Shelf-stable · from Mistmere · 4d old · fragile · Embargoed · Mirror Knives cargo",
   );
   assert.match(
     cargoLotDescription({
@@ -525,7 +632,7 @@ test("cargo descriptions include every optional detail and fallback label", () =
       legalStatus: "legal",
       factionOwner: null,
     }),
-    /^Masterwork · from Lethariel · very fragile$/,
+    /^Masterwork · Shelf-stable · from Lethariel · very fragile$/,
   );
   assert.match(
     cargoLotDescription({
@@ -535,5 +642,20 @@ test("cargo descriptions include every optional detail and fallback label", () =
       compartment: "dry",
     }),
     /Dry locker$/,
+  );
+  assert.match(
+    cargoLotDescription({
+      quality: "fine",
+      origin: "Goldhaven",
+      age: 1,
+      perishRate: 0.1,
+      provenance: {
+        producer: "Goldhaven Crown Exchange",
+        grade: "notable",
+      },
+      legalStatus: "legal",
+      compartment: "main",
+    }),
+    /Fresh · Goldhaven Crown Exchange · Notable provenance/,
   );
 });

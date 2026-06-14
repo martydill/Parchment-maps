@@ -986,6 +986,27 @@ button.parchment {
 .cargo-manifest span {
   display: block;
 }
+.cargo-quality {
+  border-left: 3px solid transparent;
+  padding-left: 5px;
+}
+.cargo-quality.quality-poor {
+  border-color: #8b5c42;
+}
+.cargo-quality.quality-fine {
+  border-color: #52723d;
+}
+.cargo-quality.quality-masterwork {
+  border-color: #9a711c;
+}
+.cargo-quality.condition-stale {
+  color: #8a5a18;
+}
+.cargo-quality.condition-spoiled {
+  color: #8b2727;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
 .cargo-compartment {
   min-width: 0;
   padding: 9px;
