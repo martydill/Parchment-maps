@@ -1,16 +1,23 @@
 import { clamp } from "./math.js";
 
 export const FACTION_PRIVILEGES = Object.freeze([
-  { standing: 10, label: "Trusted factor", contractReward: 0.05 },
+  {
+    standing: 10,
+    label: "Trusted factor",
+    privilege: "Warehousing",
+    contractReward: 0.05,
+  },
   {
     standing: 25,
     label: "Favored captain",
+    privilege: "Customs exemption · exclusive cargo · better credit",
     contractReward: 0.1,
     intelDiscount: 0.15,
   },
   {
     standing: 45,
     label: "Chartered ally",
+    privilege: "Armed escorts · restricted ship upgrades",
     contractReward: 0.15,
     intelDiscount: 0.25,
   },
@@ -101,6 +108,7 @@ export function factionPrivilege(standing = 0) {
   let privilege = {
     standing: 0,
     label: "Unproven",
+    privilege: "No port privileges",
     contractReward: 0,
     intelDiscount: 0,
   };

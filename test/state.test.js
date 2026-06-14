@@ -48,6 +48,15 @@ test("changeStanding initializes, adjusts, and clamps faction standing", () => {
   assert.equal(changeStanding(game, "Guild", -250, clamp), -100);
 });
 
+test("helping a faction costs standing with its rival", () => {
+  const game = createGameState();
+  changeStanding(game, "Deep Delvers’ Union", 10);
+  assert.equal(game.factionStanding["Deep Delvers’ Union"], 10);
+  assert.equal(game.factionStanding["Black Hammer Compact"], -5);
+  changeStanding(game, "Deep Delvers’ Union", -4);
+  assert.equal(game.factionStanding["Black Hammer Compact"], -5);
+});
+
 test("full game saves round-trip through JSON", () => {
   const game = createGameState();
   game.coins = 777;
