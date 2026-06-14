@@ -4,15 +4,16 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
@@ -35,3 +36,9 @@ jobs:
           name: gilded-archipelago-single-html
           path: dist/gilded-archipelago.html
           if-no-files-found: error
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/gilded-archipelago.html --generate-notes --verify-tag
