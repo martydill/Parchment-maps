@@ -3,13 +3,16 @@ import test from "node:test";
 
 import {
   advanceRegionalResources,
+  availableMarketGoods,
   chooseRecipe,
   createRegionalState,
+  dockingFee,
   infrastructureCapacity,
   inputQuality,
   investInIndustry,
   investmentCost,
   normalizeRegionalState,
+  portEvolution,
   regionalSummary,
   runRegionalIndustries,
 } from "../src/core/regional.js";
@@ -83,6 +86,141 @@ test("regional state reflects port specialties and repairs old saves", () => {
   assert.equal(partial.Forgeport.infrastructure, 2);
   assert.equal(partial.Forgeport.labor, 1.1);
   assert.equal(partial.Forgeport.resourceHealth.ore, 1);
+});
+
+test("investment changes markets, port artwork, fees, and creates a named magnate", () => {
+  const regional = createRegionalState(ports, chains).Forgeport;
+  const before = availableMarketGoods(regional, chains, [
+    "ore",
+    "iron",
+    "grain",
+  ]);
+  assert.equal(before.has("ore"), true);
+  assert.equal(before.has("iron"), false);
+  const initialFee = dockingFee(regional);
+  const result = investInIndustry(regional, "forge", 500, "Forgeport");
+  assert.match(result.magnate, /\w+ .+/);
+  assert.equal(regional.industries.forge.magnate, result.magnate);
+  assert.equal(
+    availableMarketGoods(regional, chains, ["ore", "iron"]).has("iron"),
+    true,
+  );
+  assert.equal(portEvolution(regional).warehouses, true);
+  investInIndustry(regional, "forge", 500, "Forgeport");
+  assert.equal(portEvolution(regional).cranes, true);
+  investInIndustry(regional, "forge", 500, "Forgeport");
+  assert.ok(dockingFee(regional) > initialFee);
+  assert.equal(portEvolution(regional).fortifications, true);
+});
+
+test("resource collapse drives unrest and migration until investment restores industry", () => {
+  const regional = createRegionalState(ports, chains).Forgeport;
+  regional.resourceHealth.ore = 0.2;
+  regional.unrest = 64;
+  const population = regional.population;
+  advanceRegionalResources(
+    regional,
+    {
+      ore: { stock: 1, target: 20, production: 4 },
+      grain: { stock: 1, target: 20, production: 0 },
+    },
+    chains,
+  );
+  assert.equal(regional.industries.forge.collapsed, true);
+  assert.ok(regional.unrest > 65);
+  assert.ok(regional.population < population);
+  const report = runRegionalIndustries(
+    states(),
+    chains,
+    { forge: 1 },
+    regional,
+  )[0];
+  assert.equal(report.batches, 0);
+  assert.equal(report.collapsed, true);
+  const restored = investInIndustry(regional, "forge", 500, "Forgeport");
+  assert.equal(restored.restored, true);
+  assert.equal(regional.industries.forge.collapsed, false);
+});
+
+test("evolution state normalization and consequence branches remain save compatible", () => {
+  const populatedPorts = [
+    {
+      name: "Forgeport",
+      infrastructure: 0,
+      labor: 0.8,
+      population: 12345,
+      extractiveGoods: ["ore"],
+    },
+  ];
+  const fresh = createRegionalState(populatedPorts, chains).Forgeport;
+  assert.equal(fresh.population, 12345);
+  const normalized = normalizeRegionalState(
+    {
+      Forgeport: {
+        population: 900,
+        unrest: 150,
+        politicalAttention: -5,
+        pirateAttention: 45,
+        industries: {
+          forge: {
+            investment: 2,
+            collapsed: true,
+            magnate: "Existing Magnate",
+          },
+        },
+      },
+    },
+    populatedPorts,
+    chains,
+  ).Forgeport;
+  assert.equal(normalized.population, 1000);
+  assert.equal(normalized.unrest, 100);
+  assert.equal(normalized.politicalAttention, 0);
+  assert.equal(normalized.pirateAttention, 45);
+  assert.equal(normalized.industries.forge.magnate, "Existing Magnate");
+
+  const noResources = createRegionalState(
+    [{ name: "Quietport", labor: 1.2, extractiveGoods: [] }],
+    chains,
+  ).Quietport;
+  const originalPopulation = noResources.population;
+  advanceRegionalResources(
+    noResources,
+    { grain: { stock: 20, target: 20, production: 0 } },
+    chains,
+  );
+  assert.ok(noResources.population > originalPopulation);
+  assert.equal(portEvolution(noResources).crisis, false);
+  assert.equal(portEvolution(noResources).foundries, false);
+
+  noResources.labor = 1;
+  noResources.population = 50000;
+  advanceRegionalResources(
+    noResources,
+    { grain: { stock: 20, target: 20, production: 0 } },
+    chains,
+  );
+  assert.equal(noResources.population, 50000);
+  assert.equal(dockingFee({ ...noResources, unrest: 100 }), 2);
+
+  normalized.industries.forge.collapsed = false;
+  const existingMagnate = investInIndustry(
+    normalized,
+    "forge",
+    500,
+    "Forgeport",
+  );
+  assert.equal(existingMagnate.magnate, "Existing Magnate");
+  assert.equal(
+    availableMarketGoods(normalized, chains, ["ore", "iron"]).has("iron"),
+    true,
+  );
+  normalized.industries.forge.collapsed = true;
+  assert.equal(
+    availableMarketGoods(normalized, chains, ["ore", "iron"]).has("iron"),
+    false,
+  );
+  assert.equal(portEvolution(normalized).crisis, true);
 });
 
 test("infrastructure and investment produce bounded progression", () => {

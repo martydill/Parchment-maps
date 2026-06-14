@@ -82,10 +82,13 @@ import {
 } from "./core/operations.js";
 import {
   advanceRegionalResources,
+  availableMarketGoods,
   createRegionalState,
+  dockingFee,
   investInIndustry,
   investmentCost,
   normalizeRegionalState,
+  portEvolution,
   regionalSummary,
   runRegionalIndustries,
 } from "./core/regional.js";
@@ -3080,6 +3083,7 @@ function regionalPortSpecifications() {
       name: port.name,
       infrastructure: prosperityInfrastructure(port),
       labor: clampNumber(0.65 + port.population / 120000, 0.7, 1.35),
+      population: port.population,
       extractiveGoods: Object.entries(goods)
         .filter(([, good]) =>
           good.terms.some((term) => resourceText.includes(term)),
@@ -3156,6 +3160,7 @@ function runEconomyDay() {
     const resourceModifiers = advanceRegionalResources(
       regional,
       game.economy[port.name],
+      productionChains,
     );
     for (const key of Object.keys(goods)) {
       const state = economyState(port, key),
@@ -4555,6 +4560,8 @@ function drawMountain(c, x, y, s) {
 function drawPortIcon(c, p) {
   c.save();
   c.translate(p.x, p.y);
+  const regional = game.regionalEconomy[p.name];
+  const evolution = regional ? portEvolution(regional) : {};
   c.strokeStyle = "#291b10";
   c.fillStyle = "#a83f2f";
   c.lineWidth = 3;
@@ -4562,6 +4569,50 @@ function drawPortIcon(c, p) {
   c.arc(0, 0, 8, 0, Math.PI * 2);
   c.fill();
   c.stroke();
+  if (evolution.warehouses) {
+    c.fillStyle = "rgba(111,66,31,.78)";
+    c.fillRect(7, -21, 20, 14);
+    c.strokeRect(7, -21, 20, 14);
+    c.beginPath();
+    c.moveTo(5, -21);
+    c.lineTo(17, -29);
+    c.lineTo(29, -21);
+    c.stroke();
+  }
+  if (evolution.cranes) {
+    c.beginPath();
+    c.moveTo(31, -6);
+    c.lineTo(31, -39);
+    c.lineTo(52, -39);
+    c.lineTo(39, -31);
+    c.moveTo(47, -37);
+    c.lineTo(47, -21);
+    c.stroke();
+  }
+  if (evolution.foundries) {
+    c.fillStyle = "rgba(67,51,38,.82)";
+    c.fillRect(-39, -29, 9, 23);
+    c.strokeRect(-39, -29, 9, 23);
+    c.fillStyle = "rgba(76,67,56,.3)";
+    c.beginPath();
+    c.arc(-34, -37, 7, 0, Math.PI * 2);
+    c.fill();
+  }
+  if (evolution.fortifications) {
+    c.beginPath();
+    c.moveTo(-45, -4);
+    c.lineTo(-45, -18);
+    c.lineTo(-39, -18);
+    c.lineTo(-39, -13);
+    c.lineTo(-31, -13);
+    c.lineTo(-31, -4);
+    c.stroke();
+  }
+  if (evolution.crisis) {
+    c.fillStyle = "#8d231c";
+    c.font = "700 18px Georgia";
+    c.fillText("!", -52, -24);
+  }
   c.beginPath();
   c.moveTo(0, -10);
   c.lineTo(0, -34);
@@ -6450,6 +6501,22 @@ function renderPolitics() {
 }
 function renderPortSystems() {
   if (!currentPort) return;
+  const regional = game.regionalEconomy[currentPort.name];
+  const summary = regionalSummary(regional);
+  const evolution = portEvolution(regional);
+  const features = [
+    evolution.cranes && "towering cargo cranes",
+    evolution.foundries && "smoking foundries",
+    evolution.warehouses && "new warehouses",
+    evolution.fortifications && "harbor fortifications",
+  ].filter(Boolean);
+  const collapsed = Object.entries(regional.industries)
+    .filter(([, industry]) => industry.collapsed)
+    .map(([id]) => productionChains.find((chain) => chain.id === id)?.name)
+    .filter(Boolean);
+  document.getElementById("portEvolution").innerHTML =
+    `<b>${features.length ? features.join(" · ") : "A modest working harbor"}</b>` +
+    `<span>${summary.pirateAttention >= 50 ? "Pirates are watching this wealthy harbor. " : ""}${summary.politicalAttention >= 50 ? "Courts and factions contest its growing influence. " : ""}${summary.unrest >= 45 ? "Protests and outward migration trouble the streets. " : ""}${collapsed.length ? `Collapsed: ${collapsed.join(", ")}. Restoration capital is required.` : ""}</span>`;
   renderMarket();
   renderCargoPlan();
   renderProductionChains();
@@ -6618,7 +6685,7 @@ function renderProductionChains() {
   const summary = regionalSummary(regional);
   const overview = document.createElement("div");
   overview.className = "ship-stats";
-  overview.textContent = `${summary.infrastructure} infrastructure · ${summary.laborPercent}% labor availability · ${summary.resourcePercent}% resource health`;
+  overview.textContent = `${summary.infrastructure} infrastructure · ${summary.population.toLocaleString()} people · ${summary.laborPercent}% labor · ${summary.resourcePercent}% resources · ${summary.unrest}% unrest · ${summary.dockingFee} crown docking fee`;
   root.append(overview);
   const reports = Object.fromEntries(
     (game.productionReports[currentPort.name] || []).map((report) => [
@@ -6632,11 +6699,13 @@ function renderProductionChains() {
     const industry = regional.industries[chain.id];
     const card = document.createElement("div");
     card.className = "production-chain";
-    const status = report
-      ? report.utilization < 0.5
-        ? "Input-starved"
-        : "Operating"
-      : "Awaiting daily cycle";
+    const status = industry.collapsed
+      ? "COLLAPSED"
+      : report
+        ? report.utilization < 0.5
+          ? "Input-starved"
+          : "Operating"
+        : "Awaiting daily cycle";
     const recipe =
       report?.recipeId === "standard"
         ? "standard recipe"
@@ -6654,22 +6723,31 @@ function renderProductionChains() {
       status +
       " · " +
       Math.round(efficiency * 100) +
-      "%</span>";
+      `%</span>${industry.magnate ? `<span class="small magnate">Local power: ${industry.magnate}, ${industry.investment >= 2 ? "rival magnate" : "rising proprietor"}</span>` : ""}`;
     const invest = document.createElement("button");
     const cost = investmentCost(industry);
     invest.className = "parchment";
-    invest.textContent =
-      industry.investment >= 3
+    invest.textContent = industry.collapsed
+      ? `Restore industry · ${cost}`
+      : industry.investment >= 3
         ? "Fully developed"
         : `Invest ${cost} · level ${industry.investment}/3`;
-    invest.disabled = industry.investment >= 3 || game.coins < cost;
+    invest.disabled =
+      (industry.investment >= 3 && !industry.collapsed) || game.coins < cost;
     invest.onclick = () => {
-      const result = investInIndustry(regional, chain.id, game.coins);
+      const result = investInIndustry(
+        regional,
+        chain.id,
+        game.coins,
+        currentPort.name,
+      );
       if (!result.ok) return showMessage(result.reason);
       game.coins = result.coins;
       addNews(
         `Investment in ${chain.name}`,
-        `Your capital raised ${currentPort.name}'s ${chain.name.toLowerCase()} industry to level ${result.level}.`,
+        result.restored
+          ? `Your capital reopened ${currentPort.name}'s ruined ${chain.name.toLowerCase()} under ${result.magnate}.`
+          : `Your capital raised ${currentPort.name}'s ${chain.name.toLowerCase()} industry to level ${result.level}, creating a new local power in ${result.magnate}.`,
       );
       showMessage(
         `${chain.name} expanded to investment level ${result.level}.`,
@@ -6767,6 +6845,19 @@ function openPort() {
   ship.speed = 0;
   ship.anchored = true;
   if (game.departedFromPort !== null && game.voyageDistance > 35) {
+    const fee = dockingFee(game.regionalEconomy[currentPort.name]);
+    const paid = Math.min(game.coins, fee);
+    game.coins -= paid;
+    if (paid < fee)
+      game.regionalEconomy[currentPort.name].unrest = clampNumber(
+        game.regionalEconomy[currentPort.name].unrest + 3,
+        0,
+        100,
+      );
+    addNews(
+      `Docked at ${currentPort.name}`,
+      `${paid} crown${paid === 1 ? "" : "s"} paid in harbor dues.${paid < fee ? " The unpaid balance angered local officials." : ""}`,
+    );
     const days = Math.max(1, Math.ceil(game.voyageDistance / 620));
     const distance = game.voyageDistance;
     advanceDays(days);
@@ -6876,7 +6967,14 @@ function renderMarket() {
     cargoCount() + "/" + game.holdMax;
   const market = document.getElementById("market");
   market.innerHTML = "";
+  const regional = game.regionalEconomy[currentPort.name];
+  const available = availableMarketGoods(
+    regional,
+    productionChains,
+    Object.keys(goods),
+  );
   Object.keys(goods).forEach((key) => {
+    if (!available.has(key)) return;
     const state = economyState(currentPort, key),
       buyQuote = buyPriceFor(currentPort, key),
       baseSellQuote = sellPriceFor(currentPort, key),

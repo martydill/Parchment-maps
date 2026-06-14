@@ -650,6 +650,20 @@ button.parchment {
   border-left: 3px solid rgba(91, 58, 33, 0.65);
   background: rgba(255, 244, 205, 0.13);
 }
+.port-evolution {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-left: 5px solid #8b5428;
+  background: rgba(124, 76, 31, 0.12);
+}
+.port-evolution span,
+.magnate {
+  display: block;
+  margin-top: 4px;
+}
+.production-chain:has(.contract-tag:first-child) {
+  border-color: #8d231c;
+}
 .production-chain {
   display: flex;
   justify-content: space-between;
