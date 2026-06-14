@@ -1,6 +1,7 @@
 import { createShipUpgradeState } from "./upgrades.js";
 import { createDiscoveryState } from "./discoveries.js";
 import { createOperationsState } from "./operations.js";
+import { applyStandingChange } from "./factions.js";
 
 export function createGameState() {
   return {
@@ -23,6 +24,7 @@ export function createGameState() {
     failedContracts: 0,
     contractSerial: 1,
     factionStanding: {},
+    factionCharter: null,
     laws: { amberConvoy: false },
     milestone: {
       shortageProfit: 0,
@@ -58,11 +60,7 @@ export function addNews(game, title, body, limit = 18) {
   game.news = game.news.slice(0, limit);
 }
 
-export function changeStanding(game, faction, amount, clamp) {
-  game.factionStanding[faction] = clamp(
-    (game.factionStanding[faction] || 0) + amount,
-    -100,
-    100,
-  );
+export function changeStanding(game, faction, amount, _clamp) {
+  applyStandingChange(game.factionStanding, faction, amount);
   return game.factionStanding[faction];
 }

@@ -89,6 +89,11 @@ import {
   regionalSummary,
   runRegionalIndustries,
 } from "./core/regional.js";
+import {
+  chooseFactionCharter,
+  contractConflict,
+  factionRivals,
+} from "./core/factions.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -3383,6 +3388,12 @@ function acceptContract(id) {
     index = offers.findIndex((c) => c.id === id);
   if (index < 0) return;
   const contract = offers[index];
+  const conflict = contractConflict(
+    contract,
+    game.activeContracts,
+    game.factionCharter,
+  );
+  if (conflict) return showMessage(conflict);
   if (game.activeContracts.length >= 3)
     return showMessage("You can manage at most three active commissions.");
   if (cargoCount() + contract.cargoUnits > game.holdMax)
@@ -6326,9 +6337,18 @@ function renderContractList(root, contracts, active = false) {
         " influence</span>";
     card.append(head, desc, meta);
     if (!active) {
+      const conflict = contractConflict(
+        contract,
+        game.activeContracts,
+        game.factionCharter,
+      );
       const button = document.createElement("button");
       button.className = "parchment";
-      button.textContent = "Accept Commission";
+      button.textContent = conflict
+        ? "Conflicting Allegiance"
+        : "Accept Commission";
+      button.disabled = Boolean(conflict);
+      if (conflict) button.title = conflict;
       button.onclick = () => acceptContract(contract.id);
       card.append(button);
     }
@@ -6381,6 +6401,8 @@ function renderPolitics() {
       f.name +
       '<span class="small">' +
       factionPrivilege(game.factionStanding[f.name] || 0).label +
+      " · " +
+      factionPrivilege(game.factionStanding[f.name] || 0).privilege +
       "</span></span><b>" +
       (game.factionStanding[f.name] || 0) +
       "</b>";
@@ -6982,18 +7004,46 @@ function renderLedger() {
       '<p class="empty-note">Complete contracts to build political standing.</p>';
   else
     standings.forEach(([name, value]) => {
+      const privilege = factionPrivilege(value);
       const row = document.createElement("div");
       row.className = "standing-row";
       row.innerHTML =
         "<span>" +
         name +
         '<span class="small">' +
-        factionPrivilege(value).label +
+        privilege.label +
+        " · " +
+        privilege.privilege +
+        (factionRivals(name).length
+          ? " · Rivals: " + factionRivals(name).join(", ")
+          : "") +
         "</span></span><b>" +
         value +
         "</b>";
       factions.append(row);
+      if (value >= 45 && !game.factionCharter) {
+        const charter = document.createElement("button");
+        charter.className = "parchment";
+        charter.textContent = `Accept ${name} charter`;
+        charter.onclick = () => {
+          const result = chooseFactionCharter(game, name);
+          if (!result.ok) return showMessage(result.reason);
+          addNews(
+            "Formal charter sworn",
+            `You entered the service of ${name}. Its rivals have closed their doors.`,
+          );
+          renderLedger();
+          updateHud();
+        };
+        factions.append(charter);
+      }
     });
+  if (game.factionCharter) {
+    const charter = document.createElement("div");
+    charter.className = "event-banner";
+    charter.innerHTML = `<b>Formal charter</b>${game.factionCharter} · rival contracts unavailable`;
+    factions.prepend(charter);
+  }
   const obligations = game.operations.obligations.filter(
     (item) => !item.fulfilled && !item.failed,
   );
