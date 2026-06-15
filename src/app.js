@@ -1364,24 +1364,41 @@ function acceptContract(id) {
 }
 function resolveContractsAtPort(port) {
   const remaining = [];
-  let completed = [];
+  const resolved = [];
   for (const contract of game.activeContracts) {
     if (contract.destination !== port.name) {
       remaining.push(contract);
-      continue;
+    } else {
+      resolved.push(contract);
     }
+  }
+
+  if (resolved.length === 0) return;
+
+  let rewardTotal = 0;
+  const influenceGains = {};
+
+  for (const contract of resolved) {
     const standing = game.factionStanding[contract.faction] || 0;
     const outcome = contractOutcome(contract, game.day, standing);
     game.coins += outcome.reward;
+    rewardTotal += outcome.reward;
     changeStanding(contract.faction, outcome.standing);
+    if (outcome.standing !== 0) {
+      influenceGains[contract.faction] =
+        (influenceGains[contract.faction] || 0) + outcome.standing;
+    }
+
     if (outcome.completed) {
       game.completedContracts++;
       if (
         contract.origin === "Goldhaven" &&
         contract.faction !== "Guild of Gilded Oars"
-      )
+      ) {
         changeStanding("Guild of Gilded Oars", 4);
-      completed.push(contract);
+        influenceGains["Guild of Gilded Oars"] =
+          (influenceGains["Guild of Gilded Oars"] || 0) + 4;
+      }
       addNews(
         "Contract fulfilled",
         contract.title +
@@ -1416,15 +1433,31 @@ function resolveContractsAtPort(port) {
       );
     }
   }
+
   game.activeContracts = remaining;
-  if (completed.length)
+
+  const influenceEntries = Object.entries(influenceGains);
+  let influenceText = "";
+  if (influenceEntries.length > 0) {
+    influenceText =
+      " Reputation: " +
+      influenceEntries
+        .map(([f, amt]) => (amt > 0 ? "+" + amt : amt) + " " + f)
+        .join(", ");
+  }
+
+  if (resolved.length === 1) {
     showMessage(
-      completed.length +
-        " contract" +
-        (completed.length > 1 ? "s" : "") +
-        " completed. Rewards and influence added.",
-      4,
+      `${resolved[0].title} delivered. Earned ${rewardTotal} crowns.${influenceText}`,
+      4.5,
     );
+  } else {
+    showMessage(
+      `${resolved.length} contracts delivered. Earned ${rewardTotal} crowns.${influenceText}`,
+      5,
+    );
+  }
+
   maybeStartShortage();
   updateMilestoneCompletion();
 }
@@ -4616,6 +4649,160 @@ function renderLedger() {
       news.append(card);
     });
 }
+function renderShipPanel() {
+  const stats = operationalShipStats();
+  const identity = calculateShipIdentity(game.shipUpgrades);
+  const activeClass = SHIP_CLASSES[game.shipUpgrades.activeClass];
+  const ops = game.operations;
+
+  document.getElementById("shipRegisterName").textContent =
+    activeClass.vesselName;
+  document.getElementById("shipRegisterDescription").textContent =
+    activeClass.name + " — " + activeClass.description;
+
+  document.getElementById("shipRegisterStats").innerHTML =
+    "<strong>Fitting identity: " +
+    identity.name +
+    "</strong><span>" +
+    identity.description +
+    "</span><span>" +
+    stats.holdMax +
+    " hold · " +
+    Math.round(stats.maxSpeed / 7) +
+    " knots · " +
+    stats.turnRate.toFixed(2) +
+    " turning · " +
+    currentVisibilityKm().toFixed(1) +
+    " km sight · defense " +
+    stats.defense +
+    "</span>";
+
+  const fittings = document.getElementById("shipRegisterFittings");
+  fittings.innerHTML = "<h4>Fitted gear</h4>";
+  const gearList = document.createElement("div");
+  for (const slot of UPGRADE_SLOTS) {
+    const equippedId = game.shipUpgrades.equipped[slot.id];
+    const upgrade =
+      SHIP_UPGRADES[slot.id].find((item) => item.id === equippedId) || null;
+    const row = document.createElement("div");
+    row.className = "standing-row";
+    row.innerHTML =
+      "<span>" +
+      slot.name +
+      '<span class="small">' +
+      (upgrade ? upgrade.name : "—") +
+      "</span></span>";
+    gearList.append(row);
+  }
+  fittings.append(gearList);
+
+  document.getElementById("shipRegisterCrew").innerHTML =
+    ops.provisions +
+    "/30 provisions · " +
+    Math.round(ops.condition) +
+    "% overall condition · " +
+    Math.round(ops.morale) +
+    " morale · wages Day " +
+    ops.wagesDueDay +
+    (ops.wageArrears ? " · " + ops.wageArrears + " crowns in arrears" : "");
+
+  document.getElementById("shipRegisterComponents").innerHTML = Object.entries(
+    SHIP_COMPONENTS,
+  )
+    .map(
+      ([key, component]) =>
+        '<div class="component-condition ' +
+        (ops.components[key] < 40 ? "critical" : "") +
+        '"><span>' +
+        component.label +
+        "</span><b>" +
+        Math.round(ops.components[key]) +
+        "%</b></div>",
+    )
+    .join("");
+
+  const obligationsRoot = document.getElementById("shipRegisterObligations");
+  const obligations = ops.obligations.filter(
+    (item) => !item.fulfilled && !item.failed,
+  );
+  obligationsRoot.innerHTML = "";
+  if (obligations.length) {
+    const heading = document.createElement("h4");
+    heading.textContent = "Outstanding obligations";
+    obligationsRoot.append(heading);
+    for (const obligation of obligations) {
+      const row = document.createElement("div");
+      row.className = "standing-row";
+      row.innerHTML =
+        "<span>Call on " +
+        obligation.faction +
+        "</span><b>Day " +
+        obligation.dueDay +
+        "</b>";
+      obligationsRoot.append(row);
+    }
+  }
+
+  const cargoRoot = document.getElementById("shipRegisterCargo");
+  cargoRoot.innerHTML = "";
+  const capacities = cargoCapacities();
+  const aboard = cargoCount();
+  const sealed = contractCargoCount();
+  const summary = document.createElement("div");
+  summary.className = "ship-stats";
+  summary.innerHTML =
+    "<strong>" +
+    aboard +
+    "/" +
+    game.holdMax +
+    " hold</strong>" +
+    (sealed
+      ? "<span>" +
+        sealed +
+        " unit" +
+        (sealed === 1 ? "" : "s") +
+        " sealed as contract cargo.</span>"
+      : "");
+  cargoRoot.append(summary);
+
+  if (game.cargoLots.length) {
+    const used = {};
+    for (const lot of game.cargoLots)
+      used[lot.compartment] = (used[lot.compartment] || 0) + 1;
+    for (const [key, compartment] of Object.entries(CARGO_COMPARTMENTS)) {
+      if (!used[key]) continue;
+      const section = document.createElement("section");
+      section.className = "cargo-compartment";
+      section.innerHTML =
+        '<div class="cargo-compartment-head"><b>' +
+        compartment.label +
+        "</b><span>" +
+        used[key] +
+        "/" +
+        capacities[key] +
+        "</span></div>";
+      for (const lot of game.cargoLots.filter(
+        (item) => item.compartment === key,
+      )) {
+        const row = document.createElement("div");
+        row.className = "cargo-lot-row";
+        row.innerHTML =
+          "<b>" +
+          goods[lot.key].name +
+          '</b><span class="small">' +
+          cargoLotDescription(lot) +
+          "</span>";
+        section.append(row);
+      }
+      cargoRoot.append(section);
+    }
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-note";
+    empty.textContent = "The hold is empty.";
+    cargoRoot.append(empty);
+  }
+}
 function renderDiscoveries() {
   const root = document.getElementById("discoveryLedger");
   root.innerHTML = "";
@@ -4976,6 +5163,19 @@ document
   .addEventListener("click", () => (ledgerPanel.style.display = "none"));
 ledgerPanel.addEventListener("click", (e) => {
   if (e.target === ledgerPanel) ledgerPanel.style.display = "none";
+});
+
+const shipButton = document.getElementById("shipButton"),
+  shipPanel = document.getElementById("shipPanel");
+shipButton.addEventListener("click", () => {
+  renderShipPanel();
+  shipPanel.style.display = "grid";
+});
+document
+  .getElementById("closeShip")
+  .addEventListener("click", () => (shipPanel.style.display = "none"));
+shipPanel.addEventListener("click", (e) => {
+  if (e.target === shipPanel) shipPanel.style.display = "none";
 });
 
 const menuButton = document.getElementById("menuButton"),
