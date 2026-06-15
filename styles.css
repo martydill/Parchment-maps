@@ -967,6 +967,7 @@ button.parchment {
   width: min(96vw, 1120px);
 }
 #minimap {
+  display: block;
   width: 100%;
   height: auto;
   border: 9px solid #5a351d;
@@ -974,6 +975,62 @@ button.parchment {
     0 14px 50px rgba(0, 0, 0, 0.72),
     inset 0 0 30px rgba(74, 39, 15, 0.3);
   background: #c8a66a;
+}
+#chartedCities {
+  position: absolute;
+  inset: 9px;
+  pointer-events: none;
+}
+.charted-city {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid #f4dfad;
+  border-radius: 50%;
+  background: #78382a;
+  box-shadow:
+    0 0 0 2px rgba(62, 35, 18, 0.72),
+    0 2px 5px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+.charted-city::after {
+  content: attr(data-city-name);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  z-index: 2;
+  width: max-content;
+  max-width: 180px;
+  padding: 6px 9px;
+  border: 1px solid #7d512c;
+  border-radius: 4px;
+  color: #3d2615;
+  background: #f5e2af;
+  box-shadow: 0 4px 12px rgba(31, 18, 8, 0.45);
+  font:
+    700 13px Georgia,
+    serif;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+.charted-city:hover::after,
+.charted-city:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.charted-city:hover,
+.charted-city:focus-visible {
+  z-index: 3;
+  background: #a65338;
+  outline: 2px solid #fff0c5;
+  outline-offset: 2px;
 }
 #closeMap {
   position: absolute;
