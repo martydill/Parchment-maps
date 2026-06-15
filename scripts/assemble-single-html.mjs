@@ -15,21 +15,25 @@ const [html, css, javascript] = await Promise.all([
   readFile(bundlePath, "utf8"),
 ]);
 
-const stylesheetTag = '    <link rel="stylesheet" href="./styles.css" />';
-const moduleTag = '    <script type="module" src="./src/app.js"></script>';
+const stylesheetTag =
+  /^(\s*)<link rel="stylesheet" href="\.\/styles\.css(?:\?[^"]*)?" \/>$/m;
+const moduleTag =
+  /^(\s*)<script type="module" src="\.\/src\/app\.js(?:\?[^"]*)?"><\/script>$/m;
 
-if (!html.includes(stylesheetTag) || !html.includes(moduleTag)) {
+if (!stylesheetTag.test(html) || !moduleTag.test(html)) {
   throw new Error("Could not find the expected stylesheet and module tags");
 }
 
 const packagedHtml = html
   .replace(
     stylesheetTag,
-    `    <style>\n${css.replaceAll("</style", "<\\/style")}\n    </style>`,
+    (_, indentation) =>
+      `${indentation}<style>\n${css.replaceAll("</style", "<\\/style")}\n${indentation}</style>`,
   )
   .replace(
     moduleTag,
-    `    <script>\n${javascript.replaceAll("</script", "<\\/script")}\n    </script>`,
+    (_, indentation) =>
+      `${indentation}<script>\n${javascript.replaceAll("</script", "<\\/script")}\n${indentation}</script>`,
   );
 
 await mkdir(dirname(outputPath), { recursive: true });
