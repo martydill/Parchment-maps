@@ -186,6 +186,16 @@ import {
   specialistVoyageModifiers,
 } from "./core/specialists.js";
 import {
+  CREW_ROLES,
+  crewVoyageModifiers,
+  crewWeeklyWage,
+  normalizeCrewState,
+  portRecruitmentPool,
+  recruitCrew,
+  resolveCrewIncident,
+  takeShoreLeave,
+} from "./core/crew.js";
+import {
   aidRival,
   normalizeRivalState,
   recordPlayerCompetition,
@@ -1387,6 +1397,21 @@ function advanceDays(days) {
         "Wages missed",
         `${wages.missed} crowns entered arrears. Crew morale has fallen.`,
       );
+    const crewEvent = resolveCrewIncident(game.operations.crew, {
+      day: game.day,
+      arrears: game.operations.wageArrears,
+      coins: game.coins,
+    });
+    game.operations.crew = crewEvent.crew;
+    if (crewEvent.incident) {
+      game.coins -= crewEvent.incident.coinsLost;
+      game.operations.morale = clampNumber(
+        game.operations.morale + crewEvent.incident.morale,
+        0,
+        100,
+      );
+      addNews(crewEvent.incident.title, crewEvent.incident.body);
+    }
     const specialistEvent = resolveSpecialistEvent(game.specialists, game.day);
     game.specialists = specialistEvent.state;
     if (specialistEvent.event) {
@@ -2408,6 +2433,7 @@ function loadGameState() {
   game.exploration = normalizeExplorationState(game.exploration);
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
+  game.operations.crew = normalizeCrewState(game.operations.crew);
   game.specialists = normalizeSpecialistState(game.specialists);
   game.rivals = normalizeRivalState(game.rivals);
   game.maritimeHazards = normalizeMaritimeHazardState(game.maritimeHazards);
@@ -4374,13 +4400,19 @@ function renderReadiness() {
   const root = document.getElementById("voyageReadiness");
   const ops = game.operations;
   const stats = operationalShipStats();
+  const crewModifiers = crewVoyageModifiers(ops.crew);
+  const readinessStats = {
+    ...stats,
+    stormResistance: stats.stormResistance * crewModifiers.stormResistance,
+    crewProvisionMultiplier: crewModifiers.provisionMultiplier,
+  };
   const nearbyRoutes = routesFrom(currentPort.name);
   const estimates = nearbyRoutes.map((route) => {
     const destination = route.a === currentPort.name ? route.b : route.a;
     const distance = pathLength(
       orientRoute(route, currentPort.name, destination),
     );
-    const estimate = estimateVoyageReadiness(distance, stats);
+    const estimate = estimateVoyageReadiness(distance, readinessStats);
     return {
       destination,
       ...estimate,
@@ -4388,7 +4420,13 @@ function renderReadiness() {
     };
   });
   root.innerHTML =
-    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
+    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
+    `<div class="crew-grid">${Object.entries(ops.crew.groups)
+      .map(
+        ([role, group]) =>
+          `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} exp · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
+      )
+      .join("")}</div>` +
     `<div class="component-grid">${Object.entries(SHIP_COMPONENTS)
       .map(
         ([key, component]) =>
@@ -4432,7 +4470,48 @@ function renderReadiness() {
     updateHud();
   };
   actions.append(provision, repairAll);
+  const leave = document.createElement("button");
+  leave.className = "parchment";
+  leave.textContent = "Grant shore leave";
+  leave.onclick = () => {
+    const result = takeShoreLeave(game.operations.crew, game.coins);
+    if (!result.ok) return showMessage(result.reason);
+    game.operations.crew = result.crew;
+    game.coins = result.coins;
+    game.operations.morale = clampNumber(game.operations.morale + 8, 0, 100);
+    advanceDays(result.days);
+    showMessage(`Shore leave restored the crew · ${result.cost} crowns.`);
+    renderPortSystems();
+    updateHud();
+  };
+  actions.append(leave);
   root.append(actions);
+  const recruiting = document.createElement("div");
+  recruiting.className = "crew-recruiting";
+  for (const offer of portRecruitmentPool(
+    currentPort.name,
+    currentPort.population,
+  )) {
+    const button = document.createElement("button");
+    button.className = "parchment";
+    button.textContent = `Recruit ${CREW_ROLES[offer.role].label} · ${offer.cost}`;
+    button.title = `${offer.available} available · ${offer.experience} experience`;
+    button.disabled = game.coins < offer.cost || offer.available <= 0;
+    button.onclick = () => {
+      const result = recruitCrew(game.operations.crew, offer, game.coins);
+      if (!result.ok) return showMessage(result.reason);
+      game.operations.crew = result.crew;
+      game.coins = result.coins;
+      offer.available -= 1;
+      showMessage(
+        `Recruited one ${CREW_ROLES[offer.role].label.toLowerCase()}.`,
+      );
+      renderPortSystems();
+      updateHud();
+    };
+    recruiting.append(button);
+  }
+  root.append(recruiting);
   const componentActions = document.createElement("div");
   componentActions.className = "component-repairs";
   for (const [key, component] of Object.entries(SHIP_COMPONENTS)) {
@@ -4708,6 +4787,9 @@ function openPort() {
     const distance = game.voyageDistance;
     advanceDays(days);
     const stats = operationalShipStats();
+    const crewModifiers = crewVoyageModifiers(game.operations.crew);
+    stats.stormResistance *= crewModifiers.stormResistance;
+    stats.defense += crewModifiers.defense;
     const roughness = weatherRoughness(currentWeather(), stats.stormResistance);
     const specialistModifiers = specialistVoyageModifiers(game.specialists);
     const operations = resolveVoyageOperations(game.operations, {
@@ -4717,6 +4799,7 @@ function openPort() {
       stats: {
         ...stats,
         provisionMultiplier: specialistModifiers.provisionMultiplier,
+        crewProvisionMultiplier: crewModifiers.provisionMultiplier,
         damageMultiplier: specialistModifiers.damageMultiplier,
         moraleLossMultiplier: specialistModifiers.moraleLossMultiplier,
       },
@@ -5355,7 +5438,7 @@ function renderShipPanel() {
     " turning · " +
     currentVisibilityKm().toFixed(1) +
     " km sight · defense " +
-    stats.defense +
+    (stats.defense + crewVoyageModifiers(ops.crew).defense).toFixed(1) +
     "</span>";
 
   const fittings = document.getElementById("shipRegisterFittings");
@@ -5386,6 +5469,15 @@ function renderShipPanel() {
     " morale · wages Day " +
     ops.wagesDueDay +
     (ops.wageArrears ? " · " + ops.wageArrears + " crowns in arrears" : "");
+
+  document.getElementById("shipRegisterCrewGroups").innerHTML = Object.entries(
+    ops.crew.groups,
+  )
+    .map(
+      ([role, group]) =>
+        `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} experience · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span><p>${CREW_ROLES[role].description}</p></article>`,
+    )
+    .join("");
 
   document.getElementById("shipRegisterComponents").innerHTML = Object.entries(
     SHIP_COMPONENTS,

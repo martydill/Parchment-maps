@@ -1540,6 +1540,40 @@ button.parchment.secondary {
   gap: 6px;
   margin: 8px 0;
 }
+.crew-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 8px 0;
+}
+.crew-card {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(79, 47, 22, 0.28);
+  border-radius: 7px;
+  background: rgba(92, 55, 25, 0.08);
+  font-size: 11px;
+}
+.crew-card header {
+  display: flex;
+  justify-content: space-between;
+}
+.crew-card p {
+  margin: 2px 0 0;
+}
+.crew-recruiting {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.crew-recruiting button.parchment {
+  min-width: 0;
+  margin: 0;
+  padding: 7px 4px;
+  font-size: 11px;
+}
 .component-condition {
   display: grid;
   gap: 2px;
@@ -1605,6 +1639,8 @@ button.parchment.secondary {
 @media (max-width: 620px) {
   .component-grid,
   .component-repairs,
+  .crew-grid,
+  .crew-recruiting,
   .specialist-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
