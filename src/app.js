@@ -165,6 +165,7 @@ import {
   intelEffectText,
   upcomingEvents as findUpcomingEvents,
 } from "./core/intelligence.js";
+import { currentObjective, voyageWarnings } from "./core/guidance.js";
 import {
   discoverySites,
   explorationSites,
@@ -2330,6 +2331,10 @@ const ui = {
   controlHint: document.getElementById("controlHint"),
   steeringStatus: document.getElementById("steeringStatus"),
   objective: document.getElementById("objectiveText"),
+  course: document.getElementById("courseCard"),
+  courseTitle: document.getElementById("courseTitle"),
+  courseDetail: document.getElementById("courseDetail"),
+  courseAction: document.getElementById("courseAction"),
 };
 const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
@@ -2406,12 +2411,64 @@ function updateHud() {
     " · longitude " +
     Math.round((wrapX(ship.x) / WORLD.w) * 360) +
     "°";
+  const objective = currentObjective({
+    game,
+    currentPortName: currentPort?.name || null,
+    nearPortName: nearPort?.name || null,
+    homePortName: HOME_PORT.name,
+  });
+  ui.course.className = objective.urgency;
+  ui.courseTitle.textContent = objective.title;
+  ui.courseDetail.textContent = objective.detail;
+  ui.courseAction.textContent =
+    objective.action === "dock"
+      ? "Dock now →"
+      : objective.action === "trade"
+        ? "Open contract board →"
+        : objective.action === "vessel"
+          ? "Prepare vessel →"
+          : objective.action === "politics"
+            ? "Open politics →"
+            : objective.action === "ledger"
+              ? "Open ledger →"
+              : "Open chart →";
   if (ship.anchored)
     ui.steeringStatus.textContent = "AT ANCHOR · DRAG THE WHEEL TO SAIL";
   else if (Math.abs(ship.speed) < 5)
     ui.steeringStatus.textContent = "DRAG TOWARD YOUR DESTINATION";
   else ui.steeringStatus.textContent = "SAILING · RELEASE TO COAST";
 }
+
+function followCurrentObjective() {
+  const objective = currentObjective({
+    game,
+    currentPortName: currentPort?.name || null,
+    nearPortName: nearPort?.name || null,
+    homePortName: HOME_PORT.name,
+  });
+  if (objective.action === "dock") {
+    openPort();
+    return;
+  }
+  if (
+    ["trade", "vessel", "politics"].includes(objective.action) &&
+    currentPort
+  ) {
+    activateSectionTabs(document.getElementById("portPanel"), objective.action);
+    document.getElementById("portPanel").style.display = "grid";
+    return;
+  }
+  if (objective.action === "ledger") {
+    renderLedger();
+    document.getElementById("ledgerPanel").style.display = "grid";
+    return;
+  }
+  minimapWrap.style.display = "grid";
+  renderChart();
+}
+
+ui.course.addEventListener("click", followCurrentObjective);
+
 function showMessage(text, seconds = 2.2) {
   ui.message.textContent = text;
   ui.message.classList.add("show");
@@ -3583,6 +3640,7 @@ function renderPortSystems() {
   document.getElementById("portEvolution").innerHTML =
     `<b>${features.length ? features.join(" · ") : "A modest working harbor"}</b>` +
     `<span>${summary.pirateAttention >= 50 ? "Pirates are watching this wealthy harbor. " : ""}${summary.politicalAttention >= 50 ? "Courts and factions contest its growing influence. " : ""}${summary.unrest >= 45 ? "Protests and outward migration trouble the streets. " : ""}${collapsed.length ? `Collapsed: ${collapsed.join(", ")}. Restoration capital is required.` : ""}</span>`;
+  renderPortOpportunities();
   renderMarket();
   renderCustomsOffice();
   renderCargoPlan();
@@ -3599,6 +3657,57 @@ function renderPortSystems() {
   renderShipyard();
   renderReadiness();
   renderMilestone(document.getElementById("milestonePort"));
+}
+
+function renderPortOpportunities() {
+  const root = document.getElementById("portOpportunities");
+  const offers = ensureContractOffers(currentPort);
+  const opportunity = bestTradeOpportunity();
+  const damaged = Math.round(game.operations.condition) < 100;
+  const rows = [
+    {
+      title: `${offers.length} contract${offers.length === 1 ? "" : "s"} available`,
+      detail: "Open Trade to review pay, deadlines, and faction consequences.",
+      tab: "trade",
+    },
+    {
+      title:
+        opportunity.buy === currentPort.name
+          ? `Buy ${goods[opportunity.key].name} for a known trade`
+          : opportunity.sell === currentPort.name
+            ? `${goods[opportunity.key].name} is in demand here`
+            : "Review today’s market",
+      detail:
+        opportunity.buy === currentPort.name
+          ? `Known destination: ${opportunity.sell}, about ${opportunity.margin} crowns margin per unit.`
+          : opportunity.sell === currentPort.name
+            ? `Best known source: ${opportunity.buy}, about ${opportunity.margin} crowns margin per unit.`
+            : "Buy local surpluses and compare known prices before sailing.",
+      tab: "market",
+    },
+    {
+      title: damaged
+        ? "Your vessel needs attention"
+        : "Prepare the next voyage",
+      detail: damaged
+        ? `${Math.round(game.operations.condition)}% condition. Repair damaged systems before a long route.`
+        : `${game.operations.provisions}/30 provisions aboard; inspect route estimates before casting off.`,
+      tab: "vessel",
+    },
+  ];
+  root.innerHTML = "";
+  for (const row of rows) {
+    const item = document.createElement("div");
+    item.className = "port-opportunity";
+    item.innerHTML = `<div><b>${row.title}</b><span class="small">${row.detail}</span></div>`;
+    const button = document.createElement("button");
+    button.className = "parchment";
+    button.textContent = "Open";
+    button.onclick = () =>
+      activateSectionTabs(document.getElementById("portPanel"), row.tab);
+    item.append(button);
+    root.append(item);
+  }
 }
 
 function renderCustomsOffice() {
@@ -3850,7 +3959,12 @@ function renderReadiness() {
     const distance = pathLength(
       orientRoute(route, currentPort.name, destination),
     );
-    return { destination, ...estimateVoyageReadiness(distance, stats) };
+    const estimate = estimateVoyageReadiness(distance, stats);
+    return {
+      destination,
+      ...estimate,
+      arrivalDay: game.day + estimate.days,
+    };
   });
   root.innerHTML =
     `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · wages Day ${ops.wagesDueDay}</div>` +
@@ -3862,10 +3976,10 @@ function renderReadiness() {
       .join("")}</div>` +
     estimates
       .slice(0, 3)
-      .map(
-        (estimate) =>
-          `<div class="standing-row"><span>${estimate.destination}<span class="small">${estimate.days}d · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span></span></div>`,
-      )
+      .map((estimate) => {
+        const warnings = voyageWarnings(ops, estimate);
+        return `<div class="standing-row"><span><b>${estimate.destination}</b><span class="small">${estimate.days}d · arrive Day ${estimate.arrivalDay} · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span>${warnings.length ? warnings.map((warning) => `<span class="readiness-warning">⚠ ${warning}</span>`).join("") : '<span class="readiness-ready">✓ Ready to sail</span>'}</span></div>`;
+      })
       .join("");
   const actions = document.createElement("div");
   actions.className = "town-actions";
@@ -5295,6 +5409,26 @@ function renderChart() {
       c.beginPath();
       c.arc(p.x * sx, p.y * sy, 12, 0, Math.PI * 2);
       c.stroke();
+    }
+  }
+  const objective = currentObjective({
+    game,
+    currentPortName: currentPort?.name || null,
+    nearPortName: nearPort?.name || null,
+    homePortName: HOME_PORT.name,
+  });
+  if (objective.destination) {
+    const p = getPortByName(objective.destination);
+    if (p) {
+      c.strokeStyle = "#75c978";
+      c.lineWidth = 4;
+      c.beginPath();
+      c.arc(p.x * sx, p.y * sy, 19, 0, Math.PI * 2);
+      c.stroke();
+      c.fillStyle = "#fff0c5";
+      c.font = "bold 14px Georgia";
+      c.textAlign = "center";
+      c.fillText(objective.title, p.x * sx, p.y * sy - 25);
     }
   }
   for (const event of game.scheduledEvents) {

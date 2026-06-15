@@ -133,6 +133,12 @@
         </div>
       </div>
       <div id="message"></div>
+      <button id="courseCard" type="button">
+        <span class="course-kicker">Captain’s course</span>
+        <b id="courseTitle">Dock at Goldhaven</b>
+        <span id="courseDetail">Take your first Guild commission.</span>
+        <span id="courseAction">Show me where →</span>
+      </button>
       <button
         id="mapButton"
         class="main-icon-button"
@@ -286,6 +292,10 @@
         </nav>
         <div class="port-body">
           <section class="port-panel active" data-tab="harbor" role="tabpanel">
+            <div class="detail-card port-opportunities-card">
+              <h3>What can I do here?</h3>
+              <div id="portOpportunities"></div>
+            </div>
             <div id="portEvolution" class="port-evolution"></div>
             <div id="portEvent"></div>
             <div class="detail-card customs-card">
@@ -705,6 +715,11 @@
       <div id="minimapCard">
         <canvas id="minimap" width="1440" height="540"></canvas>
         <button id="closeMap">×</button>
+        <div id="chartLegend">
+          <span><i class="legend-contract"></i>Contract</span>
+          <span><i class="legend-objective"></i>Current course</span>
+          <span><i class="legend-event"></i>Known event</span>
+        </div>
         <div id="chartHint">
           Tap a charted town · the east and west edges connect
         </div>
