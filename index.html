@@ -139,6 +139,12 @@
         <span id="courseDetail">Take your first Guild commission.</span>
         <span id="courseAction">Show me where →</span>
       </button>
+      <button id="plottedCourse" type="button" hidden>
+        <span class="course-kicker">Plotted course</span>
+        <b id="plottedCourseTitle"></b>
+        <span id="plottedCourseDetail"></span>
+        <span id="plottedCourseAction">Open chart · click to clear</span>
+      </button>
       <button
         id="mapButton"
         class="main-icon-button"
@@ -508,6 +514,7 @@
           </section>
         </div>
         <div class="town-actions">
+          <button class="parchment" id="townCourseButton">Set Course</button>
           <button class="parchment" id="townDockButton">Dock and Trade</button>
           <button class="parchment" id="closeTown">Close Ledger</button>
         </div>
@@ -727,6 +734,7 @@
         <div id="chartLegend">
           <span><i class="legend-contract"></i>Contract</span>
           <span><i class="legend-objective"></i>Current course</span>
+          <span><i class="legend-plotted"></i>Plotted course</span>
           <span><i class="legend-event"></i>Known event</span>
         </div>
         <div id="chartHint">
