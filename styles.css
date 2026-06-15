@@ -1786,3 +1786,126 @@ button.parchment {
     grid-template-columns: 1fr;
   }
 }
+
+/* Phase-one guidance and voyage feedback */
+#courseCard {
+  pointer-events: auto;
+  position: absolute;
+  top: calc(max(10px, env(safe-area-inset-top)) + 92px);
+  left: 14px;
+  width: min(360px, calc(100vw - 96px));
+  display: grid;
+  gap: 3px;
+  padding: 11px 14px;
+  text-align: left;
+  color: #fff1c8;
+  background: linear-gradient(
+    135deg,
+    rgba(61, 35, 18, 0.96),
+    rgba(91, 57, 28, 0.94)
+  );
+  border: 1px solid rgba(245, 216, 143, 0.72);
+  border-left: 5px solid #d5a13d;
+  border-radius: 8px;
+  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.46);
+  cursor: pointer;
+}
+#courseCard.ready {
+  border-left-color: #69a866;
+}
+#courseCard.danger {
+  border-left-color: #d45242;
+}
+#courseCard.complete {
+  border-left-color: #d6b85c;
+}
+.course-kicker,
+#courseAction {
+  color: #e9c979;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+#courseDetail {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.9;
+}
+#courseAction {
+  margin-top: 3px;
+}
+.port-opportunity {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(71, 44, 23, 0.16);
+}
+.port-opportunity:last-child {
+  border-bottom: 0;
+}
+.port-opportunity span {
+  display: block;
+}
+.readiness-warning,
+.readiness-ready {
+  display: block;
+  margin: 5px 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.readiness-warning {
+  color: #6f1d18;
+  background: rgba(157, 55, 43, 0.12);
+  border: 1px solid rgba(128, 42, 32, 0.3);
+}
+.readiness-ready {
+  color: #234f2c;
+  background: rgba(57, 120, 68, 0.12);
+  border: 1px solid rgba(45, 103, 55, 0.3);
+}
+#chartLegend {
+  position: absolute;
+  left: 18px;
+  bottom: 38px;
+  display: flex;
+  gap: 12px;
+  padding: 7px 10px;
+  color: #fff0c5;
+  background: rgba(52, 31, 16, 0.88);
+  border-radius: 6px;
+  font-size: 11px;
+}
+#chartLegend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#chartLegend i {
+  width: 12px;
+  height: 12px;
+  border: 2px solid;
+  border-radius: 50%;
+}
+.legend-contract {
+  border-color: #d5a13d !important;
+}
+.legend-objective {
+  border-color: #75c978 !important;
+}
+.legend-event {
+  border-color: #8b4e2d !important;
+  border-style: dashed !important;
+}
+@media (max-width: 620px) {
+  #courseCard {
+    top: calc(max(10px, env(safe-area-inset-top)) + 112px);
+    width: calc(100vw - 100px);
+  }
+  #chartLegend {
+    right: 18px;
+    flex-wrap: wrap;
+  }
+}
