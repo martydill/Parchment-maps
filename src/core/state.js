@@ -8,6 +8,8 @@ import { createLegalState } from "./jurisdictions.js";
 import { createWarehouseState } from "./warehouses.js";
 import { createSpecialistState } from "./specialists.js";
 import { createNavigationState } from "./navigation.js";
+import { createRivalState } from "./rivals.js";
+import { createMaritimeHazardState } from "./maritime-hazards.js";
 
 export function createGameState() {
   return {
@@ -58,6 +60,8 @@ export function createGameState() {
     warehouses: createWarehouseState(),
     specialists: createSpecialistState(),
     navigation: createNavigationState(),
+    rivals: createRivalState(),
+    maritimeHazards: createMaritimeHazardState(),
   };
 }
 

@@ -652,10 +652,24 @@
           <div class="summary-item">
             <b>Market effect</b><span id="vesselEffect"></span>
           </div>
+          <div class="summary-item">
+            <b>Your relationship</b><span id="vesselRival"></span>
+          </div>
+          <div class="summary-item">
+            <b>Merchant house</b><span id="vesselHouse"></span>
+          </div>
         </div>
         <div class="detail-card">
           <h3>Captain’s assessment</h3>
           <div id="vesselAssessment"></div>
+        </div>
+        <div class="detail-card">
+          <h3>Deal with the rival captain</h3>
+          <p class="small">
+            Cooperation builds trust, while selling into a house’s freshly
+            supplied market creates a lasting commercial rivalry.
+          </p>
+          <div class="rival-actions" id="vesselRivalActions"></div>
         </div>
         <button class="parchment" id="closeVessel">Return to Sea</button>
       </div>
@@ -715,6 +729,24 @@
             Strike colors
           </button>
         </div>
+      </div>
+    </div>
+
+    <div
+      id="hazardPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hazardTitle"
+    >
+      <div class="scroll hazard-scroll">
+        <div class="town-kicker" id="hazardKicker">Dangerous waters</div>
+        <h2 id="hazardTitle">Maritime hazard</h2>
+        <p id="hazardDescription"></p>
+        <div class="detail-card">
+          <h3>Captain’s assessment</h3>
+          <p id="hazardAssessment"></p>
+        </div>
+        <div class="hazard-actions" id="hazardActions"></div>
       </div>
     </div>
 

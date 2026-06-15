@@ -186,6 +186,26 @@ import {
   specialistVoyageModifiers,
 } from "./core/specialists.js";
 import {
+  aidRival,
+  normalizeRivalState,
+  recordPlayerCompetition,
+  recordRivalDelivery,
+  RIVAL_CAPTAINS,
+  rivalForMerchant,
+  rivalRelationshipLabel,
+  tradeRivalIntelligence,
+} from "./core/rivals.js";
+import {
+  currentAtPosition,
+  markHazardEncounter,
+  normalizeMaritimeHazardState,
+  resolveShoalAction,
+  resolveStormAction,
+  shoalAtPosition,
+  shouldTriggerStorm,
+  stormCycle,
+} from "./core/maritime-hazards.js";
+import {
   discoverySites,
   explorationSites,
   forests,
@@ -321,6 +341,7 @@ let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
 let pendingCombat = null;
+let pendingMaritimeHazard = null;
 let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
@@ -383,6 +404,14 @@ function currentVisibilityKm() {
 }
 function currentWeather() {
   return getInterpolatedWeather();
+}
+
+function seamanshipBonus() {
+  return specialistExplorationBonus(game.specialists) / 4;
+}
+
+function localCurrent(position = ship) {
+  return currentAtPosition(position, worldCurrents, WORLD.w);
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
@@ -1735,6 +1764,15 @@ function deliverMerchantCargo(merchant) {
   const destination = getPortByName(merchant.destination),
     state = economyState(destination, merchant.cargoKey);
   state.stock = clampNumber(state.stock + merchant.cargoUnits, 0, 70);
+  const rival = rivalForMerchant(merchant);
+  if (rival)
+    game.rivals = recordRivalDelivery(game.rivals, rival.id, {
+      port: destination.name,
+      goodKey: merchant.cargoKey,
+      units: merchant.cargoUnits,
+      day: game.day,
+      unitValue: sellPriceFor(destination, merchant.cargoKey),
+    });
   if (economyCondition(destination, merchant.cargoKey) === "Shortage")
     addNews(
       "Merchant relief arrives",
@@ -1770,6 +1808,7 @@ function initializeMerchantShips() {
         (i >= merchantNames.length
           ? " " + (Math.floor(i / merchantNames.length) + 1)
           : ""),
+      rivalId: RIVAL_CAPTAINS[i % RIVAL_CAPTAINS.length].id,
       color: merchantColors[i % merchantColors.length],
       origin,
       destination,
@@ -1822,8 +1861,12 @@ function merchantVisible(merchant) {
   );
 }
 function recordMerchantSighting(merchant) {
+  const rival = rivalForMerchant(merchant);
   game.merchantSightings[merchant.id] = {
     name: merchant.name,
+    rivalId: rival?.id,
+    captain: rival?.captain,
+    house: rival?.house,
     day: game.day,
     origin: merchant.origin,
     destination: merchant.destination,
@@ -1859,14 +1902,18 @@ function openVesselDetails(merchant) {
   if (!merchant) return;
   selectedMerchant = merchant;
   recordMerchantSighting(merchant);
-  document.getElementById("vesselFlag").textContent =
-    "Registered merchant · " +
-    dominantFaction(getPortByName(merchant.origin)).name;
+  const rival = rivalForMerchant(merchant);
+  const rivalState = rival ? game.rivals.captains[rival.id] : null;
+  document.getElementById("vesselFlag").textContent = rival
+    ? `${rival.house} · ${rival.faction}`
+    : "Registered merchant · " +
+      dominantFaction(getPortByName(merchant.origin)).name;
   document.getElementById("vesselName").textContent = merchant.name;
-  document.getElementById("vesselDescription").textContent =
-    "A working trader sailing the regional economy in real time. Its arrival will alter market stock at " +
-    merchant.destination +
-    ".";
+  document.getElementById("vesselDescription").textContent = rival
+    ? `${rival.captain} commands this vessel for ${rival.house}. ${rival.description}`
+    : "A working trader sailing the regional economy in real time. Its arrival will alter market stock at " +
+      merchant.destination +
+      ".";
   document.getElementById("vesselRoute").textContent =
     merchant.origin + " → " + merchant.destination;
   document.getElementById("vesselEta").textContent =
@@ -1878,6 +1925,12 @@ function openVesselDetails(merchant) {
     merchant.cargoUnits + " units of " + goods[merchant.cargoKey].name;
   document.getElementById("vesselEffect").textContent =
     "Adds stock in " + merchant.destination + ", usually easing prices there.";
+  document.getElementById("vesselRival").textContent = rivalState
+    ? `${rivalRelationshipLabel(rivalState.relationship)} · ${rivalState.relationship >= 0 ? "+" : ""}${rivalState.relationship}`
+    : "Independent trader";
+  document.getElementById("vesselHouse").textContent = rivalState
+    ? `${rival.style} · reputation ${rivalState.reputation} · ${rivalState.deliveries} deliveries`
+    : "No major house affiliation";
   const src = buyPriceFor(getPortByName(merchant.origin), merchant.cargoKey),
     dst = sellPriceFor(getPortByName(merchant.destination), merchant.cargoKey),
     margin = dst - src;
@@ -1894,6 +1947,53 @@ function openVesselDetails(merchant) {
     (margin >= 0 ? "+" : "") +
     margin +
     ' per unit).</p><p class="small">Quotes include broker spreads and port duties. Merchant traffic is not decorative: cargo is removed when a vessel departs and added when it arrives.</p>';
+  const actions = document.getElementById("vesselRivalActions");
+  actions.innerHTML = "";
+  if (rival) {
+    const intelligence = document.createElement("button");
+    intelligence.className = "parchment";
+    intelligence.textContent = "Exchange sailing intelligence · 8 crowns";
+    intelligence.disabled = game.coins < 8;
+    intelligence.onclick = () => {
+      const result = tradeRivalIntelligence(
+        game.rivals,
+        rival.id,
+        game.day,
+        game.coins,
+      );
+      if (!result.ok) return showMessage(result.reason);
+      game.rivals = result.state;
+      game.coins = result.coins;
+      merchant.trackedUntil = Math.max(merchant.trackedUntil, game.day + 5);
+      addNews(
+        `Terms exchanged with ${rival.captain}`,
+        `${rival.house} shared its current route and will remain marked on your chart through Day ${game.day + 5}.`,
+      );
+      showMessage("RIVAL INTELLIGENCE · Route tracking extended.", 4);
+      openVesselDetails(merchant);
+      updateHud();
+    };
+    const aid = document.createElement("button");
+    aid.className = "parchment";
+    aid.textContent = "Send spare provisions · 9 crowns";
+    aid.disabled =
+      game.coins < 9 ||
+      (rivalState.lastAidDay > 0 && game.day - rivalState.lastAidDay < 7);
+    aid.onclick = () => {
+      const result = aidRival(game.rivals, rival.id, game.day, game.coins);
+      if (!result.ok) return showMessage(result.reason);
+      game.rivals = result.state;
+      game.coins = result.coins;
+      addNews(
+        `${rival.house} accepts your aid`,
+        `${rival.captain} received provisions at sea and now regards you more warmly.`,
+      );
+      showMessage("RIVAL AID · Relationship improved.", 4);
+      openVesselDetails(merchant);
+      updateHud();
+    };
+    actions.append(intelligence, aid);
+  }
   document.getElementById("vesselPanel").style.display = "grid";
 }
 function closeVesselDetails() {
@@ -2309,6 +2409,8 @@ function loadGameState() {
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
   game.specialists = normalizeSpecialistState(game.specialists);
+  game.rivals = normalizeRivalState(game.rivals);
+  game.maritimeHazards = normalizeMaritimeHazardState(game.maritimeHazards);
   game.navigation = normalizeNavigationState(
     game.navigation,
     ports.map((port) => port.name),
@@ -2376,9 +2478,17 @@ function loadGameState() {
   merchantShips.length = 0;
   merchantShips.push(
     ...saved.merchants.map((merchant) => {
-      if (savedMapSeed) return merchant;
+      const merchantIndex = Math.max(
+        0,
+        (Number(merchant.id?.slice(1)) || 1) - 1,
+      );
+      const rival =
+        rivalForMerchant(merchant) ||
+        RIVAL_CAPTAINS[merchantIndex % RIVAL_CAPTAINS.length];
+      const restored = { ...merchant, rivalId: rival?.id };
+      if (savedMapSeed) return restored;
       const mapped = mapTransform.point(merchant.x, merchant.y);
-      return { ...merchant, x: mapped.x, y: mapped.y };
+      return { ...restored, x: mapped.x, y: mapped.y };
     }),
   );
   Object.assign(worldEvents, saved.worldEvents);
@@ -2570,12 +2680,14 @@ function updateHud() {
         (Math.PI * 2)) *
         8,
     ) % 8;
+  const currentInfo = localCurrent();
   ui.wind.textContent =
     "Wind " +
     dirs[idx] +
     " · " +
     Math.round(game.windStrength * 100) +
-    " knots";
+    " knots" +
+    (currentInfo.label ? " · " + currentInfo.label : "");
   const km = currentVisibilityKm();
   ui.visibility.textContent =
     game.weatherName +
@@ -3246,7 +3358,14 @@ function readInput() {
 const MAP_MARGIN = 58;
 const EDGE_RECOVERY_ZONE = 155;
 function update(dt) {
-  if (!gameStarted || currentPort || selectedTown || selectedMerchant) return;
+  if (
+    !gameStarted ||
+    currentPort ||
+    selectedTown ||
+    selectedMerchant ||
+    pendingMaritimeHazard
+  )
+    return;
   updateMerchantShips(dt);
   edgeMessageCooldown = Math.max(0, edgeMessageCooldown - dt);
   const inp = readInput();
@@ -3297,13 +3416,21 @@ function update(dt) {
   );
   const recoveryPush =
     !inp.active && edge.strength > 0.55 ? 30 * edge.strength : 0;
+  const current = ship.anchored ? { x: 0, y: 0 } : localCurrent();
+  const currentPush = 34;
   let nx =
     ship.x +
-    (Math.cos(ship.angle) * ship.speed + safeWind.x + edge.x * recoveryPush) *
+    (Math.cos(ship.angle) * ship.speed +
+      safeWind.x +
+      current.x * currentPush +
+      edge.x * recoveryPush) *
       dt;
   let ny =
     ship.y +
-    (Math.sin(ship.angle) * ship.speed + safeWind.y + edge.y * recoveryPush) *
+    (Math.sin(ship.angle) * ship.speed +
+      safeWind.y +
+      current.y * currentPush +
+      edge.y * recoveryPush) *
       dt;
   const hitBoundary = ny < MAP_MARGIN || ny > WORLD.h - MAP_MARGIN;
   const hitLand = !hitBoundary && onLand(nx, ny);
@@ -3380,6 +3507,41 @@ function update(dt) {
     const weather = getInterpolatedWeather();
     game.weatherName = weather.name;
     game.weatherVisibilityKm = weather.visibilityKm;
+
+    const shoal = shoalAtPosition(ship, worldShoals, WORLD.w);
+    if (
+      shoal &&
+      ship.speed > 24 &&
+      game.voyageDistance - game.maritimeHazards.lastShoalDistance > 180
+    ) {
+      game.maritimeHazards = markHazardEncounter(game.maritimeHazards, {
+        type: "shoal",
+        cycle: stormCycle(game.day, game.voyageDistance),
+        voyageDistance: game.voyageDistance,
+      });
+      openMaritimeHazard("shoal", {
+        name: shoal.name,
+        exposure: shoal.exposure,
+        speed: ship.speed,
+      });
+    } else if (
+      shouldTriggerStorm(game.maritimeHazards, {
+        day: game.day,
+        voyageDistance: game.voyageDistance,
+        roughness: weather.roughness,
+      })
+    ) {
+      const cycle = stormCycle(game.day, game.voyageDistance);
+      game.maritimeHazards = markHazardEncounter(game.maritimeHazards, {
+        type: "storm",
+        cycle,
+        voyageDistance: game.voyageDistance,
+      });
+      openMaritimeHazard("storm", {
+        name: weather.name,
+        roughness: weather.roughness,
+      });
+    }
 
     if (oldCycle !== newCycle)
       showMessage(
@@ -4683,6 +4845,89 @@ function openCombatEncounter(encounter, stats) {
   document.getElementById("combatPanel").style.display = "grid";
 }
 
+function openMaritimeHazard(type, details) {
+  pendingMaritimeHazard = { type, details };
+  const actions = document.getElementById("hazardActions");
+  actions.innerHTML = "";
+  const options =
+    type === "shoal"
+      ? [
+          ["soundings", "Take soundings and creep through"],
+          ["back-sails", "Back sails and warp into deep water"],
+          ["force", "Keep way on and force the passage"],
+        ]
+      : [
+          ["heave-to", "Heave to under shortened canvas"],
+          ["seek-lee", "Seek shelter in the nearest lee"],
+          ["run", "Run before the storm"],
+        ];
+  document.getElementById("hazardKicker").textContent =
+    type === "shoal" ? "Breakers under the bow" : "Heavy weather closes in";
+  document.getElementById("hazardTitle").textContent =
+    type === "shoal" ? details.name : `${details.name} squall`;
+  document.getElementById("hazardDescription").textContent =
+    type === "shoal"
+      ? "The water pales around the keel and leadsmen call rapidly decreasing depth."
+      : "The wind hardens, visibility closes, and steep seas begin breaking over the weather rail.";
+  document.getElementById("hazardAssessment").textContent =
+    type === "shoal"
+      ? `${Math.round(details.exposure * 100)}% bank exposure · ${shipSpeedKnots(details.speed, operationalShipStats().waterlineLengthFt).toFixed(1)} knots. Slowing down favors careful soundings; forcing the bank risks hull, rudder, and cargo fittings.`
+      : `${Math.round(details.roughness * 100)}% sea severity · storm resistance ${operationalShipStats().stormResistance.toFixed(2)}. Heaving to is safest, shelter costs time and provisions, and running preserves way at greater rigging risk.`;
+  for (const [action, label] of options) {
+    const button = document.createElement("button");
+    button.className =
+      "parchment" + (action === "force" || action === "run" ? " danger" : "");
+    button.textContent = label;
+    button.onclick = () => chooseMaritimeHazardAction(action);
+    actions.append(button);
+  }
+  document.getElementById("hazardPanel").style.display = "grid";
+}
+
+function chooseMaritimeHazardAction(action) {
+  if (!pendingMaritimeHazard) return;
+  const stats = operationalShipStats();
+  const result =
+    pendingMaritimeHazard.type === "shoal"
+      ? resolveShoalAction({
+          action,
+          exposure: pendingMaritimeHazard.details.exposure,
+          speed: pendingMaritimeHazard.details.speed,
+          seamanship: seamanshipBonus(),
+        })
+      : resolveStormAction({
+          action,
+          roughness: pendingMaritimeHazard.details.roughness,
+          stormResistance: stats.stormResistance,
+          seamanship: seamanshipBonus(),
+        });
+  game.operations = applyComponentDamage(
+    game.operations,
+    result.componentDamage,
+  ).operations;
+  game.operations.morale = clampNumber(
+    game.operations.morale + result.moraleChange,
+    0,
+    100,
+  );
+  game.operations.provisions = Math.max(
+    0,
+    game.operations.provisions - (result.provisionsUsed || 0),
+  );
+  ship.speed *= result.speedMultiplier;
+  if (result.cargoLossRisk > 0.2 && game.cargoLots.length) {
+    const lost = game.cargoLots.shift();
+    syncCargoCounts(game, goods);
+    result.description += ` A ${goods[lost.key].name} cargo lot was lost overboard.`;
+  }
+  addNews(`Seamanship: ${result.outcome}`, result.description);
+  showMessage(`MARITIME HAZARD · ${result.outcome}`, 4.5);
+  pendingMaritimeHazard = null;
+  document.getElementById("hazardPanel").style.display = "none";
+  updateHud();
+  saveGameState();
+}
+
 function chooseCombatAction(action) {
   if (!pendingCombat) return;
   const result = resolveCombatAction({
@@ -4868,6 +5113,21 @@ function renderMarket() {
       syncCargoCounts(game, goods);
       game.coins += livePrice;
       state.stock += 1;
+      const competition = recordPlayerCompetition(game.rivals, {
+        port: currentPort.name,
+        goodKey: key,
+        day: game.day,
+      });
+      game.rivals = competition.state;
+      if (competition.rivalId) {
+        const rival = RIVAL_CAPTAINS.find(
+          (entry) => entry.id === competition.rivalId,
+        );
+        addNews(
+          `Market contested with ${rival.house}`,
+          `Your ${goods[key].name} sale in ${currentPort.name} undercut a recent delivery by ${rival.captain}.`,
+        );
+      }
       const e = worldEvents.ironShortage;
       if (e.active && currentPort.name === e.port && key === e.good) {
         game.milestone.shortageProfit += Math.max(0, livePrice - cost);
@@ -5028,12 +5288,17 @@ function renderLedger() {
       '<p class="empty-note">No merchant vessels have been identified yet. Sail close enough to sight them or buy a shipping list.</p>';
   else
     sightings.forEach((s) => {
+      const rival = RIVAL_CAPTAINS.find((entry) => entry.id === s.rivalId);
+      const standing = rival ? game.rivals.captains[rival.id] : null;
       const row = document.createElement("div");
       row.className = "merchant-sighting";
       row.innerHTML =
         "<span><b>" +
         s.name +
         '</b><br><span class="small">' +
+        (rival
+          ? `${rival.captain} · ${rival.house} · ${rivalRelationshipLabel(standing.relationship)}<br>`
+          : "") +
         s.origin +
         " → " +
         s.destination +
