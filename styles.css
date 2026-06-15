@@ -1622,6 +1622,65 @@ button.parchment {
   backdrop-filter: blur(3px);
   z-index: 30;
 }
+#combatPanel {
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(
+      circle at 50% 35%,
+      rgba(129, 47, 27, 0.24),
+      transparent 42%
+    ),
+    rgba(10, 8, 6, 0.84);
+  backdrop-filter: blur(4px);
+  z-index: 40;
+}
+.combat-scroll {
+  width: min(92vw, 660px);
+  border-color: rgba(119, 43, 28, 0.72);
+}
+.combat-balance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.combat-balance div {
+  padding: 12px;
+  border: 1px solid rgba(78, 45, 24, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 244, 205, 0.13);
+}
+.combat-balance b,
+.combat-balance span {
+  display: block;
+}
+.combat-balance span {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.combat-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.combat-actions button.parchment {
+  margin: 0;
+}
+.combat-actions .danger {
+  border-color: #843b2b;
+  color: #67291f;
+}
+@media (max-width: 520px) {
+  .combat-balance,
+  .combat-actions {
+    grid-template-columns: 1fr;
+  }
+}
 .report-scroll {
   width: min(92vw, 650px);
 }

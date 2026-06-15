@@ -199,6 +199,7 @@ export function resolveHostileEncounter({
     : 3 + attackStrength * 2;
   return {
     encountered: true,
+    attackStrength,
     repelled,
     conditionDamage,
     componentDamage: {
@@ -208,6 +209,110 @@ export function resolveHostileEncounter({
     moraleChange: repelled ? 4 : -8 - attackStrength * 2,
     coinsLost: repelled ? 0 : 8 + attackStrength * 7,
   };
+}
+
+export function resolveCombatAction({
+  action,
+  attackStrength = 1,
+  defense = 0,
+  maxSpeed = 0,
+  morale = 50,
+  coins = 0,
+  seed = 0,
+}) {
+  const strength = clamp(Math.floor(Number(attackStrength)), 1, 3);
+  const availableCoins = Math.max(0, Math.floor(Number(coins)));
+  const roll = encounterRoll(seed + 7);
+
+  if (action === "flee") {
+    const escapeChance = clamp(
+      0.24 + maxSpeed / 420 + morale / 500 - strength * 0.1,
+      0.12,
+      0.86,
+    );
+    const escaped = roll < escapeChance;
+    return escaped
+      ? combatResult("escaped", "You found open water and broke pursuit.", {
+          moraleChange: 2,
+        })
+      : combatResult(
+          "caught",
+          "The raiders caught the ship as the crew crowded on sail.",
+          {
+            componentDamage: { rigging: 4 + strength * 2, hull: strength },
+            moraleChange: -4 - strength,
+            coinsLost: Math.min(availableCoins, 5 + strength * 4),
+          },
+        );
+  }
+
+  if (action === "parley") {
+    const demand = Math.min(availableCoins, 8 + strength * 7);
+    return combatResult(
+      "parleyed",
+      demand
+        ? `The raiders accepted ${demand} crowns and sheered away.`
+        : "Finding no coin aboard, the raiders took their payment from the ship.",
+      demand
+        ? { coinsLost: demand, moraleChange: -1 }
+        : {
+            componentDamage: { fittings: 5 + strength * 2 },
+            moraleChange: -5,
+          },
+    );
+  }
+
+  if (action === "fight") {
+    const combatPower = defense + morale / 55 + roll;
+    const won = combatPower >= strength + 0.65;
+    return won
+      ? combatResult(
+          "repelled",
+          "Disciplined fire drove the raiders away before they could board.",
+          {
+            componentDamage: { weapons: strength, rigging: strength },
+            moraleChange: 5,
+          },
+        )
+      : combatResult(
+          "boarded",
+          "The defense faltered and raiders swept across the deck.",
+          {
+            componentDamage: {
+              hull: 4 + strength * 2,
+              weapons: 3 + strength * 2,
+              fittings: 2 + strength,
+            },
+            moraleChange: -8 - strength * 2,
+            coinsLost: Math.min(availableCoins, 10 + strength * 8),
+          },
+        );
+  }
+
+  return combatResult(
+    "surrendered",
+    "You struck your colors. The raiders took a measured prize and spared the crew.",
+    {
+      componentDamage: { fittings: 2 + strength },
+      moraleChange: -4,
+      coinsLost: Math.min(availableCoins, 7 + strength * 6),
+    },
+  );
+}
+
+function combatResult(outcome, description, effects) {
+  return Object.assign(
+    {
+      componentDamage: {},
+      moraleChange: 0,
+      coinsLost: 0,
+    },
+    effects,
+    {
+      outcome,
+      description,
+    },
+  );
 }
 
 export function resolveVoyageOperations(
