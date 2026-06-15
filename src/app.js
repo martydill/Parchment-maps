@@ -248,7 +248,7 @@ function getInterpolatedWeather() {
     roughness: w1.roughness + (w2.roughness - w1.roughness) * smoothT,
   };
 }
-function setWeatherForDay(day) {
+function setWeatherForDay(_day) {
   const weather = getInterpolatedWeather();
   game.weatherName = weather.name;
   game.weatherVisibilityKm = weather.visibilityKm;
@@ -4356,10 +4356,14 @@ function renderMarket() {
           ? "condition-surplus"
           : "";
     const label = document.createElement("div");
+    label.className = "trade-good";
     label.innerHTML =
-      "<b>" +
+      `<span class="resource-icon-frame" title="${goods[key].name}">` +
+      `<svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"></use></svg>` +
+      "</span>" +
+      '<span class="trade-good-details"><b>' +
       goods[key].name +
-      '</b><br><span class="small">Buy ' +
+      '</b><span class="small">Buy ' +
       buyQuote +
       " · Sell " +
       sellQuote +
@@ -4384,7 +4388,8 @@ function renderMarket() {
             })
             .join("") +
           "</span>"
-        : "");
+        : "") +
+      "</span>";
     const buy = document.createElement("button");
     buy.textContent = "Buy " + buyQuote;
     buy.title = "Buy one for " + buyQuote + " crowns";

@@ -123,6 +123,20 @@ test("nearestOpenHeading shortens the lookahead when wedged against land", () =>
   assert.ok(Math.min(...probed) <= 10, "tried a shorter lookahead");
 });
 
+test("nearestOpenHeading preserves course when every probe is blocked", () => {
+  const preferAngle = 1.25;
+
+  assert.equal(
+    nearestOpenHeading({
+      x: 50,
+      y: 50,
+      preferAngle,
+      isOpen: () => false,
+    }),
+    preferAngle,
+  );
+});
+
 test("recoverFromShallows points the bow off a straight coast and clears the hull", () => {
   // Land is the western half-plane (x < 50); the hull sits on the coastline
   // after a westward step was blocked.
