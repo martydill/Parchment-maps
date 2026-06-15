@@ -120,6 +120,7 @@ import {
   processWages,
   repairOperations,
   repairShipComponent,
+  resolveCombatAction,
   resolveHostileEncounter,
   resolveVoyageOperations,
   SHIP_COMPONENTS,
@@ -199,6 +200,7 @@ let selectedTown = null;
 let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
+let pendingCombat = null;
 const SAVE_KEY = "gilded-archipelago-save";
 
 const game = createGameState();
@@ -4186,31 +4188,7 @@ function openPort() {
       seed: game.day + currentPort.name.length + game.departedFromPort.length,
     });
     if (encounter.encountered) {
-      game.operations = applyComponentDamage(
-        game.operations,
-        encounter.componentDamage,
-      ).operations;
-      game.operations.morale = clampNumber(
-        game.operations.morale + encounter.moraleChange,
-        0,
-        100,
-      );
-      const coinsLost = Math.min(game.coins, encounter.coinsLost);
-      game.coins -= coinsLost;
-      addNews(
-        encounter.repelled
-          ? "Raiders repelled"
-          : `Raiders board ${activeShipClass().vesselName}`,
-        encounter.repelled
-          ? `The ship's defensive armament drove off attackers. Crew morale rose after the victory.`
-          : `Attackers caused ${encounter.conditionDamage}% damage and stole ${coinsLost} crowns. Better defensive armament could deter or repel future raids.`,
-      );
-      showMessage(
-        encounter.repelled
-          ? "RAIDERS REPELLED · The ship's armament proved its worth."
-          : "HOSTILE BOARDING · Raiders damaged the ship and stole crowns.",
-        4,
-      );
+      openCombatEncounter(encounter, stats);
     }
     const outcome = resolveVoyageCargo(game.cargoLots, {
       distance,
@@ -4303,6 +4281,57 @@ function openPort() {
   activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
   updateHud();
+}
+
+function openCombatEncounter(encounter, stats) {
+  pendingCombat = {
+    encounter,
+    stats,
+    seed: game.day + currentPort.name.length + 31,
+  };
+  const strengthLabels = [
+    "",
+    "Light raider",
+    "Armed corsair",
+    "Heavy boarding ship",
+  ];
+  document.getElementById("combatDescription").textContent =
+    `${strengthLabels[encounter.attackStrength]} shadows your wake outside ${currentPort.name}. The harbor is close, but not close enough for its guns to protect you.`;
+  document.getElementById("combatPlayer").textContent =
+    `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
+  document.getElementById("combatEnemy").textContent =
+    `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3`;
+  document.getElementById("combatPanel").style.display = "grid";
+}
+
+function chooseCombatAction(action) {
+  if (!pendingCombat) return;
+  const result = resolveCombatAction({
+    action,
+    attackStrength: pendingCombat.encounter.attackStrength,
+    defense: pendingCombat.stats.defense,
+    maxSpeed: pendingCombat.stats.maxSpeed,
+    morale: game.operations.morale,
+    coins: game.coins,
+    seed: pendingCombat.seed,
+  });
+  game.operations = applyComponentDamage(
+    game.operations,
+    result.componentDamage,
+  ).operations;
+  game.operations.morale = clampNumber(
+    game.operations.morale + result.moraleChange,
+    0,
+    100,
+  );
+  game.coins -= result.coinsLost;
+  addNews(`Sea encounter: ${result.outcome}`, result.description);
+  showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
+  pendingCombat = null;
+  document.getElementById("combatPanel").style.display = "none";
+  renderPortSystems();
+  updateHud();
+  saveGameState();
 }
 function renderMarket() {
   document.getElementById("portCoins").textContent = game.coins + " crowns";
@@ -5104,6 +5133,10 @@ document
 document.getElementById("reportPanel").addEventListener("click", (e) => {
   if (e.target === document.getElementById("reportPanel"))
     document.getElementById("reportPanel").style.display = "none";
+});
+document.getElementById("combatPanel").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-combat-action]");
+  if (button) chooseCombatAction(button.dataset.combatAction);
 });
 document.getElementById("reportLedger").addEventListener("click", () => {
   document.getElementById("reportPanel").style.display = "none";

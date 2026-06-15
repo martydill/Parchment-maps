@@ -19,6 +19,7 @@ import {
   processWages,
   repairOperations,
   repairShipComponent,
+  resolveCombatAction,
   resolveHostileEncounter,
   resolveVoyageOperations,
   shipCondition,
@@ -238,6 +239,83 @@ test("defensive armament deters and repels hostile encounters", () => {
       coinsLost: 0,
     },
   );
+});
+
+test("combat actions offer escape, negotiation, fighting, and surrender", () => {
+  const defaults = resolveCombatAction({});
+  assert.equal(defaults.outcome, "surrendered");
+  assert.equal(defaults.coinsLost, 0);
+
+  const bounded = resolveCombatAction({
+    action: "surrender",
+    attackStrength: 99,
+    coins: -10,
+  });
+  assert.equal(bounded.componentDamage.fittings, 5);
+
+  assert.equal(
+    resolveCombatAction({
+      action: "flee",
+      attackStrength: 1,
+      maxSpeed: 300,
+      morale: 100,
+      seed: 1,
+    }).outcome,
+    "escaped",
+  );
+  const caught = resolveCombatAction({
+    action: "flee",
+    attackStrength: 3,
+    maxSpeed: 0,
+    morale: 0,
+    coins: 50,
+    seed: 1,
+  });
+  assert.equal(caught.outcome, "caught");
+  assert.ok(caught.componentDamage.rigging > 0);
+
+  const parley = resolveCombatAction({
+    action: "parley",
+    attackStrength: 2,
+    coins: 100,
+  });
+  assert.equal(parley.outcome, "parleyed");
+  assert.equal(parley.coinsLost, 22);
+  assert.ok(parley.description.includes("22 crowns"));
+
+  const penniless = resolveCombatAction({
+    action: "parley",
+    attackStrength: 2,
+  });
+  assert.equal(penniless.coinsLost, 0);
+  assert.ok(penniless.componentDamage.fittings > 0);
+
+  const victory = resolveCombatAction({
+    action: "fight",
+    attackStrength: 1,
+    defense: 3,
+    morale: 100,
+  });
+  assert.equal(victory.outcome, "repelled");
+  assert.equal(victory.moraleChange, 5);
+
+  const defeat = resolveCombatAction({
+    action: "fight",
+    attackStrength: 3,
+    defense: 0,
+    morale: 0,
+    coins: 100,
+  });
+  assert.equal(defeat.outcome, "boarded");
+  assert.ok(defeat.componentDamage.hull > 0);
+
+  const surrendered = resolveCombatAction({
+    action: "surrender",
+    attackStrength: 2,
+    coins: 10,
+  });
+  assert.equal(surrendered.outcome, "surrendered");
+  assert.equal(surrendered.coinsLost, 10);
 });
 
 test("weekly wages, provisions, and repairs create predictable operating costs", () => {

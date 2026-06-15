@@ -651,6 +651,41 @@
       </div>
     </div>
 
+    <div
+      id="combatPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="combatTitle"
+    >
+      <div class="scroll combat-scroll">
+        <div class="town-kicker">Hostile sail intercepted</div>
+        <h2 id="combatTitle">Raiders close from windward</h2>
+        <p id="combatDescription"></p>
+        <div class="combat-balance">
+          <div><b>Your vessel</b><span id="combatPlayer"></span></div>
+          <div><b>Hostile force</b><span id="combatEnemy"></span></div>
+        </div>
+        <p class="small">
+          Choose how to answer. Speed favors escape, armament and morale favor
+          resistance, and parley costs coin but usually preserves the ship.
+        </p>
+        <div class="combat-actions">
+          <button class="parchment" data-combat-action="flee">
+            Run under full sail
+          </button>
+          <button class="parchment" data-combat-action="parley">
+            Heave to and parley
+          </button>
+          <button class="parchment danger" data-combat-action="fight">
+            Clear the decks
+          </button>
+          <button class="parchment" data-combat-action="surrender">
+            Strike colors
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="discoveryPanel">
       <div class="scroll discovery-scroll">
         <div class="town-kicker" id="discoveryType">Discovery</div>
