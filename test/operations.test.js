@@ -177,7 +177,8 @@ test("voyages consume supplies and convert comfort and weather into consequences
     stats: { crewComfort: 0.1, stormResistance: 0.1 },
   });
   assert.equal(capped.damage, 35);
-  assert.equal(capped.operations.condition, 65);
+  assert.equal(capped.repairs, 1);
+  assert.equal(capped.operations.condition, 65.4);
   assert.ok(capped.speedMultiplier < 0.7);
 });
 

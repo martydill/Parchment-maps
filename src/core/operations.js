@@ -1,4 +1,11 @@
 import { clamp } from "./math.js";
+import {
+  applyCrewVoyage,
+  createCrewState,
+  crewVoyageModifiers,
+  crewWeeklyWage,
+  normalizeCrewState,
+} from "./crew.js";
 
 export const FACTION_PRIVILEGES = Object.freeze([
   {
@@ -56,6 +63,7 @@ export function createOperationsState() {
     morale: 75,
     wagesDueDay: 8,
     wageArrears: 0,
+    crew: createCrewState(),
     obligations: [],
     nextObligationId: 1,
   };
@@ -86,6 +94,7 @@ export function normalizeOperationsState(value) {
       Math.floor(value.wagesDueDay ?? fresh.wagesDueDay),
     ),
     wageArrears: Math.max(0, Math.floor(value.wageArrears ?? 0)),
+    crew: normalizeCrewState(value.crew),
     obligations: Array.isArray(value.obligations) ? value.obligations : [],
     nextObligationId: Math.max(1, Math.floor(value.nextObligationId ?? 1)),
   };
@@ -148,6 +157,7 @@ function voyageRequirements(
     1,
     Math.ceil(
       ((days * 2) / Math.max(0.7, stats.crewComfort)) *
+        (stats.crewProvisionMultiplier ?? 1) *
         (stats.provisionMultiplier ?? 1),
     ),
   );
@@ -323,6 +333,7 @@ export function resolveVoyageOperations(
   { distance, days, roughness, stats },
 ) {
   const next = normalizeOperationsState(operations);
+  const crewModifiers = crewVoyageModifiers(next.crew);
   const { provisionsNeeded } = voyageRequirements(distance, stats, days);
   const provisionsUsed = Math.min(next.provisions, provisionsNeeded);
   const shortage = provisionsNeeded - provisionsUsed;
@@ -355,6 +366,16 @@ export function resolveVoyageOperations(
   );
   const damaged = applyComponentDamage(next, componentDamage);
   Object.assign(next, damaged.operations);
+  next.crew = applyCrewVoyage(next.crew, { days, roughness, shortage });
+  const repairs = Math.min(
+    crewModifiers.repairCapacity,
+    Math.floor(damage / 2),
+  );
+  if (repairs) {
+    next.components.hull = clamp(next.components.hull + repairs, 0, 100);
+    next.components.rigging = clamp(next.components.rigging + repairs, 0, 100);
+    next.condition = shipCondition(next.components);
+  }
   const comfortRecovery = (stats.crewComfort - 1) * days * 3;
   const moraleChange =
     comfortRecovery -
@@ -369,6 +390,7 @@ export function resolveVoyageOperations(
     shortage,
     damage,
     componentDamage: damaged.applied,
+    repairs,
     speedMultiplier:
       clamp(0.7 + next.morale / 250, 0.7, 1.08) *
       Math.min(
@@ -378,8 +400,9 @@ export function resolveVoyageOperations(
   };
 }
 
-export function processWages(operations, day, coins, wage = 18) {
+export function processWages(operations, day, coins, wage) {
   const next = normalizeOperationsState(operations);
+  wage ??= crewWeeklyWage(next.crew);
   let paid = 0;
   let missed = 0;
   while (day >= next.wagesDueDay) {
@@ -387,10 +410,14 @@ export function processWages(operations, day, coins, wage = 18) {
       coins -= wage;
       paid += wage;
       next.morale = clamp(next.morale + 4, 0, 100);
+      for (const group of Object.values(next.crew.groups))
+        group.loyalty = clamp(group.loyalty + 3, 0, 100);
     } else {
       next.wageArrears += wage;
       missed += wage;
       next.morale = clamp(next.morale - 14, 0, 100);
+      for (const group of Object.values(next.crew.groups))
+        group.loyalty = clamp(group.loyalty - 9, 0, 100);
     }
     next.wagesDueDay += 7;
   }
