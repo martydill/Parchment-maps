@@ -19,6 +19,7 @@ test("map seed generation always differs from the previous seed", () => {
     "ya-1yz",
   );
   assert.notEqual(createDistinctMapSeed("0-0", new Uint32Array([0, 0])), "0-0");
+  assert.notEqual(createDistinctMapSeed("old"), "old");
 });
 
 test("map transforms are deterministic, seed-sensitive, and taller than wide", () => {
@@ -93,6 +94,12 @@ test("map transforms constrain longitude and polar margins", () => {
   const regional = transform.regionPoint(-1000, 1000, "edge", { x: 50, y: 50 });
   assert.ok(regional.x >= 0 && regional.x <= 80);
   assert.ok(regional.y >= 20 && regional.y <= 140);
+  const regionalUpper = transform.regionPoint(1000, -1000, "other-edge", {
+    x: 50,
+    y: 50,
+  });
+  assert.ok(regionalUpper.x >= 0 && regionalUpper.x <= 80);
+  assert.ok(regionalUpper.y >= 20 && regionalUpper.y <= 140);
 });
 
 test("map helpers transform records, tuples, and paths in place", () => {
