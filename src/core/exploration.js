@@ -68,6 +68,7 @@ export function resolveExpedition({
   day,
   provisions,
   morale,
+  specialistBonus = 0,
 }) {
   const plan = expeditionRequirements(approach);
   if (!site || !plan)
@@ -77,7 +78,8 @@ export function resolveExpedition({
 
   const serial = state.expeditionSerial;
   const roll = hash(`${site.id}:${day}:${approach}:${serial}`) % 41;
-  const score = roll + morale * 0.25 - site.difficulty - plan.difficulty;
+  const score =
+    roll + morale * 0.25 + specialistBonus - site.difficulty - plan.difficulty;
   const success = score >= 12;
   const exceptional = success && score >= 29;
   const complications = success ? (score < 20 ? 1 : 0) : score < 3 ? 2 : 1;

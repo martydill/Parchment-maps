@@ -6,6 +6,7 @@ import { createExplorationState } from "./exploration.js";
 import { createCrisisState } from "./crises.js";
 import { createLegalState } from "./jurisdictions.js";
 import { createWarehouseState } from "./warehouses.js";
+import { createSpecialistState } from "./specialists.js";
 
 export function createGameState() {
   return {
@@ -53,6 +54,7 @@ export function createGameState() {
     regionalEconomy: {},
     legal: createLegalState(),
     warehouses: createWarehouseState(),
+    specialists: createSpecialistState(),
   };
 }
 

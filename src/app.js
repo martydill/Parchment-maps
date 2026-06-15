@@ -167,6 +167,16 @@ import {
 } from "./core/intelligence.js";
 import { currentObjective, voyageWarnings } from "./core/guidance.js";
 import {
+  adjustSpecialistLoyalty,
+  normalizeSpecialistState,
+  resolveSpecialistEvent,
+  SPECIALIST_ROSTER,
+  specialistCombatBonus,
+  specialistExplorationBonus,
+  specialistRewardMultiplier,
+  specialistVoyageModifiers,
+} from "./core/specialists.js";
+import {
   discoverySites,
   explorationSites,
   goods,
@@ -1228,6 +1238,17 @@ function advanceDays(days) {
         "Wages missed",
         `${wages.missed} crowns entered arrears. Crew morale has fallen.`,
       );
+    const specialistEvent = resolveSpecialistEvent(game.specialists, game.day);
+    game.specialists = specialistEvent.state;
+    if (specialistEvent.event) {
+      game.coins = Math.max(0, game.coins + specialistEvent.event.coins);
+      game.operations.morale = clampNumber(
+        game.operations.morale + specialistEvent.event.morale,
+        0,
+        100,
+      );
+      addNews(specialistEvent.event.title, specialistEvent.event.body);
+    }
     processWorldEventsForDay();
     processRegionalCrisesForDay();
     runEconomyDay();
@@ -1384,6 +1405,9 @@ function resolveContractsAtPort(port) {
   for (const contract of resolved) {
     const standing = game.factionStanding[contract.faction] || 0;
     const outcome = contractOutcome(contract, game.day, standing);
+    outcome.reward = Math.round(
+      outcome.reward * specialistRewardMultiplier(game.specialists),
+    );
     game.coins += outcome.reward;
     rewardTotal += outcome.reward;
     changeStanding(contract.faction, outcome.standing);
@@ -2157,6 +2181,7 @@ function loadGameState() {
   game.exploration = normalizeExplorationState(game.exploration);
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
+  game.specialists = normalizeSpecialistState(game.specialists);
   game.legal = normalizeLegalState(game.legal);
   game.warehouses = normalizeWarehouseState(game.warehouses);
   game.regionalEconomy = normalizeRegionalState(
@@ -4288,11 +4313,17 @@ function openPort() {
     advanceDays(days);
     const stats = operationalShipStats();
     const roughness = weatherRoughness(currentWeather(), stats.stormResistance);
+    const specialistModifiers = specialistVoyageModifiers(game.specialists);
     const operations = resolveVoyageOperations(game.operations, {
-      distance,
+      distance: distance * specialistModifiers.distanceMultiplier,
       days,
       roughness,
-      stats,
+      stats: {
+        ...stats,
+        provisionMultiplier: specialistModifiers.provisionMultiplier,
+        damageMultiplier: specialistModifiers.damageMultiplier,
+        moraleLossMultiplier: specialistModifiers.moraleLossMultiplier,
+      },
     });
     game.operations = operations.operations;
     const encounter = resolveHostileEncounter({
@@ -4423,7 +4454,8 @@ function chooseCombatAction(action) {
   const result = resolveCombatAction({
     action,
     attackStrength: pendingCombat.encounter.attackStrength,
-    defense: pendingCombat.stats.defense,
+    defense:
+      pendingCombat.stats.defense + specialistCombatBonus(game.specialists),
     maxSpeed: pendingCombat.stats.maxSpeed,
     morale: game.operations.morale,
     coins: game.coins,
@@ -4438,6 +4470,8 @@ function chooseCombatAction(action) {
     0,
     100,
   );
+  if (action === "surrender")
+    game.specialists = adjustSpecialistLoyalty(game.specialists, "gunner", -8);
   game.coins -= result.coinsLost;
   addNews(`Sea encounter: ${result.outcome}`, result.description);
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
@@ -4869,6 +4903,15 @@ function renderShipPanel() {
     )
     .join("");
 
+  const specialistState = new Map(
+    game.specialists.officers.map((officer) => [officer.id, officer]),
+  );
+  document.getElementById("shipRegisterSpecialists").innerHTML =
+    SPECIALIST_ROSTER.map((definition) => {
+      const officer = specialistState.get(definition.id);
+      return `<article class="specialist-card"><header><span class="specialist-emblem">${definition.emblem}</span><span><h4>${definition.name}</h4><span class="small">${definition.role} · ${definition.origin}</span></span><b>${Math.round(officer.loyalty)} ♥</b></header><p><b>Benefit:</b> ${definition.benefit}</p><p><b>Flaw:</b> ${definition.flaw}</p><p class="small"><b>Ambition:</b> ${definition.ambition}<br><b>Ties:</b> ${definition.relationship} · ${officer.events} event${officer.events === 1 ? "" : "s"}</p></article>`;
+    }).join("");
+
   const obligationsRoot = document.getElementById("shipRegisterObligations");
   const obligations = ops.obligations.filter(
     (item) => !item.fulfilled && !item.failed,
@@ -5168,6 +5211,7 @@ function undertakeExpedition(site, approach) {
     day: game.day,
     provisions: game.operations.provisions,
     morale: game.operations.morale,
+    specialistBonus: specialistExplorationBonus(game.specialists),
   });
   if (!result.ok) {
     showMessage(result.reason);
