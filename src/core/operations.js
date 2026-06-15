@@ -146,7 +146,10 @@ function voyageRequirements(
 ) {
   const provisionsNeeded = Math.max(
     1,
-    Math.ceil((days * 2) / Math.max(0.7, stats.crewComfort)),
+    Math.ceil(
+      ((days * 2) / Math.max(0.7, stats.crewComfort)) *
+        (stats.provisionMultiplier ?? 1),
+    ),
   );
   return { days, provisionsNeeded };
 }
@@ -327,8 +330,9 @@ export function resolveVoyageOperations(
 
   const damage = clamp(
     Math.round(
-      distance / 330 +
-        (roughness * distance) / Math.max(150, stats.stormResistance * 850),
+      (distance / 330 +
+        (roughness * distance) / Math.max(150, stats.stormResistance * 850)) *
+        (stats.damageMultiplier ?? 1),
     ),
     0,
     35,
@@ -353,7 +357,9 @@ export function resolveVoyageOperations(
   Object.assign(next, damaged.operations);
   const comfortRecovery = (stats.crewComfort - 1) * days * 3;
   const moraleChange =
-    comfortRecovery - days * 1.5 - shortage * 7 - damage * 0.25;
+    comfortRecovery -
+    (days * 1.5 + shortage * 7 + damage * 0.25) *
+      (stats.moraleLossMultiplier ?? 1);
   next.morale = clamp(next.morale + moraleChange, 0, 100);
 
   return {

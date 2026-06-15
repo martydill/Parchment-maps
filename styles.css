@@ -1474,9 +1474,43 @@ button.parchment {
   padding: 6px 4px;
   font-size: 11px;
 }
+.specialist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.specialist-card {
+  padding: 10px;
+  border: 1px solid rgba(79, 47, 22, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 245, 211, 0.16);
+}
+.specialist-card header {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.specialist-emblem {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(79, 47, 22, 0.38);
+  border-radius: 50%;
+  font-size: 19px;
+}
+.specialist-card h4,
+.specialist-card p {
+  margin: 0;
+}
+.specialist-card p {
+  margin-top: 6px;
+}
 @media (max-width: 620px) {
   .component-grid,
-  .component-repairs {
+  .component-repairs,
+  .specialist-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
