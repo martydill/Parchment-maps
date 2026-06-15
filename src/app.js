@@ -206,9 +206,14 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const DPR = Math.min(2, window.devicePixelRatio || 1);
 const WORLD = { w: 6400, h: 2400 };
+const MIN_ZOOM = 0.7;
+const MAX_ZOOM = 1.5;
+const ZOOM_STEP = 1.12;
 let vw = 0,
   vh = 0;
 const camera = { x: 0, y: 0, zoom: 1 };
+let viewportZoom = 1;
+let userZoom = 1;
 const keys = new Set();
 let last = performance.now();
 let gameStarted = false;
@@ -2350,7 +2355,8 @@ function resize() {
   fogCanvas.width = Math.floor(vw * DPR);
   fogCanvas.height = Math.floor(vh * DPR);
   fogCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  camera.zoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
+  viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
+  camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
 }
 addEventListener("resize", resize);
 resize();
@@ -3308,12 +3314,40 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
+function changeZoom(direction) {
+  const targetZoom = Math.max(
+    MIN_ZOOM,
+    Math.min(
+      MAX_ZOOM,
+      camera.zoom * (direction > 0 ? ZOOM_STEP : 1 / ZOOM_STEP),
+    ),
+  );
+  userZoom = targetZoom / viewportZoom;
+  camera.zoom = targetZoom;
+}
+
 addEventListener("keydown", (e) => {
+  const zoomIn = e.key === "+" || e.key === "=" || e.code === "NumpadAdd";
+  const zoomOut = e.key === "-" || e.key === "_" || e.code === "NumpadSubtract";
+  if (zoomIn || zoomOut) {
+    changeZoom(zoomIn ? 1 : -1);
+    e.preventDefault();
+    return;
+  }
   keys.add(e.key.toLowerCase());
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key))
     e.preventDefault();
 });
 addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    changeZoom(e.deltaY < 0 ? 1 : -1);
+    e.preventDefault();
+  },
+  { passive: false },
+);
 
 // touch joystick
 const joy = document.getElementById("joystick"),
