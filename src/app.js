@@ -951,6 +951,7 @@ const {
   fogCtx,
   mapLayer,
   minimapFog,
+  minimapFogCtx,
 } = createMapRendering({ WORLD, game, merchantRoutePaths });
 
 const merchantNames = [
@@ -2514,7 +2515,6 @@ const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
 const newMapButton = document.getElementById("newMapButton");
 document.getElementById("introWorldSeed").textContent = mapSeed;
-document.getElementById("chartWorldSeed").textContent = mapSeed;
 
 function beginGame() {
   nearPort = beginAtHomePort({
@@ -5778,13 +5778,11 @@ function renderChart() {
     c.fill();
     c.stroke();
   }
-  c.fillStyle = "#9e3027";
-  c.strokeStyle = "#f1ddb0";
-  c.lineWidth = 2;
-  c.beginPath();
-  c.arc(wrapX(ship.x) * sx, ship.y * sy, 8, 0, Math.PI * 2);
-  c.fill();
-  c.stroke();
+  c.save();
+  c.translate(wrapX(ship.x) * sx, ship.y * sy);
+  c.scale(0.5, 0.5);
+  drawShip(c, 0, 0, ship.angle, game.windAngle, game.windStrength);
+  c.restore();
   renderChartedCities();
 }
 function renderChartedCities() {
