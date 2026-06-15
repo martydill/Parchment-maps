@@ -168,6 +168,13 @@ import {
 } from "./core/intelligence.js";
 import { currentObjective, voyageWarnings } from "./core/guidance.js";
 import {
+  clearCourse,
+  compassDirection,
+  courseBearing,
+  normalizeNavigationState,
+  plotCourse,
+} from "./core/navigation.js";
+import {
   adjustSpecialistLoyalty,
   normalizeSpecialistState,
   resolveSpecialistEvent,
@@ -2183,6 +2190,10 @@ function loadGameState() {
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
   game.specialists = normalizeSpecialistState(game.specialists);
+  game.navigation = normalizeNavigationState(
+    game.navigation,
+    ports.map((port) => port.name),
+  );
   game.legal = normalizeLegalState(game.legal);
   game.warehouses = normalizeWarehouseState(game.warehouses);
   game.regionalEconomy = normalizeRegionalState(
@@ -2362,6 +2373,9 @@ const ui = {
   courseTitle: document.getElementById("courseTitle"),
   courseDetail: document.getElementById("courseDetail"),
   courseAction: document.getElementById("courseAction"),
+  plottedCourse: document.getElementById("plottedCourse"),
+  plottedCourseTitle: document.getElementById("plottedCourseTitle"),
+  plottedCourseDetail: document.getElementById("plottedCourseDetail"),
 };
 const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
@@ -2459,6 +2473,22 @@ function updateHud() {
             : objective.action === "ledger"
               ? "Open ledger →"
               : "Open chart →";
+  let destination = getPortByName(game.navigation.destination);
+  if (destination && nearPort?.name === destination.name) {
+    clearCourse(game.navigation);
+    showMessage(`Course complete · ${destination.name} reached.`);
+    saveGameState();
+    destination = null;
+  }
+  ui.plottedCourse.hidden = !destination;
+  if (destination) {
+    const bearing = courseBearing(ship, destination, WORLD.w);
+    const direction = compassDirection(bearing.angle);
+    ui.plottedCourseTitle.textContent = `${direction} · ${destination.name}`;
+    ui.plottedCourseDetail.textContent =
+      `${Math.round(bearing.distance)} leagues remaining · ` +
+      `bearing ${Math.round(((bearing.angle * 180) / Math.PI + 360) % 360)}°`;
+  }
   if (ship.anchored)
     ui.steeringStatus.textContent = "AT ANCHOR · DRAG THE WHEEL TO SAIL";
   else if (Math.abs(ship.speed) < 5)
@@ -2495,6 +2525,13 @@ function followCurrentObjective() {
 }
 
 ui.course.addEventListener("click", followCurrentObjective);
+ui.plottedCourse.addEventListener("click", () => {
+  const destination = game.navigation.destination;
+  clearCourse(game.navigation);
+  updateHud();
+  saveGameState();
+  showMessage(`Course for ${destination} cleared.`);
+});
 
 function showMessage(text, seconds = 2.2) {
   ui.message.textContent = text;
@@ -2723,6 +2760,12 @@ function openTownDetails(port, _fromChart = false) {
       '<p class="empty-note">No active crisis or verified forecast is recorded here.</p>';
   const dockButton = document.getElementById("townDockButton");
   dockButton.style.display = nearPort === port ? "block" : "none";
+  const courseButton = document.getElementById("townCourseButton");
+  const isCurrentCourse = game.navigation.destination === port.name;
+  courseButton.textContent = isCurrentCourse
+    ? "Clear Plotted Course"
+    : `Set Course for ${port.name}`;
+  courseButton.dataset.action = isCurrentCourse ? "clear" : "plot";
   // Each town dossier opens on the Politics tab (factions and current law),
   // with Commerce and Market one tap away.
   activateSectionTabs(document.getElementById("townPanel"), "politics");
@@ -2813,6 +2856,18 @@ function renderFog() {
 
 function drawDynamicTradeWorld(c, z) {
   c.save();
+  const courseDestination = getPortByName(game.navigation.destination);
+  if (courseDestination) {
+    const bearing = courseBearing(ship, courseDestination, WORLD.w);
+    c.strokeStyle = "rgba(102, 200, 181, .9)";
+    c.lineWidth = 3 / z;
+    c.setLineDash([12 / z, 8 / z]);
+    c.beginPath();
+    c.moveTo(ship.x, ship.y);
+    c.lineTo(bearing.destinationX, courseDestination.y);
+    c.stroke();
+    c.setLineDash([]);
+  }
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
     if (!record) continue;
@@ -5310,6 +5365,25 @@ document.getElementById("townDockButton").addEventListener("click", () => {
   minimapWrap.style.display = "none";
   if (port && nearPort === port) openPort();
 });
+document.getElementById("townCourseButton").addEventListener("click", () => {
+  if (!selectedTown) return;
+  const destination = selectedTown.name;
+  if (game.navigation.destination === destination) {
+    clearCourse(game.navigation);
+    showMessage(`Course for ${destination} cleared.`);
+  } else {
+    plotCourse(
+      game.navigation,
+      destination,
+      ports.map((port) => port.name),
+    );
+    showMessage(`Course plotted for ${destination}.`);
+  }
+  closeTownDetails();
+  minimapWrap.style.display = "none";
+  updateHud();
+  saveGameState();
+});
 document.getElementById("closePort").addEventListener("click", () => {
   const leaving = currentPort;
   document.getElementById("portPanel").style.display = "none";
@@ -5476,6 +5550,29 @@ function renderChart() {
       c.textAlign = "center";
       c.fillText(objective.title, p.x * sx, p.y * sy - 25);
     }
+  }
+  const courseDestination = getPortByName(game.navigation.destination);
+  if (courseDestination) {
+    const bearing = courseBearing(ship, courseDestination, WORLD.w);
+    c.strokeStyle = "#66c8b5";
+    c.lineWidth = 3;
+    c.setLineDash([9, 6]);
+    for (const offset of [-WORLD.w, 0, WORLD.w]) {
+      c.beginPath();
+      c.moveTo((wrapX(ship.x) + offset) * sx, ship.y * sy);
+      c.lineTo((bearing.destinationX + offset) * sx, courseDestination.y * sy);
+      c.stroke();
+    }
+    c.setLineDash([]);
+    c.beginPath();
+    c.arc(
+      courseDestination.x * sx,
+      courseDestination.y * sy,
+      23,
+      0,
+      Math.PI * 2,
+    );
+    c.stroke();
   }
   for (const event of game.scheduledEvents) {
     if (!event.known || event.started) continue;
