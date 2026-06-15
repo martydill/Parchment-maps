@@ -18,7 +18,7 @@ export function createGameState() {
     cargo: { spice: 0, iron: 0, silk: 0 },
     cargoLots: [],
     windAngle: 0.12,
-    windStrength: 0.28,
+    windStrength: 0.14,
     weatherName: "Clear",
     weatherVisibilityKm: 24,
     cargoCost: { spice: [], iron: [], silk: [] },

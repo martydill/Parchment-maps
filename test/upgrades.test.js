@@ -56,12 +56,14 @@ test("ship classes provide distinct baseline tradeoffs", () => {
   const carrack = calculateShipStats(state);
   assert.equal(carrack.holdMax, 30);
   assert.equal(carrack.maxSpeed, 157);
+  assert.equal(carrack.waterlineLengthFt, 75);
   assert.ok(Math.abs(carrack.turnRate - 2.36) < 1e-12);
   assert.ok(carrack.stormResistance > 1);
 
   state.activeClass = "barque";
   const barque = calculateShipStats(state);
   assert.equal(barque.visibilityHeightM, 19);
+  assert.equal(barque.waterlineLengthFt, 70);
   assert.equal(barque.holdMax, 15);
   assert.ok(barque.crewComfort > 1);
 

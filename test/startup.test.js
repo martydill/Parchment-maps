@@ -56,6 +56,26 @@ test("beginning at Goldhaven resets the ship and camera at the home port", () =>
   assert.deepEqual(camera, { x: 705, y: 485 });
 });
 
+test("beginning repairs a legacy ship without a usable trail", () => {
+  const ship = {
+    x: 1,
+    y: 2,
+    angle: 3,
+    speed: 40,
+    anchored: false,
+    trail: null,
+  };
+
+  beginAtHomePort({
+    camera: {},
+    homePort: { spawnX: 705, spawnY: 485, departureAngle: 0 },
+    ports: [{ name: "Goldhaven", home: true }],
+    ship,
+  });
+
+  assert.deepEqual(ship.trail, []);
+});
+
 test("startup fails clearly when the Begin button or home port is missing", () => {
   assert.throws(() => bindBeginButton(null, () => {}), /missing Begin button/);
   assert.throws(

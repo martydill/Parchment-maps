@@ -1,5 +1,18 @@
 import { clamp, normalizeAngle } from "./math.js";
 
+const BASE_WORLD_SPEED = 175;
+
+export function hullSpeedKnots(waterlineLengthFt) {
+  return 1.34 * Math.sqrt(Math.max(0, waterlineLengthFt));
+}
+
+export function shipSpeedKnots(worldSpeed, waterlineLengthFt) {
+  return (
+    (Math.abs(worldSpeed) / BASE_WORLD_SPEED) *
+    hullSpeedKnots(waterlineLengthFt)
+  );
+}
+
 export function readSailingInput(keys, input, currentAngle) {
   let dx = input.x;
   let dy = input.y;

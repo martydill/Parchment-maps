@@ -1,6 +1,7 @@
 export const BASE_SHIP_STATS = Object.freeze({
   holdMax: 18,
   maxSpeed: 175,
+  waterlineLengthFt: 45,
   accel: 120,
   turnRate: 2.7,
   visibilityHeightM: 12,
@@ -26,7 +27,13 @@ export const SHIP_CLASSES = Object.freeze({
     "The Peregrine",
     260,
     "A narrow, fast dispatch vessel with limited room for speculative cargo.",
-    { maxSpeed: 24, accel: 18, turnRate: 0.24, holdMax: -5 },
+    {
+      maxSpeed: 24,
+      waterlineLengthFt: 5,
+      accel: 18,
+      turnRate: 0.24,
+      holdMax: -5,
+    },
   ),
   carrack: shipClass(
     "carrack",
@@ -37,6 +44,7 @@ export const SHIP_CLASSES = Object.freeze({
     {
       holdMax: 12,
       maxSpeed: -18,
+      waterlineLengthFt: 30,
       accel: -14,
       turnRate: -0.34,
       stormResistance: 0.12,
@@ -50,6 +58,7 @@ export const SHIP_CLASSES = Object.freeze({
     "A long-range exploration vessel with a tall observation platform and hardened hull.",
     {
       visibilityHeightM: 7,
+      waterlineLengthFt: 25,
       stormResistance: 0.22,
       crewComfort: 0.18,
       holdMax: -3,
@@ -64,6 +73,7 @@ export const SHIP_CLASSES = Object.freeze({
     "A guarded trader built to discourage raiders, though its weight attracts scrutiny.",
     {
       defense: 2,
+      waterlineLengthFt: 20,
       holdMax: 3,
       maxSpeed: -12,
       turnRate: -0.2,
@@ -78,6 +88,7 @@ export const SHIP_CLASSES = Object.freeze({
     "An agile, discreet trader suited to uncertain coasts and evasive landfalls.",
     {
       turnRate: 0.42,
+      waterlineLengthFt: 10,
       accel: 10,
       inspectionRisk: -0.16,
       windDrift: -0.12,

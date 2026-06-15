@@ -3,11 +3,21 @@ import test from "node:test";
 
 import {
   edgeInwardVector,
+  hullSpeedKnots,
   limitOutwardWind,
   nearestOpenHeading,
   readSailingInput,
   recoverFromShallows,
+  shipSpeedKnots,
 } from "../src/core/sailing.js";
+
+test("hull speed follows waterline length and scales world speed to knots", () => {
+  const cutterHullSpeed = 1.34 * Math.sqrt(45);
+  assert.equal(hullSpeedKnots(45), cutterHullSpeed);
+  assert.equal(hullSpeedKnots(-10), 0);
+  assert.equal(shipSpeedKnots(175, 45), cutterHullSpeed);
+  assert.equal(shipSpeedKnots(-87.5, 45), cutterHullSpeed / 2);
+});
 
 test("readSailingInput preserves an idle heading and reads joystick input", () => {
   assert.deepEqual(

@@ -15,6 +15,7 @@ import {
   limitOutwardWind,
   readSailingInput,
   recoverFromShallows,
+  shipSpeedKnots,
 } from "./core/sailing.js";
 import {
   advanceEconomyState,
@@ -1295,7 +1296,7 @@ function advanceDays(days) {
   }
   if (days) {
     game.windAngle += 1.42 * days;
-    game.windStrength = 0.18 + ((game.day * 41) % 24) / 100;
+    game.windStrength = 0.1 + ((game.day * 41) % 10) / 100;
     const weather = getInterpolatedWeather();
     game.weatherName = weather.name;
     game.weatherVisibilityKm = weather.visibilityKm;
@@ -2190,6 +2191,11 @@ function loadGameState() {
   if (!saved) return false;
 
   Object.assign(game, saved.game);
+  game.windStrength = clamp(
+    Number.isFinite(game.windStrength) ? game.windStrength : 0.14,
+    0.08,
+    0.22,
+  );
   game.discoveries = normalizeDiscoveryState(game.discoveries);
   game.exploration = normalizeExplorationState(game.exploration);
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
@@ -2419,7 +2425,9 @@ function cargoCount() {
   return countCargo(game, contractCargoCount());
 }
 function updateHud() {
-  ui.speed.textContent = Math.round(Math.abs(ship.speed) / 7) + " knots";
+  const stats = operationalShipStats();
+  ui.speed.textContent =
+    shipSpeedKnots(ship.speed, stats.waterlineLengthFt).toFixed(1) + " knots";
   const dirs = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
   const idx =
     Math.round(
@@ -3232,7 +3240,7 @@ function update(dt) {
     game.windAngle += 0.01 * dt + 0.8 * (d / 620);
     const windPhase =
       (game.day * 620 + game.voyageDistance) / 250 + performance.now() / 15000;
-    game.windStrength = 0.16 + (Math.sin(windPhase) + 1) * 0.14;
+    game.windStrength = 0.08 + (Math.sin(windPhase) + 1) * 0.07;
 
     const weather = getInterpolatedWeather();
     game.weatherName = weather.name;
@@ -4285,7 +4293,7 @@ function renderShipyard() {
     "</span><span>" +
     stats.holdMax +
     " hold · " +
-    Math.round(stats.maxSpeed / 7) +
+    shipSpeedKnots(stats.maxSpeed, stats.waterlineLengthFt).toFixed(1) +
     " knots · " +
     stats.turnRate.toFixed(2) +
     " turning · " +
@@ -4941,7 +4949,7 @@ function renderShipPanel() {
     "</span><span>" +
     stats.holdMax +
     " hold · " +
-    Math.round(stats.maxSpeed / 7) +
+    shipSpeedKnots(stats.maxSpeed, stats.waterlineLengthFt).toFixed(1) +
     " knots · " +
     stats.turnRate.toFixed(2) +
     " turning · " +

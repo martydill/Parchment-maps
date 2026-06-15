@@ -7,7 +7,7 @@ export function beginAtHomePort({ camera, homePort, ports, ship }) {
   ship.angle = homePort.departureAngle;
   ship.speed = 0;
   ship.anchored = true;
-  ship.trail.length = 0;
+  ship.trail = [];
   camera.x = ship.x;
   camera.y = ship.y;
 
