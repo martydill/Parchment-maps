@@ -11,6 +11,7 @@ import { createNavigationState } from "./navigation.js";
 
 export function createGameState() {
   return {
+    mapSeed: null,
     day: 1,
     coins: 120,
     holdMax: 18,

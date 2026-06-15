@@ -7,6 +7,7 @@ export function createSaveData({
   worldEvents,
   exploredMap,
   gameStarted,
+  mapSeed,
 }) {
   return {
     version: SAVE_VERSION,
@@ -17,6 +18,7 @@ export function createSaveData({
     worldEvents,
     exploredMap,
     gameStarted,
+    mapSeed,
   };
 }
 

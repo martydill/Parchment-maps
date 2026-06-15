@@ -188,14 +188,24 @@ import {
 import {
   discoverySites,
   explorationSites,
+  forests,
   goods,
   HOME_PORT,
   lands,
+  mountains,
   ports,
   productionChains,
   roughSeas,
+  seaRegionLabels,
   weatherPatterns,
+  worldCurrents,
+  worldMonsters,
+  worldShoals,
 } from "./world-data.js";
+import {
+  createDistinctMapSeed,
+  createMapTransform,
+} from "./core/map-generation.js";
 import {
   createMapRendering,
   createRoughSeaParticles,
@@ -206,7 +216,92 @@ import {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const DPR = Math.min(2, window.devicePixelRatio || 1);
-const WORLD = { w: 6400, h: 2400 };
+const MAP_SEED_KEY = "gilded-archipelago-map-seed";
+const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
+const mapSeed = storedMapSeed || createDistinctMapSeed("");
+localStorage.setItem(MAP_SEED_KEY, mapSeed);
+const mapTransform = createMapTransform(mapSeed);
+const WORLD = { w: mapTransform.width, h: mapTransform.height };
+
+function transformWorldData() {
+  const regions = lands
+    .filter((land) => land.name)
+    .map((land) => ({
+      key: land.name,
+      center: polygonCentroid(land.poly),
+    }));
+  const regionByName = new Map(regions.map((region) => [region.key, region]));
+  const nearestRegion = (x, y) =>
+    regions.reduce((nearest, region) => {
+      const distance = Math.hypot(x - region.center.x, y - region.center.y);
+      return !nearest || distance < nearest.distance
+        ? { ...region, distance }
+        : nearest;
+    }, null);
+  const mapPoint = (x, y, regionName) => {
+    const region = regionByName.get(regionName) || nearestRegion(x, y);
+    return mapTransform.regionPoint(x, y, region.key, region.center);
+  };
+  const mapRecord = (record, regionName) => {
+    const mapped = mapPoint(record.x, record.y, regionName);
+    record.x = mapped.x;
+    record.y = mapped.y;
+  };
+  const mapTuple = (tuple, scaleSize = true) => {
+    const mapped = mapPoint(tuple[0], tuple[1]);
+    tuple[0] = mapped.x;
+    tuple[1] = mapped.y;
+    if (scaleSize && typeof tuple[2] === "number")
+      tuple[2] = mapTransform.averageLength(tuple[2]);
+  };
+
+  for (const land of lands) {
+    const center = polygonCentroid(land.poly);
+    const region = land.name
+      ? regionByName.get(land.name)
+      : nearestRegion(center.x, center.y);
+    for (const point of land.poly) {
+      const mapped = mapTransform.regionPoint(
+        point[0],
+        point[1],
+        region.key,
+        region.center,
+      );
+      point[0] = mapped.x;
+      point[1] = mapped.y;
+    }
+  }
+  for (const port of ports) mapRecord(port, port.land);
+  for (const site of discoverySites) mapRecord(site);
+  for (const site of explorationSites) mapRecord(site);
+  for (const tuple of forests) mapTuple(tuple);
+  for (const tuple of mountains) mapTuple(tuple);
+  for (const tuple of worldShoals) {
+    mapTuple(tuple, false);
+    tuple[2] = mapTransform.horizontalLength(tuple[2]);
+    tuple[3] = mapTransform.verticalLength(tuple[3]);
+  }
+  for (const tuple of worldCurrents) mapTuple(tuple, false);
+  for (const tuple of worldMonsters) mapTuple(tuple, false);
+  for (const tuple of seaRegionLabels) {
+    const mapped = mapPoint(tuple[1], tuple[2]);
+    tuple[1] = mapped.x;
+    tuple[2] = mapped.y;
+  }
+  for (const sea of roughSeas) {
+    mapRecord(sea);
+    sea.rx = mapTransform.horizontalLength(sea.rx);
+    sea.ry = mapTransform.verticalLength(sea.ry);
+  }
+  const spawn = mapPoint(HOME_PORT.spawnX, HOME_PORT.spawnY, "Avelorn");
+  mapRecord(HOME_PORT, "Avelorn");
+  HOME_PORT.spawnX = spawn.x;
+  HOME_PORT.spawnY = spawn.y;
+
+  return mapPoint;
+}
+
+const mapWorldPoint = transformWorldData();
 const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 1.12;
@@ -226,9 +321,11 @@ let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
 let pendingCombat = null;
+let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
 const game = createGameState();
+game.mapSeed = mapSeed;
 const ship = {
   x: HOME_PORT.spawnX,
   y: HOME_PORT.spawnY,
@@ -837,6 +934,14 @@ merchantRoutePaths.push(
     ],
   },
 );
+
+for (const route of merchantRoutePaths) {
+  for (const point of route.points) {
+    const mapped = mapWorldPoint(point[0], point[1]);
+    point[0] = mapped.x;
+    point[1] = mapped.y;
+  }
+}
 
 const {
   exploredCtx,
@@ -2154,7 +2259,7 @@ function revealCurrentView(force = false) {
 }
 
 function saveGameState() {
-  if (!gameStarted) return;
+  if (!gameStarted || suppressSaving) return;
   try {
     const data = createSaveData({
       game,
@@ -2163,6 +2268,7 @@ function saveGameState() {
       worldEvents,
       exploredMap: exploredMask.toDataURL("image/png"),
       gameStarted,
+      mapSeed,
     });
     localStorage.setItem(SAVE_KEY, serializeSave(data));
   } catch (error) {
@@ -2191,6 +2297,7 @@ function loadGameState() {
   if (!saved) return false;
 
   Object.assign(game, saved.game);
+  game.mapSeed = mapSeed;
   game.windStrength = clamp(
     Number.isFinite(game.windStrength) ? game.windStrength : 0.14,
     0.08,
@@ -2239,8 +2346,16 @@ function loadGameState() {
     for (const key of Object.keys(goods))
       game.economy[port.name][key] ||= freshEconomy[port.name][key];
   }
-  Object.assign(ship, saved.ship);
-  ship.trail = Array.isArray(saved.ship.trail) ? saved.ship.trail : [];
+  const savedMapSeed = saved.mapSeed ?? saved.game.mapSeed;
+  const savedShip = { ...saved.ship };
+  if (!savedMapSeed) {
+    const mapped = mapTransform.point(savedShip.x, savedShip.y);
+    savedShip.x = mapped.x;
+    savedShip.y = mapped.y;
+    savedShip.trail = [];
+  }
+  Object.assign(ship, savedShip);
+  ship.trail = Array.isArray(savedShip.trail) ? savedShip.trail : [];
   const restoredPosition = recoverNavigablePosition({
     position: ship,
     fallback: { x: HOME_PORT.spawnX, y: HOME_PORT.spawnY },
@@ -2258,10 +2373,16 @@ function loadGameState() {
   }
   applyShipUpgrades();
   merchantShips.length = 0;
-  merchantShips.push(...saved.merchants);
+  merchantShips.push(
+    ...saved.merchants.map((merchant) => {
+      if (savedMapSeed) return merchant;
+      const mapped = mapTransform.point(merchant.x, merchant.y);
+      return { ...merchant, x: mapped.x, y: mapped.y };
+    }),
+  );
   Object.assign(worldEvents, saved.worldEvents);
   gameStarted = saved.gameStarted;
-  restoreExploredMap(saved.exploredMap);
+  if (savedMapSeed) restoreExploredMap(saved.exploredMap);
   visibility.lastRadius = -1;
   camera.x = ship.x;
   camera.y = ship.y;
@@ -2391,6 +2512,9 @@ const ui = {
 };
 const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
+const newMapButton = document.getElementById("newMapButton");
+document.getElementById("introWorldSeed").textContent = mapSeed;
+document.getElementById("chartWorldSeed").textContent = mapSeed;
 
 function beginGame() {
   nearPort = beginAtHomePort({
@@ -2417,9 +2541,20 @@ function beginGame() {
     4.5,
   );
   saveGameState();
+  window.setTimeout(() => {
+    minimapWrap.style.display = "grid";
+    renderChart();
+  }, 0);
 }
 
 bindBeginButton(beginButton, beginGame);
+newMapButton.addEventListener("click", () => {
+  suppressSaving = true;
+  gameStarted = false;
+  localStorage.removeItem(SAVE_KEY);
+  localStorage.setItem(MAP_SEED_KEY, createDistinctMapSeed(mapSeed));
+  location.reload();
+});
 
 function cargoCount() {
   return countCargo(game, contractCargoCount());
@@ -5505,8 +5640,10 @@ menuPanel.addEventListener("click", (e) => {
 });
 document.getElementById("newGameButton").addEventListener("click", () => {
   if (confirm("Begin a new voyage? Your current progress will be lost.")) {
+    suppressSaving = true;
     gameStarted = false;
     localStorage.removeItem(SAVE_KEY);
+    localStorage.setItem(MAP_SEED_KEY, createDistinctMapSeed(mapSeed));
     location.reload();
   }
 });

@@ -68,6 +68,7 @@ test("full game saves round-trip through JSON", () => {
     worldEvents: { shortage: { active: true } },
     exploredMap: "data:image/png;base64,map",
     gameStarted: true,
+    mapSeed: "charted-world",
   });
 
   const restored = parseSave(serializeSave(save));
@@ -78,6 +79,7 @@ test("full game saves round-trip through JSON", () => {
   assert.equal(restored.worldEvents.shortage.active, true);
   assert.equal(restored.exploredMap, "data:image/png;base64,map");
   assert.equal(restored.gameStarted, true);
+  assert.equal(restored.mapSeed, "charted-world");
   assert.match(restored.savedAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 

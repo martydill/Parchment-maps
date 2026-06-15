@@ -476,6 +476,12 @@ body {
 .scroll p {
   line-height: 1.45;
 }
+.world-seed-label {
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  opacity: 0.72;
+}
 .ornament {
   text-align: center;
   font-size: 20px;
@@ -496,16 +502,34 @@ button.parchment {
     inset 0 0 0 2px rgba(255, 222, 150, 0.16),
     0 3px 8px rgba(58, 32, 14, 0.3);
 }
-#beginButton {
+.intro-actions {
   position: fixed;
   z-index: 2;
   left: 50%;
   bottom: max(28px, calc(6vh + env(safe-area-inset-bottom)));
-  margin: 0;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.intro-actions button {
+  margin: 0;
+  white-space: nowrap;
+}
+#beginButton {
   box-shadow:
     0 8px 24px rgba(48, 27, 10, 0.48),
     0 0 0 10px rgba(218, 190, 132, 0.88);
+}
+button.parchment.secondary {
+  background: linear-gradient(#6f6045, #493d2c);
+  font-size: 14px;
+}
+@media (max-width: 520px) {
+  .intro-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 .port-grid {
   display: grid;

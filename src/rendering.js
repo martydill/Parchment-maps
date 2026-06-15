@@ -313,8 +313,8 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   const fogCanvas = document.createElement("canvas");
   const fogCtx = fogCanvas.getContext("2d");
   const minimapFog = document.createElement("canvas");
-  minimapFog.width = 1440;
-  minimapFog.height = 540;
+  minimapFog.width = 1200;
+  minimapFog.height = 800;
   const minimapFogCtx = minimapFog.getContext("2d");
 
   function drawTree(c, x, y, s) {
@@ -844,56 +844,13 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       }
     });
 
-    // ancient trade routes beneath labels
-    drawRoute(
-      m,
-      [
-        [650, 485],
-        [850, 570],
-        [1070, 780],
-        [1190, 1050],
-        [1450, 1185],
-      ],
-      "The Amber Run",
-    );
-    drawRoute(
-      m,
-      [
-        [1000, 360],
-        [1280, 430],
-        [1545, 470],
-        [1770, 610],
-        [2000, 765],
-      ],
-      "The Moonroad",
-    );
-    drawRoute(
-      m,
-      [
-        [360, 1140],
-        [650, 1215],
-        [1030, 1260],
-        [1450, 1185],
-        [1950, 1105],
-      ],
-      "Kingfisher Passage",
-    );
-    merchantRoutePaths
-      .slice(9)
-      .forEach((route) => drawRoute(m, route.points, null));
+    // Trade routes are generated with the same transform as their ports.
+    merchantRoutePaths.forEach((route) => drawRoute(m, route.points, null));
 
     // shoals, bars, currents and hazards
-    drawShoal(m, 315, 660, 135, 44, "The Glass Shoals");
-    drawShoal(m, 1815, 720, 150, 48, "Whispering Sand");
-    drawShoal(m, 1050, 1260, 100, 35, "Widow Bank");
-    drawShoal(m, 1290, 560, 85, 28, null);
-    drawCurrent(m, 980, 930, 0.18, "Southward Current");
-    drawCurrent(m, 1810, 1030, -0.38, "The Grey Drift");
-    drawSeaMonster(m, 760, 660, 0.92);
-    drawSeaMonster(m, 1760, 1240, 0.66);
-    worldShoals.slice(4).forEach((v) => drawShoal(m, ...v));
-    worldCurrents.slice(2).forEach((v) => drawCurrent(m, ...v));
-    worldMonsters.slice(2).forEach((v) => drawSeaMonster(m, ...v));
+    worldShoals.forEach((values) => drawShoal(m, ...values));
+    worldCurrents.forEach((values) => drawCurrent(m, ...values));
+    worldMonsters.forEach((values) => drawSeaMonster(m, ...values));
 
     // small islets and reefs, visually rich but not collision obstacles
     for (let i = 0; i < 210; i++) {
@@ -1097,37 +1054,18 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     // sea regions, calligraphic labels, and decorative flourishes
     m.fillStyle = "rgba(45,42,29,.55)";
     m.textAlign = "center";
-    m.font = "italic 38px Georgia";
-    m.fillText("THE SAPPHIRE SEA", 1200, 520);
-    m.font = "italic 27px Georgia";
-    m.fillText("THE WESTERN DEEPS", 300, 700);
-    m.fillText("SEA OF WHISPERS", 1900, 930);
-    m.font = "italic 20px Georgia";
-    m.fillText("Calmwater Reach", 470, 830);
-    m.fillText("Wyrmwatch Sound", 1510, 690);
-    m.fillText("The Pale Expanse", 2050, 450);
-    for (const [label, x, y, size] of seaRegionLabels.slice(3)) {
+    for (const [label, x, y, size] of seaRegionLabels) {
       m.font = "italic " + size + "px Georgia";
       m.fillText(label, x, y);
     }
-    m.strokeStyle = "rgba(53,37,20,.42)";
-    m.lineWidth = 1.5;
-    m.beginPath();
-    m.moveTo(1030, 540);
-    m.quadraticCurveTo(1200, 575, 1370, 540);
-    m.stroke();
-    m.beginPath();
-    m.moveTo(1135, 550);
-    m.quadraticCurveTo(1200, 585, 1265, 550);
-    m.stroke();
 
-    drawCompassRose(m, 2200, 235, 84);
-    drawCompassRose(m, 4470, 300, 70);
-    drawCompassRose(m, 6020, 2180, 66);
+    drawCompassRose(m, WORLD.w * 0.36, WORLD.h * 0.1, 84);
+    drawCompassRose(m, WORLD.w * 0.72, WORLD.h * 0.13, 70);
+    drawCompassRose(m, WORLD.w * 0.94, WORLD.h * 0.88, 66);
 
     // title cartouche in the empty northwestern sea
     m.save();
-    m.translate(285, 210);
+    m.translate(WORLD.w * 0.08, WORLD.h * 0.08);
     m.strokeStyle = "rgba(56,34,17,.55)";
     m.fillStyle = "rgba(222,195,135,.25)";
     m.lineWidth = 2;

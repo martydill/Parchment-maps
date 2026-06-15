@@ -217,6 +217,9 @@
           Your voyage begins at <b>Goldhaven</b>, your home port on the coast of
           Avelorn.
         </p>
+        <p class="world-seed-label">
+          Active generated world: <b id="introWorldSeed"></b>
+        </p>
         <p>
           To sail,
           <b>drag the touch wheel toward the place you want the ship to go</b>.
@@ -257,9 +260,14 @@
           continents. Sailing beyond the eastern or western edge carries you
           around the globe to the opposite side; there is no artificial wall.
         </p>
-        <button class="parchment" id="beginButton" type="button">
-          Begin at Goldhaven
-        </button>
+        <div class="intro-actions">
+          <button class="parchment" id="beginButton" type="button">
+            Begin at Goldhaven
+          </button>
+          <button class="parchment secondary" id="newMapButton" type="button">
+            Generate another world
+          </button>
+        </div>
       </div>
     </div>
 
@@ -727,10 +735,12 @@
 
     <div id="minimapWrap">
       <div id="minimapCard">
-        <canvas id="minimap" width="1440" height="540"></canvas>
+        <canvas id="minimap" width="1200" height="800"></canvas>
         <div id="chartedCities" aria-label="Discovered cities"></div>
         <button id="closeMap">×</button>
         <div id="chartLegend">
+          <span>World <b id="chartWorldSeed"></b></span>
+          <span>Close the chart to begin sailing from Goldhaven.</span>
           <span><i class="legend-contract"></i>Contract</span>
           <span><i class="legend-objective"></i>Current course</span>
           <span><i class="legend-plotted"></i>Plotted course</span>
@@ -742,6 +752,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=10"></script>
+    <script type="module" src="./src/app.js?v=14"></script>
   </body>
 </html>
