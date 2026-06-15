@@ -30,6 +30,12 @@ body {
   display: block;
   background: #b48e50;
 }
+.resource-icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
 #hud {
   position: fixed;
   inset: 0;
@@ -706,6 +712,46 @@ button.parchment {
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid rgba(71, 44, 23, 0.24);
+}
+.trade-good {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+}
+.trade-good-details {
+  display: block;
+  min-width: 0;
+}
+.trade-good-details > .small {
+  display: block;
+  margin-top: 2px;
+}
+.resource-icon-frame {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: #543519;
+  background:
+    radial-gradient(circle at 38% 32%, #efd89e 0 18%, #c99c50 62%, #795027),
+    #c99c50;
+  border: 1px solid #66401e;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 233, 174, 0.34),
+    inset 0 -5px 9px rgba(74, 39, 14, 0.25),
+    0 2px 3px rgba(60, 34, 17, 0.2);
+}
+.resource-icon {
+  width: 29px;
+  height: 29px;
+  fill: rgba(104, 65, 24, 0.1);
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .trade-row button {
   min-width: 54px;

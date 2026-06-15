@@ -87,3 +87,16 @@ test("continentalCoast safely copies incomplete outlines", () => {
   assert.notEqual(result, line);
   assert.notEqual(result[0], line[0]);
 });
+
+test("continentalCoast bounds broad detail on short, long, and zero-length edges", () => {
+  const unusualOutline = [
+    [0, 0],
+    [0, 0],
+    [1000, 0],
+    [0, 20],
+  ];
+  const coast = continentalCoast(unusualOutline, 11);
+
+  assert.equal(coast.length, 16);
+  assert.ok(coast.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y)));
+});
