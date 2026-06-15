@@ -95,6 +95,7 @@ import {
   normalizeExplorationState,
   resolveExpedition,
 } from "./core/exploration.js";
+import { chartedCityIndicators } from "./core/chart.js";
 import {
   advanceCrises,
   applyCrisisAftermath,
@@ -2324,6 +2325,7 @@ const mapButton = document.getElementById("mapButton");
 const minimapWrap = document.getElementById("minimapWrap");
 const minimap = document.getElementById("minimap");
 const minimapCtx = minimap.getContext("2d");
+const chartedCities = document.getElementById("chartedCities");
 minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
 
 function resize() {
@@ -5507,6 +5509,29 @@ function renderChart() {
   c.arc(wrapX(ship.x) * sx, ship.y * sy, 8, 0, Math.PI * 2);
   c.fill();
   c.stroke();
+  renderChartedCities();
+}
+function renderChartedCities() {
+  chartedCities.replaceChildren();
+  const indicators = chartedCityIndicators(
+    ports,
+    (port) => isWorldPointExplored(port.x, port.y),
+    WORLD,
+  );
+  for (const indicator of indicators) {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "charted-city";
+    marker.style.left = indicator.left;
+    marker.style.top = indicator.top;
+    marker.dataset.cityName = indicator.city.name;
+    marker.setAttribute("aria-label", `Open ${indicator.city.name}`);
+    marker.addEventListener("click", () => {
+      minimapWrap.style.display = "none";
+      openTownDetails(indicator.city, true);
+    });
+    chartedCities.append(marker);
+  }
 }
 mapButton.addEventListener("click", () => {
   minimapWrap.style.display = "grid";
