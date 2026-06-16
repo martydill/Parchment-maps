@@ -528,50 +528,122 @@
 
     <div id="ledgerPanel">
       <div class="scroll ledger-scroll">
-        <h2>Captain’s Ledger</h2>
-        <div class="ornament">✦ ☙ ⚓ ❧ ✦</div>
-        <div class="detail-card">
-          <h3>Merchant-prince milestone</h3>
-          <div id="milestoneLedger"></div>
+        <header class="port-header">
+          <h2>Captain’s Ledger</h2>
+          <div class="ornament">✦ ☙ ⚓ ❧ ✦</div>
+        </header>
+        <nav class="port-tabs" role="tablist" aria-label="Ledger sections">
+          <button
+            type="button"
+            class="port-tab active"
+            data-tab="milestone"
+            role="tab"
+          >
+            Milestone
+          </button>
+          <button type="button" class="port-tab" data-tab="legacy" role="tab">
+            Legacies
+          </button>
+          <button
+            type="button"
+            class="port-tab"
+            data-tab="contracts"
+            role="tab"
+          >
+            Contracts
+          </button>
+          <button
+            type="button"
+            class="port-tab"
+            data-tab="discoveries"
+            role="tab"
+          >
+            Discoveries
+          </button>
+          <button
+            type="button"
+            class="port-tab"
+            data-tab="factions"
+            role="tab"
+          >
+            Factions
+          </button>
+          <button type="button" class="port-tab" data-tab="intel" role="tab">
+            Intel
+          </button>
+          <button type="button" class="port-tab" data-tab="traffic" role="tab">
+            Traffic
+          </button>
+          <button type="button" class="port-tab" data-tab="news" role="tab">
+            News
+          </button>
+        </nav>
+        <div class="port-body">
+          <section
+            class="port-panel active"
+            data-tab="milestone"
+            role="tabpanel"
+          >
+            <div class="detail-card">
+              <h3>Merchant-prince milestone</h3>
+              <div id="milestoneLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="legacy" role="tabpanel">
+            <div class="detail-card">
+              <h3>Legacy paths</h3>
+              <div id="legacyLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="contracts" role="tabpanel">
+            <div class="detail-card">
+              <h3>Active contracts</h3>
+              <div id="activeContractsLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="discoveries" role="tabpanel">
+            <div class="detail-card">
+              <h3>Discoveries & secrets</h3>
+              <p class="small">
+                Keep a find private, sell its chart, or share it with a faction.
+                Public discoveries may mature into merchant routes that
+                permanently alter nearby markets.
+              </p>
+              <div id="discoveryLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="factions" role="tabpanel">
+            <div class="detail-card">
+              <h3>Faction standing</h3>
+              <p class="small">
+                Favors cost standing with rival powers. At 45 standing you may
+                accept one formal charter, permanently closing rival contracts.
+              </p>
+              <div id="factionLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="intel" role="tabpanel">
+            <div class="detail-card">
+              <h3>Intelligence reports</h3>
+              <div id="intelLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="traffic" role="tabpanel">
+            <div class="detail-card">
+              <h3>Observed merchant traffic</h3>
+              <div id="merchantLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="news" role="tabpanel">
+            <div class="detail-card">
+              <h3>Port news</h3>
+              <div id="newsLedger"></div>
+            </div>
+          </section>
         </div>
-        <div class="detail-card">
-          <h3>Legacy paths</h3>
-          <div id="legacyLedger"></div>
+        <div class="port-close-wrap">
+          <button class="parchment" id="closeLedger">Close Ledger</button>
         </div>
-        <div class="detail-card">
-          <h3>Active contracts</h3>
-          <div id="activeContractsLedger"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Discoveries & secrets</h3>
-          <p class="small">
-            Keep a find private, sell its chart, or share it with a faction.
-            Public discoveries may mature into merchant routes that permanently
-            alter nearby markets.
-          </p>
-          <div id="discoveryLedger"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Faction standing</h3>
-          <p class="small">
-            Favors cost standing with rival powers. At 45 standing you may
-            accept one formal charter, permanently closing rival contracts.
-          </p>
-          <div id="factionLedger"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Intelligence reports</h3>
-          <div id="intelLedger"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Observed merchant traffic</h3>
-          <div id="merchantLedger"></div>
-        </div>
-        <div class="detail-card">
-          <h3>Port news</h3>
-          <div id="newsLedger"></div>
-        </div>
-        <button class="parchment" id="closeLedger">Close Ledger</button>
       </div>
     </div>
 

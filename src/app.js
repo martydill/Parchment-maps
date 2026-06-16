@@ -2164,6 +2164,7 @@ function performIntelAction(report) {
     }
   }
   renderLedger();
+  activateSectionTabs(document.getElementById("ledgerPanel"), "milestone");
   document.getElementById("ledgerPanel").style.display = "grid";
 }
 function showIntelReport(report) {
@@ -2866,6 +2867,7 @@ function followCurrentObjective() {
   }
   if (objective.action === "ledger") {
     renderLedger();
+    activateSectionTabs(document.getElementById("ledgerPanel"), "milestone");
     document.getElementById("ledgerPanel").style.display = "grid";
     return;
   }
@@ -6090,6 +6092,7 @@ document.getElementById("combatPanel").addEventListener("click", (event) => {
 document.getElementById("reportLedger").addEventListener("click", () => {
   document.getElementById("reportPanel").style.display = "none";
   renderLedger();
+  activateSectionTabs(document.getElementById("ledgerPanel"), "milestone");
   document.getElementById("ledgerPanel").style.display = "grid";
 });
 document.getElementById("townDockButton").addEventListener("click", () => {
@@ -6132,12 +6135,13 @@ document.getElementById("closePort").addEventListener("click", () => {
   );
 });
 
-// Section tabs shared by the dock and town panels. Each panel owns its own
-// .port-tabs bar and .port-panel sections, so activation is scoped to the
-// panel that contains the clicked tab — the two never interfere. Re-rendering
-// a section's inner content (renderPortSystems / openTownDetails) never
-// rebuilds this tab structure, so the active section persists across buys and
-// other actions; only opening a panel resets to its first tab.
+// Section tabs shared by the dock, town, ship, and ledger panels. Each panel
+// owns its own .port-tabs bar and .port-panel sections, so activation is scoped
+// to the panel that contains the clicked tab — they never interfere.
+// Re-rendering a section's inner content (renderPortSystems / openTownDetails /
+// renderLedger) never rebuilds this tab structure, so the active section
+// persists across buys and other actions; only opening a panel resets to its
+// first tab.
 function activateSectionTabs(root, name) {
   if (!root) return;
   root
@@ -6152,7 +6156,7 @@ function activateSectionTabs(root, name) {
   if (body) body.scrollTop = 0;
 }
 document.querySelectorAll(".port-tabs").forEach((bar) => {
-  const root = bar.closest("#portPanel, #townPanel, #shipPanel");
+  const root = bar.closest("#portPanel, #townPanel, #shipPanel, #ledgerPanel");
   bar.addEventListener("click", (event) => {
     const btn = event.target.closest(".port-tab");
     if (btn) activateSectionTabs(root, btn.dataset.tab);
@@ -6162,6 +6166,7 @@ const ledgerButton = document.getElementById("ledgerButton"),
   ledgerPanel = document.getElementById("ledgerPanel");
 ledgerButton.addEventListener("click", () => {
   renderLedger();
+  activateSectionTabs(ledgerPanel, "milestone");
   ledgerPanel.style.display = "grid";
 });
 document

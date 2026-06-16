@@ -568,10 +568,17 @@ button.parchment.secondary {
 }
 .discovery-actions .mini-action {
   flex: 1 1 130px;
-}
-.discovery-actions button.parchment {
   margin: 0;
-  flex: 1 1 130px;
+  padding: 9px 13px;
+  border: 2px solid #5b351b;
+  border-radius: 6px;
+  background: linear-gradient(#84542c, #5a351d);
+  color: #fff2ca;
+  font: 700 13px/1.1 Georgia, serif;
+  letter-spacing: 0.03em;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 222, 150, 0.16),
+    0 2px 5px rgba(58, 32, 14, 0.28);
 }
 .discovery-status {
   padding: 7px 9px;
@@ -1199,8 +1206,10 @@ button.parchment.secondary {
 /* Dock panel: a compact header and a section tab bar sit above a single
    scrolling body, so each port area is one tap away instead of one long
    vertical scroll. The parchment frame and decorative pseudo-elements come
-   from .scroll; here we repurpose the shell into a flex column. */
-.port-scroll {
+   from .scroll; here we repurpose the shell into a flex column. The same
+   flex-column shell is reused by the Captain's Ledger (.ledger-scroll). */
+.port-scroll,
+.ledger-scroll {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1234,6 +1243,15 @@ button.parchment.secondary {
 }
 .port-tabs::-webkit-scrollbar {
   display: none;
+}
+/* The ledger spans more sections than the dock, so its tab bar wraps onto a
+   second line instead of scrolling the trailing tabs out of sight — every
+   section stays visible and one tap away. Scoped to the ledger so the dock,
+   town, and ship panels keep their single-row horizontal scroll. */
+.ledger-scroll .port-tabs {
+  flex-wrap: wrap;
+  row-gap: 3px;
+  overflow-x: visible;
 }
 .port-tab {
   flex: 0 0 auto;
@@ -1700,9 +1718,6 @@ button.parchment.secondary {
   .contract-head,
   .law-head {
     align-items: flex-start;
-  }
-  .ledger-scroll {
-    padding: 18px;
   }
   .port-header,
   .port-body,
