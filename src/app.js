@@ -6185,7 +6185,7 @@ function activateSectionTabs(root, name) {
   if (body) body.scrollTop = 0;
 }
 document.querySelectorAll(".port-tabs").forEach((bar) => {
-  const root = bar.closest("#portPanel, #townPanel");
+  const root = bar.closest("#portPanel, #townPanel, #shipPanel");
   bar.addEventListener("click", (event) => {
     const btn = event.target.closest(".port-tab");
     if (btn) activateSectionTabs(root, btn.dataset.tab);
@@ -6208,6 +6208,7 @@ const shipButton = document.getElementById("shipButton"),
   shipPanel = document.getElementById("shipPanel");
 shipButton.addEventListener("click", () => {
   renderShipPanel();
+  activateSectionTabs(shipPanel, "vessel");
   shipPanel.style.display = "grid";
 });
 document
