@@ -238,3 +238,110 @@ test("a wind-pinned ship escapes once it sails toward open water", () => {
   assert.ok(blocked, "the ship actually struck the shallows");
   assert.ok(ship.x > 200, `escaped to open water (x=${ship.x.toFixed(1)})`);
 });
+
+test("recoverFromShallows never strands the hull on land across random coasts", () => {
+  // Deterministic PRNG so the regression stays stable run to run. Land is a few
+  // overlapping disks (islands); wherever they nearly touch they carve the same
+  // concave pinch points that ruggedCoast produces, which is what used to park a
+  // nosed-in hull onshore for good.
+  let seed = 0x9e3779b9;
+  const rnd = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 4294967296;
+  };
+  const standoff = 24;
+  for (let iter = 0; iter < 4000; iter++) {
+    const islands = [];
+    const count = 2 + Math.floor(rnd() * 3);
+    for (let i = 0; i < count; i++)
+      islands.push({
+        x: 200 + rnd() * 600,
+        y: 200 + rnd() * 600,
+        r: 40 + rnd() * 120,
+      });
+    const isOpen = (x, y) =>
+      islands.every((d) => Math.hypot(x - d.x, y - d.y) > d.r);
+
+    const x = 100 + rnd() * 800;
+    const y = 100 + rnd() * 800;
+    if (!isOpen(x, y)) continue;
+
+    // Walk from open water toward the nearest island until the step is blocked,
+    // then back off one step so the hull starts on its last open cell.
+    let nearest = null;
+    for (const d of islands) {
+      const dist = Math.hypot(x - d.x, y - d.y) - d.r;
+      if (!nearest || dist < nearest.dist) nearest = { d, dist };
+    }
+    const ang = Math.atan2(nearest.d.y - y, nearest.d.x - x);
+    let bx = x;
+    let by = y;
+    for (let i = 0; i < 400 && isOpen(bx, by); i++) {
+      bx += Math.cos(ang) * 2;
+      by += Math.sin(ang) * 2;
+    }
+    if (isOpen(bx, by)) continue;
+    const sx = bx - Math.cos(ang) * 2;
+    const sy = by - Math.sin(ang) * 2;
+    if (!isOpen(sx, sy)) continue;
+
+    const recovered = recoverFromShallows({
+      x: sx,
+      y: sy,
+      blockedX: bx,
+      blockedY: by,
+      isOpen,
+    });
+    assert.ok(
+      isOpen(recovered.x, recovered.y),
+      `hull parked on land at iter ${iter}: ${JSON.stringify(recovered)}`,
+    );
+    assert.ok(
+      isOpen(
+        recovered.x + Math.cos(recovered.heading) * standoff,
+        recovered.y + Math.sin(recovered.heading) * standoff,
+      ),
+      `no clear water ahead at iter ${iter}: ${JSON.stringify(recovered)}`,
+    );
+  }
+});
+
+test("recoverFromShallows escapes a specific three-island pinch that once trapped the hull", () => {
+  // Captured from the pre-fix fuzzer: three islands whose coastlines nearly
+  // meet. The old march ground past the open water and left the hull on land.
+  const islands = [
+    { x: 204.15840912610292, y: 265.60342903248966, r: 132.32593236491084 },
+    { x: 567.5918050576001, y: 618.1315828114748, r: 89.68882548622787 },
+    { x: 350.98668495193124, y: 436.4699380937964, r: 54.1424522921443 },
+  ];
+  const isOpen = (x, y) =>
+    islands.every((d) => Math.hypot(x - d.x, y - d.y) > d.r);
+  const recovered = recoverFromShallows({
+    x: 279.31768131548205,
+    y: 376.3177406987129,
+    blockedX: 278.1943540544637,
+    blockedY: 374.66300934146693,
+    isOpen,
+  });
+  assert.ok(isOpen(recovered.x, recovered.y), "hull left on open water");
+  assert.ok(
+    isOpen(
+      recovered.x + Math.cos(recovered.heading) * 24,
+      recovered.y + Math.sin(recovered.heading) * 24,
+    ),
+    "clear water ahead to sail into",
+  );
+});
+
+test("recoverFromShallows holds the open cell and points seaward when fully boxed in", () => {
+  // Every probe blocked — a fully enclosed position the coastline data never
+  // produces, but recovery must still never move the hull onto land.
+  const recovered = recoverFromShallows({
+    x: 100,
+    y: 100,
+    blockedX: 101,
+    blockedY: 100,
+    isOpen: () => false,
+  });
+  assert.deepEqual(recovered, { x: 100, y: 100, heading: Math.PI });
+});

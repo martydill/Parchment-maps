@@ -138,12 +138,24 @@ export function nearestOpenHeading({
  * (open-water) position and the blocked step it was about to take, return an
  * open-water heading to point the bow at and a position with clear water ahead.
  *
- * The heading is the nearest open heading off the seaward normal — the
- * direction back from the blocked point toward the hull — so it pushes the ship
- * off a straight coast and threads it out of a bay instead of grinding along
- * the shore. The hull is then marched along that heading until it has
- * `standoff` pixels of open water ahead, which is what keeps wind drift on the
- * next open-water frame from immediately pushing it back onto the coast.
+ * The heading is searched off the seaward normal — the direction back from the
+ * blocked point toward the hull — so it pushes the ship off a straight coast
+ * and threads it out of a bay instead of grinding along the shore. For each
+ * candidate heading (nearest to seaward first) the hull is marched along it,
+ * moving only onto open-water cells, until it has `standoff` pixels of clear
+ * water both ahead and astern. Astern is the landward side, so that standoff is
+ * what keeps wind drift on the next open-water frame from immediately pushing
+ * the hull back onto the coast.
+ *
+ * On a concave coast or a pinch between islands a heading may never clear
+ * astern. There the march must not keep grinding past the open water onto land
+ * (which traps the hull onshore for good): it takes the furthest-along open
+ * cell that still has clear water ahead, so the ship can always build way on
+ * the next frame. Headings are ranked by how much open water lies ahead, so
+ * recovery threads out through the gap with the most sea room rather than the
+ * first gap that merely looks open at one lookahead. The returned position is
+ * always open water — the only way to reach the no-candidate fallback is a
+ * position boxed in on every side, which the coastline data does not produce.
  */
 export function recoverFromShallows({
   x,
@@ -152,31 +164,56 @@ export function recoverFromShallows({
   blockedY,
   isOpen,
   standoff = 24,
-  step = 8,
-  maxSteps = 14,
+  step = 6,
+  maxSteps = 22,
+  spread = 24,
 }) {
   const seaward = Math.atan2(y - blockedY, x - blockedX);
-  const heading = nearestOpenHeading({ x, y, preferAngle: seaward, isOpen });
-  const hx = Math.cos(heading);
-  const hy = Math.sin(heading);
-  let recoveredX = x;
-  let recoveredY = y;
-  for (let i = 0; i < maxSteps; i++) {
-    // Require clear water both ahead and astern along the sailing axis. "Astern"
-    // is the landward side, so this is what pushes the hull off a straight coast
-    // with real standoff — without it, wind drift re-blocks the waterline every
-    // frame and the ship can never build the speed to pull away.
-    const aheadOpen = isOpen(
-      recoveredX + hx * standoff,
-      recoveredY + hy * standoff,
-    );
-    const asternOpen = isOpen(
-      recoveredX - hx * standoff,
-      recoveredY - hy * standoff,
-    );
-    if (aheadOpen && asternOpen) break;
-    recoveredX += hx * step;
-    recoveredY += hy * step;
+  const angStep = (Math.PI * 2) / spread;
+  const offsets = [0];
+  for (let i = 1; i <= spread / 2; i++) offsets.push(i, -i);
+
+  let best = null;
+  for (const off of offsets) {
+    const heading = seaward + off * angStep;
+    const hx = Math.cos(heading);
+    const hy = Math.sin(heading);
+    let cx = x;
+    let cy = y;
+    let standoffMet = false;
+    let lastAheadClear = null;
+    for (let i = 0; i < maxSteps; i++) {
+      const aheadOpen = isOpen(cx + hx * standoff, cy + hy * standoff);
+      // The hull only ever sits on open cells (the start is open by contract,
+      // and every advance below is gated on isOpen), so a clear-ahead sample
+      // here means this cell is a valid place to leave the hull.
+      if (aheadOpen) lastAheadClear = { x: cx, y: cy, i };
+      const asternOpen = isOpen(cx - hx * standoff, cy - hy * standoff);
+      if (aheadOpen && asternOpen) {
+        standoffMet = true;
+        break;
+      }
+      const nx = cx + hx * step;
+      const ny = cy + hy * step;
+      if (!isOpen(nx, ny)) break; // heading runs aground — stop before land
+      cx = nx;
+      cy = ny;
+    }
+    if (!lastAheadClear) continue; // no clear water ahead along this heading
+    const candidate = { ...lastAheadClear, heading, standoffMet };
+    // Prefer a heading with full standoff; break ties toward the one that
+    // marched furthest through open water (the most sea room to escape into).
+    if (
+      !best ||
+      (candidate.standoffMet && !best.standoffMet) ||
+      (candidate.standoffMet === best.standoffMet && candidate.i > best.i)
+    ) {
+      best = candidate;
+    }
   }
-  return { x: recoveredX, y: recoveredY, heading };
+
+  if (best) return { x: best.x, y: best.y, heading: best.heading };
+  // Fully boxed in: hold the current open cell and point the bow seaward so
+  // thrust can try to work the hull free. Never return an on-land position.
+  return { x, y, heading: seaward };
 }
