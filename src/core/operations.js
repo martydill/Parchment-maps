@@ -38,6 +38,84 @@ export const SHIP_COMPONENTS = Object.freeze({
   weapons: { label: "Weapons", repairCost: 2 },
 });
 
+export const ROUTE_PLANS = Object.freeze({
+  balanced: {
+    id: "balanced",
+    label: "Balanced passage",
+    description: "Sail standard watches with ordinary rations and maintenance.",
+    daysMultiplier: 1,
+    provisionMultiplier: 1,
+    damageMultiplier: 1,
+    roughnessMultiplier: 1,
+    moraleMultiplier: 1,
+    speedMultiplier: 1,
+    hostileRiskMultiplier: 1,
+    defenseBonus: 0,
+    componentBias: {},
+  },
+  fast: {
+    id: "fast",
+    label: "Fast passage",
+    description:
+      "Crowd on sail to arrive sooner, accepting tired hands and strained rigging.",
+    daysMultiplier: 0.78,
+    provisionMultiplier: 0.95,
+    damageMultiplier: 1.22,
+    roughnessMultiplier: 1.08,
+    moraleMultiplier: 1.12,
+    speedMultiplier: 1.08,
+    hostileRiskMultiplier: 1.08,
+    defenseBonus: 0,
+    componentBias: { rigging: 0.55, rudder: 0.12 },
+  },
+  cautious: {
+    id: "cautious",
+    label: "Cautious soundings",
+    description:
+      "Slow for leadsmen and sheltered water, spending more stores to spare the ship.",
+    daysMultiplier: 1.28,
+    provisionMultiplier: 1.18,
+    damageMultiplier: 0.68,
+    roughnessMultiplier: 0.72,
+    moraleMultiplier: 0.9,
+    speedMultiplier: 0.92,
+    hostileRiskMultiplier: 0.9,
+    defenseBonus: 0,
+    componentBias: { hull: -0.2, rigging: -0.2, rudder: -0.18 },
+  },
+  rationing: {
+    id: "rationing",
+    label: "Hard rationing",
+    description:
+      "Stretch stores with thin meals, risking morale and loyalty if the voyage drags.",
+    daysMultiplier: 1,
+    provisionMultiplier: 0.62,
+    damageMultiplier: 1,
+    roughnessMultiplier: 1,
+    moraleMultiplier: 1.35,
+    moraleFlatPenalty: 4,
+    speedMultiplier: 0.96,
+    hostileRiskMultiplier: 1,
+    defenseBonus: 0,
+    componentBias: {},
+  },
+  battle: {
+    id: "battle",
+    label: "Prize-ready watch",
+    description:
+      "Keep marines armed and lookouts doubled, slowing the run while discouraging raiders.",
+    daysMultiplier: 1.12,
+    provisionMultiplier: 1.08,
+    damageMultiplier: 1.04,
+    roughnessMultiplier: 1.03,
+    moraleMultiplier: 1.05,
+    speedMultiplier: 0.94,
+    hostileRiskMultiplier: 0.72,
+    defenseBonus: 0.65,
+    componentBias: { weapons: 0.3, rigging: 0.12 },
+  },
+});
+
 function freshComponentCondition(value = 100) {
   return Object.fromEntries(
     Object.keys(SHIP_COMPONENTS).map((key) => [key, value]),
@@ -66,6 +144,7 @@ export function createOperationsState() {
     crew: createCrewState(),
     obligations: [],
     nextObligationId: 1,
+    routePlan: "balanced",
   };
 }
 
@@ -97,6 +176,7 @@ export function normalizeOperationsState(value) {
     crew: normalizeCrewState(value.crew),
     obligations: Array.isArray(value.obligations) ? value.obligations : [],
     nextObligationId: Math.max(1, Math.floor(value.nextObligationId ?? 1)),
+    routePlan: normalizeRoutePlan(value.routePlan),
   };
 }
 
@@ -148,28 +228,47 @@ export function intelligenceFreshness(report, day) {
   return { label: "Current", reliability };
 }
 
+export function normalizeRoutePlan(value) {
+  return ROUTE_PLANS[value] ? value : "balanced";
+}
+
+export function routePlanEffects(planId) {
+  return ROUTE_PLANS[normalizeRoutePlan(planId)];
+}
+
 function voyageRequirements(
   distance,
   stats,
-  days = Math.max(1, Math.ceil(distance / 620)),
+  days = Math.max(
+    1,
+    Math.ceil(
+      (distance / 620) * routePlanEffects(stats.routePlan).daysMultiplier,
+    ),
+  ),
 ) {
+  const plan = routePlanEffects(stats.routePlan);
   const provisionsNeeded = Math.max(
     1,
     Math.ceil(
       ((days * 2) / Math.max(0.7, stats.crewComfort)) *
         (stats.crewProvisionMultiplier ?? 1) *
-        (stats.provisionMultiplier ?? 1),
+        (stats.provisionMultiplier ?? 1) *
+        plan.provisionMultiplier,
     ),
   );
   return { days, provisionsNeeded };
 }
 
-export function estimateVoyageReadiness(distance, stats) {
-  const requirements = voyageRequirements(distance, stats);
+export function estimateVoyageReadiness(distance, stats, routePlan) {
+  const plan = routePlanEffects(routePlan ?? stats.routePlan);
+  const plannedStats = { ...stats, routePlan: plan.id };
+  const requirements = voyageRequirements(distance, plannedStats);
   return {
     ...requirements,
     conditionRisk: Math.ceil(
-      distance / 260 / Math.max(0.5, stats.stormResistance),
+      (distance / 260 / Math.max(0.5, stats.stormResistance)) *
+        plan.damageMultiplier *
+        plan.roughnessMultiplier,
     ),
   };
 }
@@ -330,11 +429,17 @@ function combatResult(outcome, description, effects) {
 
 export function resolveVoyageOperations(
   operations,
-  { distance, days, roughness, stats },
+  { distance, days, roughness, stats, routePlan },
 ) {
   const next = normalizeOperationsState(operations);
+  const plan = routePlanEffects(routePlan ?? next.routePlan);
   const crewModifiers = crewVoyageModifiers(next.crew);
-  const { provisionsNeeded } = voyageRequirements(distance, stats, days);
+  const { days: plannedDays, provisionsNeeded } = voyageRequirements(
+    distance,
+    { ...stats, routePlan: plan.id },
+    days,
+  );
+  days = plannedDays;
   const provisionsUsed = Math.min(next.provisions, provisionsNeeded);
   const shortage = provisionsNeeded - provisionsUsed;
   next.provisions -= provisionsUsed;
@@ -342,18 +447,20 @@ export function resolveVoyageOperations(
   const damage = clamp(
     Math.round(
       (distance / 330 +
-        (roughness * distance) / Math.max(150, stats.stormResistance * 850)) *
-        (stats.damageMultiplier ?? 1),
+        (roughness * plan.roughnessMultiplier * distance) /
+          Math.max(150, stats.stormResistance * 850)) *
+        (stats.damageMultiplier ?? 1) *
+        plan.damageMultiplier,
     ),
     0,
     35,
   );
   const rawWeights = {
-    hull: 1.15 + roughness * 0.2,
-    rigging: 0.9 + roughness * 0.45,
-    rudder: 0.85 + roughness * 0.15,
-    fittings: 0.8 + roughness * 0.25,
-    weapons: 0.45,
+    hull: 1.15 + roughness * 0.2 + (plan.componentBias.hull ?? 0),
+    rigging: 0.9 + roughness * 0.45 + (plan.componentBias.rigging ?? 0),
+    rudder: 0.85 + roughness * 0.15 + (plan.componentBias.rudder ?? 0),
+    fittings: 0.8 + roughness * 0.25 + (plan.componentBias.fittings ?? 0),
+    weapons: 0.45 + (plan.componentBias.weapons ?? 0),
   };
   const weightAverage =
     Object.values(rawWeights).reduce((sum, weight) => sum + weight, 0) /
@@ -366,7 +473,11 @@ export function resolveVoyageOperations(
   );
   const damaged = applyComponentDamage(next, componentDamage);
   Object.assign(next, damaged.operations);
-  next.crew = applyCrewVoyage(next.crew, { days, roughness, shortage });
+  next.crew = applyCrewVoyage(next.crew, {
+    days,
+    roughness: roughness * plan.roughnessMultiplier,
+    shortage,
+  });
   const repairs = Math.min(
     crewModifiers.repairCapacity,
     Math.floor(damage / 2),
@@ -380,7 +491,9 @@ export function resolveVoyageOperations(
   const moraleChange =
     comfortRecovery -
     (days * 1.5 + shortage * 7 + damage * 0.25) *
-      (stats.moraleLossMultiplier ?? 1);
+      (stats.moraleLossMultiplier ?? 1) *
+      plan.moraleMultiplier -
+    (plan.moraleFlatPenalty ?? 0);
   next.morale = clamp(next.morale + moraleChange, 0, 100);
 
   return {
@@ -389,6 +502,7 @@ export function resolveVoyageOperations(
     provisionsUsed,
     shortage,
     damage,
+    routePlan: plan.id,
     componentDamage: damaged.applied,
     repairs,
     speedMultiplier:
@@ -396,7 +510,8 @@ export function resolveVoyageOperations(
       Math.min(
         componentEfficiency(next.components.rigging),
         componentEfficiency(next.components.rudder),
-      ),
+      ) *
+      plan.speedMultiplier,
   };
 }
 

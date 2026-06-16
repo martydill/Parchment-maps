@@ -126,6 +126,8 @@ import {
   resolveCombatAction,
   resolveHostileEncounter,
   resolveVoyageOperations,
+  routePlanEffects,
+  ROUTE_PLANS,
   SHIP_COMPONENTS,
   weatherRoughness,
 } from "./core/operations.js";
@@ -4590,8 +4592,10 @@ function renderReadiness() {
   const ops = game.operations;
   const stats = operationalShipStats();
   const crewModifiers = crewVoyageModifiers(ops.crew);
+  const routePlan = routePlanEffects(ops.routePlan);
   const readinessStats = {
     ...stats,
+    routePlan: routePlan.id,
     stormResistance: stats.stormResistance * crewModifiers.stormResistance,
     crewProvisionMultiplier: crewModifiers.provisionMultiplier,
   };
@@ -4601,7 +4605,11 @@ function renderReadiness() {
     const distance = pathLength(
       orientRoute(route, currentPort.name, destination),
     );
-    const estimate = estimateVoyageReadiness(distance, readinessStats);
+    const estimate = estimateVoyageReadiness(
+      distance,
+      readinessStats,
+      routePlan.id,
+    );
     return {
       destination,
       ...estimate,
@@ -4609,7 +4617,7 @@ function renderReadiness() {
     };
   });
   root.innerHTML =
-    `<div class="ship-stats">${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
+    `<div class="ship-stats">Plan: ${routePlan.label} · ${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
     `<div class="crew-grid">${Object.entries(ops.crew.groups)
       .map(
         ([role, group]) =>
@@ -4629,6 +4637,26 @@ function renderReadiness() {
         return `<div class="standing-row"><span><b>${estimate.destination}</b><span class="small">${estimate.days}d · arrive Day ${estimate.arrivalDay} · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span>${warnings.length ? warnings.map((warning) => `<span class="readiness-warning">⚠ ${warning}</span>`).join("") : '<span class="readiness-ready">✓ Ready to sail</span>'}</span></div>`;
       })
       .join("");
+  const planner = document.createElement("div");
+  planner.className = "route-plan-grid";
+  for (const plan of Object.values(ROUTE_PLANS)) {
+    const button = document.createElement("button");
+    button.className =
+      "route-plan" + (plan.id === routePlan.id ? " selected" : "");
+    button.type = "button";
+    button.innerHTML =
+      `<b>${plan.label}</b><span>${plan.description}</span>` +
+      `<small>${Math.round(plan.daysMultiplier * 100)}% days · ${Math.round(plan.provisionMultiplier * 100)}% stores · ${Math.round(plan.damageMultiplier * plan.roughnessMultiplier * 100)}% wear · ${Math.round(plan.hostileRiskMultiplier * 100)}% raider risk</small>`;
+    button.onclick = () => {
+      game.operations.routePlan = plan.id;
+      showMessage(`${plan.label} set for the next passage.`);
+      renderReadiness();
+      saveGameState();
+    };
+    planner.append(button);
+  }
+  root.append(planner);
+
   const actions = document.createElement("div");
   actions.className = "town-actions";
   const provision = document.createElement("button");
@@ -4972,7 +5000,11 @@ function openPort() {
       `Docked at ${currentPort.name}`,
       `${paid} crown${paid === 1 ? "" : "s"} paid in harbor dues.${paid < fee ? " The unpaid balance angered local officials." : ""}`,
     );
-    const days = Math.max(1, Math.ceil(game.voyageDistance / 620));
+    const routePlan = routePlanEffects(game.operations.routePlan);
+    const days = Math.max(
+      1,
+      Math.ceil((game.voyageDistance / 620) * routePlan.daysMultiplier),
+    );
     const distance = game.voyageDistance;
     advanceDays(days);
     const stats = operationalShipStats();
@@ -4985,6 +5017,7 @@ function openPort() {
       distance: distance * specialistModifiers.distanceMultiplier,
       days,
       roughness,
+      routePlan: routePlan.id,
       stats: {
         ...stats,
         provisionMultiplier: specialistModifiers.provisionMultiplier,
@@ -4996,8 +5029,10 @@ function openPort() {
     game.operations = operations.operations;
     const encounter = resolveHostileEncounter({
       distance,
-      risk: hostileRiskBetween(game.departedFromPort, currentPort.name),
-      defense: stats.defense,
+      risk:
+        hostileRiskBetween(game.departedFromPort, currentPort.name) *
+        routePlan.hostileRiskMultiplier,
+      defense: stats.defense + routePlan.defenseBonus,
       seed: game.day + currentPort.name.length + game.departedFromPort.length,
     });
     if (encounter.encountered) {
