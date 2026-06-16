@@ -1,4 +1,4 @@
-name: Package single HTML
+name: Build release HTML
 
 on:
   push:
@@ -7,6 +7,9 @@ on:
     tags:
       - "v*"
   pull_request:
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 jobs:
@@ -24,21 +27,43 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install npm tools
+        run: npm install --no-save eslint prettier esbuild@0.25.5
+
+      - name: Run formatter
+        run: npm run format:check
+
+      - name: Run linter
+        run: npm run lint
+
       - name: Run tests
         run: npm test
+
+      - name: Run coverage
+        run: npm run test:coverage
 
       - name: Package game
         run: npm run package
 
-      - name: Upload single-file game
+      - name: Upload single-file game artifact
         uses: actions/upload-artifact@v4
         with:
           name: gilded-archipelago-single-html
           path: dist/gilded-archipelago.html
           if-no-files-found: error
 
-      - name: Create GitHub release
-        if: github.ref_type == 'tag'
+      - name: Create GitHub release from tag
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/gilded-archipelago.html --generate-notes --verify-tag
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/gilded-archipelago.html
+          --generate-notes --verify-tag
+
+      - name: Attach HTML to published release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          dist/gilded-archipelago.html --clobber
