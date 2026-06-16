@@ -303,20 +303,6 @@ body {
   font-size: 20px;
   text-shadow: 0 1px 2px #2b170b;
 }
-#joystick::before {
-  content: "DRAG TO SAIL";
-  position: absolute;
-  left: 50%;
-  top: -29px;
-  transform: translateX(-50%);
-  color: #ffe8ad;
-  font:
-    700 12px Georgia,
-    serif;
-  letter-spacing: 0.12em;
-  white-space: nowrap;
-  text-shadow: 0 2px 3px #120a05;
-}
 .joy-arrow {
   position: absolute;
   color: rgba(255, 237, 188, 0.7);
@@ -342,33 +328,6 @@ body {
   left: 8px;
   top: 51px;
 }
-#controlHint {
-  pointer-events: none;
-  position: absolute;
-  left: 154px;
-  bottom: calc(31px + env(safe-area-inset-bottom));
-  width: min(230px, calc(100vw - 250px));
-  padding: 9px 11px;
-  border-radius: 10px;
-  color: #f8e7ba;
-  background: rgba(39, 24, 13, 0.9);
-  border: 1px solid rgba(236, 201, 124, 0.6);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  font-size: 12px;
-  line-height: 1.3;
-  text-shadow: 0 1px #000;
-  opacity: 1;
-  transition: opacity 0.35s;
-}
-#controlHint.hidden {
-  opacity: 0;
-}
-#controlHint b {
-  display: block;
-  font-size: 13px;
-  margin-bottom: 2px;
-  color: #fff0c4;
-}
 #steeringStatus {
   position: absolute;
   left: 50%;
@@ -385,11 +344,6 @@ body {
   text-shadow: 0 1px #000;
 }
 @media (max-width: 520px) {
-  #controlHint {
-    left: 150px;
-    width: calc(100vw - 238px);
-    font-size: 11px;
-  }
   #steeringStatus {
     bottom: calc(162px + env(safe-area-inset-bottom));
   }

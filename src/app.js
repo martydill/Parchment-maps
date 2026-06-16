@@ -2700,7 +2700,6 @@ const ui = {
   town: document.getElementById("townButton"),
   explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
-  controlHint: document.getElementById("controlHint"),
   steeringStatus: document.getElementById("steeringStatus"),
   objective: document.getElementById("objectiveText"),
   course: document.getElementById("courseCard"),
@@ -3470,16 +3469,9 @@ function render() {
 }
 
 const input = { x: 0, y: 0, power: 0 };
-let controlsUsed = false;
-function hideControlHint() {
-  if (controlsUsed) return;
-  controlsUsed = true;
-  ui.controlHint.classList.add("hidden");
-}
 
 function readInput() {
   const result = readSailingInput(keys, input, ship.angle);
-  if (result.keyboardActive) hideControlHint();
   return result;
 }
 const MAP_MARGIN = 58;
@@ -3502,7 +3494,6 @@ function update(dt) {
     ship.speed = 0;
     if (inp.active) {
       ship.anchored = false;
-      hideControlHint();
       showMessage(
         "Casting off — keep dragging toward where you want to sail.",
         2.8,
@@ -3801,7 +3792,6 @@ function moveJoy(e) {
   input.x = dx / max;
   input.y = dy / max;
   input.power = Math.min(1, rawLen / max);
-  if (input.power > 0.18) hideControlHint();
 }
 joy.addEventListener("pointerdown", (e) => {
   joyPointer = e.pointerId;
