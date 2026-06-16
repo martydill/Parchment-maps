@@ -1108,18 +1108,18 @@ button.parchment.secondary {
   top: calc(max(10px, env(safe-area-inset-top)) + 205px);
   width: 50px;
   height: 50px;
-  border: 1px solid rgba(170, 214, 222, 0.7);
+  border: 1px solid rgba(245, 216, 143, 0.76);
   border-radius: 50%;
-  color: #d8f1f5;
+  color: #fff0c5;
   background: radial-gradient(
     circle at 42% 30%,
-    rgba(96, 156, 168, 0.95),
-    rgba(34, 70, 82, 0.97) 58%,
-    rgba(16, 38, 48, 0.98) 100%
+    rgba(189, 129, 59, 0.95),
+    rgba(74, 43, 21, 0.97) 58%,
+    rgba(33, 20, 12, 0.98) 100%
   );
   box-shadow:
     0 5px 18px rgba(0, 0, 0, 0.52),
-    inset 0 0 0 3px rgba(170, 214, 222, 0.12),
+    inset 0 0 0 3px rgba(255, 228, 160, 0.12),
     inset 0 -8px 16px rgba(0, 0, 0, 0.3);
   font-size: 21px;
 }
@@ -1135,13 +1135,13 @@ button.parchment.secondary {
   color: #fff0c5;
   background: radial-gradient(
     circle at 42% 30%,
-    rgba(66, 66, 66, 0.95),
-    rgba(33, 33, 33, 0.97) 58%,
-    rgba(15, 15, 15, 0.98) 100%
+    rgba(189, 129, 59, 0.95),
+    rgba(74, 43, 21, 0.97) 58%,
+    rgba(33, 20, 12, 0.98) 100%
   );
   box-shadow:
     0 5px 18px rgba(0, 0, 0, 0.52),
-    inset 0 0 0 3px rgba(255, 255, 255, 0.12),
+    inset 0 0 0 3px rgba(255, 228, 160, 0.12),
     inset 0 -8px 16px rgba(0, 0, 0, 0.3);
   font-size: 21px;
 }
