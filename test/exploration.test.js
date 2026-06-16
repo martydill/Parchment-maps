@@ -96,7 +96,7 @@ test("successful expeditions consume resources and persist site progress", () =>
   assert.equal(state.sites.cliffs.visits, 1);
   assert.equal(state.expeditionSerial, 2);
 
-  resolveExpedition({
+  const repeated = resolveExpedition({
     state,
     site,
     approach: "recon",
@@ -104,10 +104,13 @@ test("successful expeditions consume resources and persist site progress", () =>
     provisions: 30,
     morale: 100,
   });
-  assert.equal(state.sites.cliffs.visits, 2);
+  assert.equal(repeated.ok, false);
+  assert.equal(repeated.reason, "That shore expedition has already sailed.");
+  assert.equal(state.sites.cliffs.visits, 1);
+  assert.equal(state.expeditionSerial, 2);
 });
 
-test("difficult expeditions can fail and retain charted status", () => {
+test("difficult expeditions can fail, retain charted status, and cannot repeat", () => {
   const state = createExplorationState();
   const result = resolveExpedition({
     state,
@@ -125,6 +128,16 @@ test("difficult expeditions can fail and retain charted status", () => {
   assert.equal(result.moraleChange, -8);
   assert.equal(state.sites.cliffs.status, "charted");
   assert.equal(state.history.length, 1);
+  const repeated = resolveExpedition({
+    state,
+    site,
+    approach: "recon",
+    day: 2,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(repeated.ok, false);
+  assert.equal(state.sites.cliffs.visits, 1);
 });
 
 test("deterministic scoring covers ordinary, complicated, and exceptional results", () => {

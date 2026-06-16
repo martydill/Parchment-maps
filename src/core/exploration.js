@@ -73,6 +73,8 @@ export function resolveExpedition({
   const plan = expeditionRequirements(approach);
   if (!site || !plan)
     return { ok: false, reason: "That expedition cannot be organized." };
+  if (state.sites[site.id])
+    return { ok: false, reason: "That shore expedition has already sailed." };
   if (provisions < plan.provisions)
     return { ok: false, reason: "The expedition needs more provisions." };
 

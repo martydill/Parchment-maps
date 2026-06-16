@@ -236,13 +236,17 @@ body {
 }
 .expedition-option {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 12px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  justify-items: start;
   text-align: left;
 }
+.expedition-option b,
+.expedition-option span {
+  display: block;
+}
 .expedition-option .small {
-  grid-column: 1 / -1;
+  margin-top: 2px;
 }
 #joystick {
   pointer-events: auto;

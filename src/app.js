@@ -3723,6 +3723,7 @@ function update(dt) {
   if (!nearPort && ship.speed < 8) {
     let nearestSiteDistance = Infinity;
     for (const site of explorationSites) {
+      if (game.exploration.sites[site.id]) continue;
       const distance = wrappedDistance(ship.x, ship.y, site.x, site.y);
       if (distance <= site.radius && distance < nearestSiteDistance) {
         nearestSiteDistance = distance;
@@ -6010,13 +6011,25 @@ function openExploration() {
     : "This coast has not been surveyed. A successful expedition reveals this landmass on your chart.";
   const options = document.getElementById("explorationApproaches");
   options.innerHTML = "";
+  if (progress) {
+    const unavailable = document.createElement("p");
+    unavailable.className = "small";
+    unavailable.textContent =
+      "This shore expedition has already sailed and cannot be repeated.";
+    options.append(unavailable);
+    document.getElementById("explorationPanel").style.display = "grid";
+    return;
+  }
   for (const [approach, plan] of Object.entries(EXPLORATION_APPROACHES)) {
     const button = document.createElement("button");
     button.className = "parchment expedition-option";
-    button.disabled = game.operations.provisions < plan.provisions;
+    const provisionShortage = Math.max(
+      0,
+      plan.provisions - game.operations.provisions,
+    );
     button.innerHTML =
       `<b>${plan.label}</b><span>${plan.days} day${plan.days === 1 ? "" : "s"}</span>` +
-      `<span class="small">${plan.provisions} provisions · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
+      `<span class="small">${plan.provisions} provisions${provisionShortage ? ` · need ${provisionShortage} more` : ""} · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
     button.addEventListener("click", () => undertakeExpedition(site, approach));
     options.append(button);
   }
