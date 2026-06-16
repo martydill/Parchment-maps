@@ -3115,6 +3115,8 @@ function openTownDetails(port, _fromChart = false) {
     ? "Clear Plotted Course"
     : `Set Course for ${port.name}`;
   courseButton.dataset.action = isCurrentCourse ? "clear" : "plot";
+  // No point plotting a course to the port you're already docked at.
+  courseButton.style.display = nearPort === port ? "none" : "block";
   // Each town dossier opens on the Politics tab (factions and current law),
   // with Commerce and Market one tap away.
   activateSectionTabs(document.getElementById("townPanel"), "politics");
