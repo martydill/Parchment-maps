@@ -2,6 +2,7 @@
 // Keep browser state and rendering behavior in app.js; this module is data-only.
 
 import { continentalCoast, ruggedCoast } from "./core/coastlines.js";
+import { pointInPolygon, polygonCentroid } from "./core/geometry.js";
 
 export const HOME_PORT = {
   name: "Goldhaven",
@@ -306,7 +307,7 @@ export const discoverySites = [
   },
 ];
 
-export const explorationSites = [
+const expeditionDiscoverySites = [
   {
     id: "moon-iron-uplands",
     name: "Moon-Iron Cliffs",
@@ -318,6 +319,7 @@ export const explorationSites = [
     reward: 45,
     discoveryId: "moon-iron",
     hazards: "Loose basalt, exposed anchorage",
+    land: "Varkesh",
   },
   {
     id: "observatory-tideway",
@@ -330,6 +332,7 @@ export const explorationSites = [
     reward: 60,
     discoveryId: "drowned-observatory",
     hazards: "Rising tide, unstable chambers",
+    land: "Isles of Glass",
   },
 ];
 
@@ -1040,6 +1043,132 @@ lands.push(
   coastalIsland(5100, 1190, 35, 17, 720, "#90875e"),
   coastalIsland(5820, 1090, 43, 19, 721, "#8c8256"),
 );
+
+const explorationObjectives = [
+  "Climb inland bluffs and sketch every visible creek, ridge, and landing place.",
+  "Survey the shoreline paths and mark safe anchorages for future landings.",
+  "Follow old cairns through the interior and correct the blank spaces on the chart.",
+  "Sound the coves, map the headlands, and record freshwater sources.",
+  "Trace the highland trail to a lookout and triangulate the surrounding coast.",
+];
+
+const explorationHazards = [
+  "Hidden reefs, sudden squalls",
+  "Steep jungle gullies, biting insects",
+  "Loose scree, exposed cliffs",
+  "Tidal mud, fogbound channels",
+  "Unstable ruins, uncertain footing",
+  "Dense thornwood, brackish marsh",
+];
+
+const explorationNouns = [
+  "Headland",
+  "Watch",
+  "Sounding",
+  "Cairn",
+  "Lookout",
+  "Landing",
+  "Overlook",
+  "Survey",
+];
+
+function landArea(poly) {
+  let total = 0;
+  for (let index = 0; index < poly.length; index++) {
+    const [x1, y1] = poly[index];
+    const [x2, y2] = poly[(index + 1) % poly.length];
+    total += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(total) / 2;
+}
+
+function landSamplePoints(land, count) {
+  const xs = land.poly.map(([x]) => x);
+  const ys = land.poly.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const center = polygonCentroid(land.poly);
+  const candidates = [];
+  const columns = 5;
+  const rows = 4;
+  for (let row = 1; row <= rows; row++) {
+    for (let column = 1; column <= columns; column++) {
+      const x = minX + ((maxX - minX) * column) / (columns + 1);
+      const y = minY + ((maxY - minY) * row) / (rows + 1);
+      if (pointInPolygon(x, y, land.poly)) {
+        candidates.push({
+          x,
+          y,
+          spread: Math.hypot(x - center.x, y - center.y),
+        });
+      }
+    }
+  }
+  candidates.sort((a, b) => b.spread - a.spread);
+  const points = candidates.slice(0, count);
+  if (!points.length) points.push({ ...center, spread: 0 });
+  while (points.length < count) points.push(points[0]);
+  return points;
+}
+
+function landSiteCount(land) {
+  if (land.satellite || !land.name) return 1;
+  const area = landArea(land.poly);
+  if (area > 420000) return 4;
+  if (area > 210000) return 3;
+  if (area > 85000) return 2;
+  return 1;
+}
+
+function explorationLandName(land, index) {
+  return land.name || `Outer Islet ${String(index + 1).padStart(2, "0")}`;
+}
+
+function explorationSlug(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function createGeneratedExplorationSites() {
+  return lands.flatMap((land, landIndex) => {
+    const landName = explorationLandName(land, landIndex);
+    return landSamplePoints(land, landSiteCount(land)).map(
+      (point, siteIndex) => {
+        const noun =
+          explorationNouns[(landIndex + siteIndex) % explorationNouns.length];
+        const difficulty = 5 + ((landIndex * 3 + siteIndex * 5) % 15);
+        return {
+          id: `${explorationSlug(landName)}-${explorationSlug(noun)}-${siteIndex + 1}`,
+          name: `${landName} ${noun}`,
+          objective:
+            explorationObjectives[
+              (landIndex + siteIndex) % explorationObjectives.length
+            ],
+          x: Math.round(point.x),
+          y: Math.round(point.y),
+          radius: land.satellite ? 90 : 110,
+          difficulty,
+          reward: 35 + difficulty * 4 + siteIndex * 6,
+          discoveryId: null,
+          hazards:
+            explorationHazards[
+              (landIndex + siteIndex) % explorationHazards.length
+            ],
+          land: land.name || null,
+        };
+      },
+    );
+  });
+}
+
+export const explorationSites = [
+  ...expeditionDiscoverySites,
+  ...createGeneratedExplorationSites(),
+];
 
 export const ports = [
   {
