@@ -160,7 +160,7 @@ body {
   box-shadow: 0 5px 18px rgba(0, 0, 0, 0.52);
 }
 #mapButton {
-  top: calc(max(10px, env(safe-area-inset-top)) + 61px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 89px);
   width: 50px;
   height: 50px;
   display: block;
@@ -1081,7 +1081,7 @@ button.parchment.secondary {
   pointer-events: auto;
   position: absolute;
   right: 18px;
-  top: calc(max(10px, env(safe-area-inset-top)) + 119px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 147px);
   width: 50px;
   height: 50px;
   border: 1px solid rgba(245, 216, 143, 0.76);
@@ -1103,7 +1103,7 @@ button.parchment.secondary {
   pointer-events: auto;
   position: absolute;
   right: 18px;
-  top: calc(max(10px, env(safe-area-inset-top)) + 177px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 205px);
   width: 50px;
   height: 50px;
   border: 1px solid rgba(170, 214, 222, 0.7);
@@ -1125,7 +1125,7 @@ button.parchment.secondary {
   pointer-events: auto;
   position: absolute;
   right: 18px;
-  top: calc(max(10px, env(safe-area-inset-top)) + 235px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 263px);
   width: 50px;
   height: 50px;
   border: 1px solid rgba(245, 216, 143, 0.76);
@@ -1675,13 +1675,13 @@ button.parchment.secondary {
 }
 @media (max-width: 560px) {
   #ledgerButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 116px);
+    top: calc(max(10px, env(safe-area-inset-top)) + 144px);
   }
   #shipButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 172px);
+    top: calc(max(10px, env(safe-area-inset-top)) + 200px);
   }
   #menuButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 228px);
+    top: calc(max(10px, env(safe-area-inset-top)) + 256px);
   }
   .contract-head,
   .law-head {
