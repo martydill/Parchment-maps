@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install npm tools
+        run: npm install --no-save eslint prettier esbuild@0.25.5
+
       - name: Run formatter
         run: npm run format:check
 
