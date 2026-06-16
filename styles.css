@@ -2130,6 +2130,10 @@ button.parchment.secondary {
   border-color: #8b4e2d !important;
   border-style: dashed !important;
 }
+.legend-exploration {
+  border-color: #f4da9d !important;
+  background: rgba(62, 45, 25, 0.78);
+}
 @media (max-width: 620px) {
   #courseCard {
     top: calc(max(10px, env(safe-area-inset-top)) + 112px);

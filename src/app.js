@@ -6,6 +6,7 @@ import {
   wrappedDistance as calculateWrappedDistance,
 } from "./core/math.js";
 import {
+  expandPolygon,
   pointInPolygon,
   polygonCentroid,
   raySegmentDistance,
@@ -2384,6 +2385,53 @@ function revealCurrentView(force = false) {
   exploredCtx.restore();
 }
 
+function explorationLandForSite(site) {
+  return (
+    lands.find((land) => land.name && land.name === site.land) ||
+    lands.find((land) => pointInPolygon(site.x, site.y, land.poly)) ||
+    lands.reduce((nearest, land) => {
+      const center = polygonCentroid(land.poly);
+      const distance = wrappedDistance(site.x, site.y, center.x, center.y);
+      return !nearest || distance < nearest.distance
+        ? { land, distance }
+        : nearest;
+    }, null)?.land
+  );
+}
+
+function revealExplorationSurvey(site, surveyed) {
+  const land = explorationLandForSite(site);
+  exploredCtx.save();
+  exploredCtx.fillStyle = "#fff";
+  exploredCtx.shadowColor = "#fff";
+  exploredCtx.shadowBlur = surveyed ? 9 : 5;
+  const base = Math.floor(site.x / WORLD.w) * WORLD.w;
+  if (land && surveyed) {
+    for (const extra of [-WORLD.w, 0, WORLD.w]) {
+      polygonPath(
+        exploredCtx,
+        expandPolygon(land.poly, 34).map(([x, y]) => ({ x, y })),
+        FOG_MASK_SCALE,
+        FOG_MASK_SCALE,
+        -base + extra,
+      );
+      exploredCtx.fill();
+    }
+  }
+  for (const extra of [-WORLD.w, 0, WORLD.w]) {
+    exploredCtx.beginPath();
+    exploredCtx.arc(
+      (site.x - base + extra) * FOG_MASK_SCALE,
+      site.y * FOG_MASK_SCALE,
+      site.radius * (surveyed ? 3.2 : 1.7) * FOG_MASK_SCALE,
+      0,
+      Math.PI * 2,
+    );
+    exploredCtx.fill();
+  }
+  exploredCtx.restore();
+}
+
 function saveGameState() {
   if (!gameStarted || suppressSaving) return;
   try {
@@ -3154,6 +3202,43 @@ function drawDynamicTradeWorld(c, z) {
     c.lineTo(bearing.destinationX, courseDestination.y);
     c.stroke();
     c.setLineDash([]);
+  }
+  for (const site of explorationSites) {
+    const progress = game.exploration.sites[site.id];
+    const visible = pointCurrentlyVisible(site.x, site.y);
+    if (!progress && !visible && !isWorldPointExplored(site.x, site.y))
+      continue;
+    const x = nearestWrappedX(site.x, camera.x);
+    const pulse = visible && site === nearExplorationSite ? 1.15 : 1;
+    c.save();
+    c.translate(x, site.y);
+    c.strokeStyle =
+      progress?.status === "surveyed"
+        ? "rgba(123, 205, 160, .95)"
+        : "rgba(244, 218, 157, .86)";
+    c.fillStyle = progress ? "rgba(52, 72, 46, .84)" : "rgba(62, 45, 25, .78)";
+    c.lineWidth = 2 / z;
+    c.setLineDash(progress?.status === "surveyed" ? [] : [5 / z, 4 / z]);
+    c.beginPath();
+    c.arc(0, 0, (16 * pulse) / z, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = "#fff0c0";
+    c.font = 15 / z + "px Georgia";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText("✦", 0, -1 / z);
+    if (visible || progress) {
+      c.fillStyle = "rgba(47,29,15,.82)";
+      c.font = `${progress ? "700 " : ""}${12 / z}px Georgia`;
+      c.fillText(
+        progress?.status === "surveyed" ? "surveyed" : "shore survey",
+        0,
+        -25 / z,
+      );
+    }
+    c.restore();
   }
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
@@ -5778,7 +5863,7 @@ function openExploration() {
   const progress = game.exploration.sites[site.id];
   document.getElementById("explorationStatus").textContent = progress
     ? `${progress.status} · ${progress.visits} previous expedition${progress.visits === 1 ? "" : "s"}`
-    : "This coast has not been surveyed.";
+    : "This coast has not been surveyed. A successful expedition reveals this landmass on your chart.";
   const options = document.getElementById("explorationApproaches");
   options.innerHTML = "";
   for (const [approach, plan] of Object.entries(EXPLORATION_APPROACHES)) {
@@ -5827,14 +5912,15 @@ function undertakeExpedition(site, approach) {
       resolvedDay: null,
     };
   }
+  revealExplorationSurvey(site, result.record.success);
   const outcome = result.record.success
-    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. ${result.record.reward} crowns of specimens and salvage were recovered.`
-    : `The expedition returned without completing its objective. ${result.record.injuries} crew members were injured.`;
+    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered.`
+    : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.`;
   addNews("Shore expedition: " + site.name, outcome);
   showMessage(
     result.record.success
-      ? `EXPEDITION SUCCESS · ${site.name} · +${result.record.reward} crowns`
-      : `EXPEDITION FAILED · ${site.name}`,
+      ? `EXPEDITION SUCCESS · ${site.name} charted · +${result.record.reward} crowns`
+      : `EXPEDITION FAILED · landing area charted`,
     4.5,
   );
   document.getElementById("explorationPanel").style.display = "none";
@@ -6109,6 +6195,19 @@ function renderChart() {
       Math.PI * 2,
     );
     c.stroke();
+  }
+  for (const site of explorationSites) {
+    const progress = game.exploration.sites[site.id];
+    if (!progress && !isWorldPointExplored(site.x, site.y)) continue;
+    c.strokeStyle = progress?.status === "surveyed" ? "#7bcda0" : "#f4da9d";
+    c.fillStyle = progress ? "rgba(52,72,46,.88)" : "rgba(62,45,25,.82)";
+    c.lineWidth = 2;
+    c.setLineDash(progress?.status === "surveyed" ? [] : [4, 3]);
+    c.beginPath();
+    c.arc(site.x * sx, site.y * sy, 7, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.setLineDash([]);
   }
   for (const event of game.scheduledEvents) {
     if (!event.known || event.started) continue;

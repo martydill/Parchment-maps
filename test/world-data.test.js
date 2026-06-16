@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { discoverySites, goods, productionChains } from "../src/world-data.js";
+import {
+  discoverySites,
+  explorationSites,
+  goods,
+  lands,
+  productionChains,
+} from "../src/world-data.js";
 
 test("the trade catalog offers a broad mix of raw, perishable, fragile, and processed goods", () => {
   assert.ok(Object.keys(goods).length >= 20);
@@ -31,5 +37,28 @@ test("the world contains one hundred varied, uniquely identified discoveries", (
     assert.ok(site.benefit);
     assert.ok(site.route);
     assert.ok(goods[site.route.good], `${site.name} uses a known trade good`);
+  }
+});
+
+test("shore exploration sites are broad enough to chart every named landmass", () => {
+  assert.ok(explorationSites.length >= 75);
+  assert.equal(
+    new Set(explorationSites.map((site) => site.id)).size,
+    explorationSites.length,
+  );
+
+  const siteLands = new Set(
+    explorationSites.map((site) => site.land).filter((land) => land),
+  );
+  for (const land of lands.filter((entry) => entry.name)) {
+    assert.ok(siteLands.has(land.name), `${land.name} has a shore survey`);
+  }
+
+  for (const site of explorationSites) {
+    assert.ok(site.name);
+    assert.ok(site.objective);
+    assert.ok(site.hazards);
+    assert.ok(site.radius >= 70);
+    assert.ok(site.reward > 0);
   }
 });
