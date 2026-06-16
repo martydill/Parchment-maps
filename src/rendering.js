@@ -155,6 +155,216 @@ export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
   c.restore();
 }
 
+// --- Weather atmosphere -----------------------------------------------------
+// Driven by the continuously interpolated weather (roughness + visibility).
+// Drawn in screen space over the world and the player's ship so that haze,
+// fog, rain, and storms read as something the ship is *inside* rather than
+// something painted behind it.
+
+function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+const lightningState = { nextStrike: 0, flashUntil: 0, boltX: 0, boltSeed: 0 };
+
+// Deterministic, allocation-free pseudo-random in [0, 1) keyed by (index, salt)
+// so cloud, fog, and rain particles keep stable shapes across frames.
+function weatherRand(i, salt = 0) {
+  let t = Math.imul((i | 0) + Math.imul(salt | 0, 2654435761), 0x6d2b79f5);
+  t = Math.imul(t ^ (t >>> 15), 1 | t);
+  t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function drawWeatherClouds(
+  c,
+  cloud,
+  storm,
+  windAngle,
+  windStrength,
+  vw,
+  vh,
+  time,
+) {
+  if (cloud <= 0.01) return;
+  const count = Math.round(7 + cloud * 9 + storm * 9);
+  const drift = 0.01 + windStrength * 0.02 + storm * 0.03;
+  // Pale parchment-grey in fair overcast, darkening toward charcoal in a storm.
+  const fair = storm < 0.25;
+  const r = fair ? 228 : 92 + (1 - storm) * 60;
+  const g = fair ? 224 : 96 + (1 - storm) * 60;
+  const b = fair ? 214 : 104 + (1 - storm) * 60;
+  c.save();
+  for (let i = 0; i < count; i++) {
+    const layer = i % 3; // 0 far .. 2 near — nearer banks drift and loom larger
+    const speed = drift * (0.4 + layer * 0.4 + weatherRand(i, 1) * 0.4);
+    const span = vw + 700;
+    let x = (weatherRand(i, 2) * span + time * speed) % span;
+    if (x < 0) x += span;
+    x -= 350;
+    const y = weatherRand(i, 3) * (vh + 360) - 180;
+    const rx = 150 + weatherRand(i, 4) * (200 + layer * 80);
+    const ry = 70 + weatherRand(i, 5) * (90 + layer * 30);
+    const a =
+      (0.03 + weatherRand(i, 6) * 0.05) * (0.4 + cloud * 0.8) * (0.6 + storm);
+    const grad = c.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+    grad.addColorStop(0, `rgba(${r},${g},${b},${a})`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    c.fillStyle = grad;
+    c.beginPath();
+    c.ellipse(x, y, rx, ry, windAngle, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
+}
+
+function drawWeatherFog(c, fog, vw, vh, time) {
+  if (fog <= 0.01) return;
+  c.save();
+  // Flat wash mutes the whole scene into murk.
+  c.fillStyle = `rgba(216,220,224,${0.05 + fog * 0.09})`;
+  c.fillRect(0, 0, vw, vh);
+  // Close-in edge fog so the horizon feels swallowed by the mist.
+  const cx = vw / 2;
+  const cy = vh / 2;
+  const edge = c.createRadialGradient(
+    cx,
+    cy,
+    Math.min(vw, vh) * 0.16,
+    cx,
+    cy,
+    Math.max(vw, vh) * 0.6,
+  );
+  edge.addColorStop(0, "rgba(220,224,228,0)");
+  edge.addColorStop(1, `rgba(220,224,228,${0.12 + fog * 0.5})`);
+  c.fillStyle = edge;
+  c.fillRect(0, 0, vw, vh);
+  // Drifting low fog banks rolling across the water.
+  const count = 4 + Math.round(fog * 5);
+  for (let i = 0; i < count; i++) {
+    const speed = 0.004 + weatherRand(i, 11) * 0.01;
+    const span = vw + 500;
+    let x = (weatherRand(i, 12) * span + time * speed) % span;
+    if (x < 0) x += span;
+    x -= 250;
+    const y = weatherRand(i, 13) * (vh + 300) - 150;
+    const rx = 220 + weatherRand(i, 14) * 220;
+    const ry = 90 + weatherRand(i, 15) * 70;
+    const a = (0.05 + weatherRand(i, 16) * 0.06) * fog;
+    const bank = c.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+    bank.addColorStop(0, `rgba(224,228,232,${a})`);
+    bank.addColorStop(1, "rgba(224,228,232,0)");
+    c.fillStyle = bank;
+    c.beginPath();
+    c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
+}
+
+function drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time) {
+  if (rain <= 0.01) return;
+  const count = Math.round(50 + rain * 280);
+  const slant = Math.cos(windAngle) * (6 + windStrength * 7 + rain * 6);
+  const len = 11 + rain * 16;
+  const fall = 0.55 + rain * 1.1;
+  c.save();
+  c.strokeStyle = `rgba(188,204,228,${0.16 + rain * 0.2})`;
+  c.lineWidth = 1;
+  c.beginPath();
+  for (let i = 0; i < count; i++) {
+    const ox = weatherRand(i, 21) * (vw + 240) - 120;
+    const sp = 0.6 + weatherRand(i, 22) * 0.7;
+    let y = (weatherRand(i, 23) * vh + time * fall * sp) % (vh + 50);
+    if (y < 0) y += vh + 50;
+    c.moveTo(ox, y);
+    c.lineTo(ox + slant, y + len);
+  }
+  c.stroke();
+  c.restore();
+}
+
+function drawWeatherLightning(c, lightning, vw, vh, time) {
+  if (lightning <= 0.01) {
+    lightningState.flashUntil = 0;
+    return;
+  }
+  const s = lightningState;
+  if (time >= s.nextStrike) {
+    s.flashUntil = time + 150 + lightning * 90;
+    s.boltX = vw * (0.12 + weatherRand(time | 0, 31) * 0.76);
+    s.boltSeed = (time | 0) & 0xffff;
+    // Heavier storms throw strikes more often.
+    s.nextStrike =
+      time + 2400 + weatherRand(time | 0, 32) * (5600 - lightning * 3000);
+  }
+  if (time >= s.flashUntil) return;
+  const remain = (s.flashUntil - time) / 240;
+  c.save();
+  c.fillStyle = `rgba(222,230,255,${Math.max(0, remain) * (0.28 + lightning * 0.4)})`;
+  c.fillRect(0, 0, vw, vh);
+  // Jagged bolt, brightest in the first instant of the flash.
+  const boltA = Math.min(1, Math.max(0, remain) * 2.6);
+  if (boltA > 0.05) {
+    c.strokeStyle = `rgba(236,242,255,${boltA})`;
+    c.lineWidth = 2.2;
+    c.shadowColor = "rgba(214,226,255,0.95)";
+    c.shadowBlur = 22;
+    c.beginPath();
+    let bx = s.boltX;
+    c.moveTo(bx, 0);
+    const segs = 9;
+    for (let i = 1; i <= segs; i++) {
+      bx += (weatherRand(i + s.boltSeed, 41) - 0.5) * 90;
+      c.lineTo(bx, (vh / segs) * i);
+    }
+    c.stroke();
+  }
+  c.restore();
+}
+
+// Renders the full atmospheric stack for the current weather. `opts.roughness`
+// and `opts.visibilityKm` come from the interpolated weather pattern; the name
+// adds hints (mist/fog/cloud/rain) on top of the continuous values.
+export function drawWeatherEffects(c, opts) {
+  const lower = (opts.name || "").toLowerCase();
+  const roughness = opts.roughness || 0;
+  const visibilityKm = opts.visibilityKm;
+  const vw = opts.vw;
+  const vh = opts.vh;
+  const time = opts.time || 0;
+  const windAngle = opts.windAngle || 0;
+  const windStrength = opts.windStrength || 0;
+
+  const storm = clamp01((roughness - 0.2) / 0.28);
+  let nameFog = 0;
+  if (/mist/.test(lower)) nameFog = 0.62;
+  if (/fog/.test(lower)) nameFog = Math.max(nameFog, 0.82);
+  if (/haze/.test(lower)) nameFog = Math.max(nameFog, 0.26);
+  const visFog = visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
+  const fog = Math.max(nameFog, visFog);
+  const cloud = clamp01(
+    (/(cloud|overcast|haze)/.test(lower) ? 0.5 : 0) + storm * 0.6,
+  );
+  const rain = clamp01(storm + (/rain/.test(lower) ? 0.4 : 0));
+  const lightning = clamp01((storm - 0.45) / 0.2);
+
+  if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
+
+  // Stormy gloom washes the whole scene in cold shadow.
+  if (storm > 0.01) {
+    c.save();
+    c.fillStyle = `rgba(20,26,38,${storm * 0.36})`;
+    c.fillRect(0, 0, vw, vh);
+    c.restore();
+  }
+
+  drawWeatherClouds(c, cloud, storm, windAngle, windStrength, vw, vh, time);
+  drawWeatherFog(c, fog, vw, vh, time);
+  drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
+  drawWeatherLightning(c, lightning, vw, vh, time);
+}
+
 export function drawShip(c, x, y, a, windAngle = 0, windStrength = 0) {
   c.save();
   c.translate(x, y);

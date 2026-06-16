@@ -252,6 +252,7 @@ import {
   createRoughSeaParticles,
   drawMerchantShip,
   drawShip,
+  drawWeatherEffects,
 } from "./rendering.js";
 
 const canvas = document.getElementById("game");
@@ -2788,19 +2789,18 @@ function updateHud() {
   ui.coins.textContent = game.coins + " crowns";
   ui.day.textContent = "Day " + game.day;
   ui.hold.textContent = cargoCount() + "/" + game.holdMax;
-  ui.objective.textContent =
-    (game.milestone.complete
-      ? "Merchant Prince · " + game.activeWorldEvents.length + " active crises"
-      : game.completedContracts +
-        "/3 contracts · shortage " +
-        (game.milestone.shortageExploited
-          ? "exploited"
-          : worldEvents.ironShortage.active
-            ? "active"
-            : "pending") +
-        " · Guild " +
-        guildStanding() +
-        "/20");
+  ui.objective.textContent = game.milestone.complete
+    ? "Merchant Prince · " + game.activeWorldEvents.length + " active crises"
+    : game.completedContracts +
+      "/3 contracts · shortage " +
+      (game.milestone.shortageExploited
+        ? "exploited"
+        : worldEvents.ironShortage.active
+          ? "active"
+          : "pending") +
+      " · Guild " +
+      guildStanding() +
+      "/20";
   const objective = currentObjective({
     game,
     currentPortName: currentPort?.name || null,
@@ -3372,52 +3372,6 @@ function render() {
   ctx.restore();
   renderFog();
 
-  // Subtle cloud/haze effect
-  const lowerWeather = game.weatherName.toLowerCase();
-  if (
-    lowerWeather.includes("cloud") ||
-    lowerWeather.includes("haze") ||
-    lowerWeather.includes("mist") ||
-    lowerWeather.includes("fog") ||
-    lowerWeather.includes("rain")
-  ) {
-    const time = performance.now();
-    ctx.save();
-    for (let i = 0; i < 6; i++) {
-      const x = ((i * 443 + time * 0.02) % (vw + 400)) - 200;
-      const y = ((i * 571 + time * 0.01) % (vh + 400)) - 200;
-      const rx = 200 + ((i * 123) % 150);
-      const ry = 150 + ((i * 191) % 100);
-      const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-      const alpha = 0.03 + (i % 3 === 0 ? 0.02 : 0);
-      g.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-      g.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(x, y, rx, ry, i, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // Subtle rain effect
-  if (game.weatherName.includes("Rain")) {
-    const rainCount = 120;
-    const time = performance.now();
-    ctx.save();
-    ctx.strokeStyle = "rgba(174,194,224,0.34)";
-    ctx.lineWidth = 1;
-    for (let i = 0; i < rainCount; i++) {
-      const x = (i * 137.5 + time * 0.15) % vw;
-      const y = (i * 243.1 + time * 0.85) % vh;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - 2, y + 12);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
   // The ship and immediate docking cue remain readable above the fog layer.
   ctx.save();
   ctx.translate(vw / 2, vh / 2);
@@ -3448,6 +3402,22 @@ function render() {
     ctx.strokeRect(5, 5, vw - 10, vh - 10);
     ctx.restore();
   }
+  // Atmospheric weather — clouds, fog, rain, and storms are drawn over the
+  // ship so they read as something the vessel is sailing through.
+  {
+    const weather = currentWeather();
+    drawWeatherEffects(ctx, {
+      name: weather.name,
+      roughness: weather.roughness,
+      visibilityKm: weather.visibilityKm,
+      windAngle: game.windAngle,
+      windStrength: game.windStrength,
+      vw,
+      vh,
+      time: performance.now(),
+    });
+  }
+
   // vignette
   const vig = ctx.createRadialGradient(
     vw / 2,
