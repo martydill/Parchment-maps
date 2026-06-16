@@ -165,6 +165,10 @@ function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+function clamp255(v) {
+  return (v < 0 ? 0 : v > 255 ? 255 : v) | 0;
+}
+
 const lightningState = { nextStrike: 0, flashUntil: 0, boltX: 0, boltSeed: 0 };
 
 // Deterministic, allocation-free pseudo-random in [0, 1) keyed by (index, salt)
@@ -187,33 +191,61 @@ function drawWeatherClouds(
   time,
 ) {
   if (cloud <= 0.01) return;
-  const count = Math.round(7 + cloud * 9 + storm * 9);
-  const drift = 0.01 + windStrength * 0.02 + storm * 0.03;
-  // Pale parchment-grey in fair overcast, darkening toward charcoal in a storm.
-  const fair = storm < 0.25;
-  const r = fair ? 228 : 92 + (1 - storm) * 60;
-  const g = fair ? 224 : 96 + (1 - storm) * 60;
-  const b = fair ? 214 : 104 + (1 - storm) * 60;
+  const count = Math.round(8 + cloud * 9 + storm * 11);
+  // Clouds roll across the whole screen with the wind — fast enough to read
+  // as motion even when the wind blows mostly north/south, and over the
+  // player's circle of visibility rather than only at the horizon.
+  const rollDir = Math.cos(windAngle) >= 0 ? 1 : -1;
+  const rollSpeed = 0.022 + windStrength * 0.05 + storm * 0.05;
+  const sway = Math.sin(windAngle);
   c.save();
   for (let i = 0; i < count; i++) {
-    const layer = i % 3; // 0 far .. 2 near — nearer banks drift and loom larger
-    const speed = drift * (0.4 + layer * 0.4 + weatherRand(i, 1) * 0.4);
-    const span = vw + 700;
-    let x = (weatherRand(i, 2) * span + time * speed) % span;
+    const layer = i % 3; // 0 far .. 2 near — nearer banks loom larger
+    const speed = rollSpeed * (0.45 + layer * 0.45 + weatherRand(i, 1) * 0.5);
+    const span = vw + 900;
+    let x = (weatherRand(i, 2) * span + time * speed * rollDir) % span;
     if (x < 0) x += span;
-    x -= 350;
-    const y = weatherRand(i, 3) * (vh + 360) - 180;
-    const rx = 150 + weatherRand(i, 4) * (200 + layer * 80);
-    const ry = 70 + weatherRand(i, 5) * (90 + layer * 30);
-    const a =
-      (0.03 + weatherRand(i, 6) * 0.05) * (0.4 + cloud * 0.8) * (0.6 + storm);
-    const grad = c.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-    grad.addColorStop(0, `rgba(${r},${g},${b},${a})`);
-    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-    c.fillStyle = grad;
-    c.beginPath();
-    c.ellipse(x, y, rx, ry, windAngle, 0, Math.PI * 2);
-    c.fill();
+    x -= 450;
+    const baseY = weatherRand(i, 3) * (vh + 360) - 180;
+    const y = baseY + Math.sin(time * 0.0004 + i) * 10 * sway;
+    const size = 150 + weatherRand(i, 4) * (180 + layer * 90);
+    const rx = size;
+    const ry = size * (0.42 + weatherRand(i, 5) * 0.28);
+    // Per-cloud lightness: storms skew dark, fair weather skews bright, and
+    // every cloud varies across the full dark-to-light range.
+    const baseLight = clamp01(
+      storm * 0.12 + (1 - storm) * 0.58 + (weatherRand(i, 7) - 0.5) * 0.7,
+    );
+    // Per-cloud thickness: some dense and heavy, some thin and wispy.
+    const thick = weatherRand(i, 9);
+    const alpha = clamp01(
+      (0.06 + thick * 0.24) * (0.55 + cloud * 0.5) * (0.7 + storm * 0.5),
+    );
+    // A cloud is a small cluster of overlapping puffs so its body varies in
+    // colour and thickness instead of reading as a flat disc.
+    const puffs = layer === 2 ? 4 : 3;
+    for (let j = 0; j < puffs; j++) {
+      const px = x + (j / (puffs - 1) - 0.5) * rx * 0.7;
+      const py = y + (j / (puffs - 1) - 0.5) * ry * 0.5;
+      const puffLight = clamp01(
+        baseLight + (weatherRand(i * 7 + j, 12) - 0.5) * 0.4,
+      );
+      const val = 45 + puffLight * 205;
+      const tint = (weatherRand(i * 5 + j, 13) - 0.5) * 18;
+      const cr = clamp255(val + tint);
+      const cg = clamp255(val + tint * 0.5);
+      const cb = clamp255(val - tint * 0.3 + (storm > 0.4 ? 8 : 0));
+      const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
+      const pa = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
+      const grad = c.createRadialGradient(px, py, 0, px, py, pr);
+      grad.addColorStop(0, `rgba(${cr},${cg},${cb},${pa})`);
+      grad.addColorStop(0.7, `rgba(${cr},${cg},${cb},${pa * 0.4})`);
+      grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      c.fillStyle = grad;
+      c.beginPath();
+      c.ellipse(px, py, pr, pr * 0.7, windAngle, 0, Math.PI * 2);
+      c.fill();
+    }
   }
   c.restore();
 }
