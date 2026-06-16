@@ -2782,7 +2782,9 @@ function updateHud() {
     game.weatherName +
     " · " +
     (km < 10 ? km.toFixed(1) : Math.round(km)) +
-    " km sight";
+    " km sight · longitude " +
+    Math.round((wrapX(ship.x) / WORLD.w) * 360) +
+    "°";
   ui.coins.textContent = game.coins + " crowns";
   ui.day.textContent = "Day " + game.day;
   ui.hold.textContent = cargoCount() + "/" + game.holdMax;
@@ -2798,10 +2800,7 @@ function updateHud() {
             : "pending") +
         " · Guild " +
         guildStanding() +
-        "/20") +
-    " · longitude " +
-    Math.round((wrapX(ship.x) / WORLD.w) * 360) +
-    "°";
+        "/20");
   const objective = currentObjective({
     game,
     currentPortName: currentPort?.name || null,
