@@ -11,6 +11,18 @@
 * {
   box-sizing: border-box;
 }
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+button:not(:disabled) {
+  transition: filter 0.12s ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
 html,
 body {
   width: 100%;
