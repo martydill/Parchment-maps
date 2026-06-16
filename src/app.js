@@ -170,6 +170,14 @@ import {
 } from "./core/intelligence.js";
 import { currentObjective, voyageWarnings } from "./core/guidance.js";
 import {
+  completeLegacyCapstone,
+  continueLegacySandbox,
+  legacyChecklist,
+  legacyReadyForCapstone,
+  LEGACY_PATHS,
+  normalizeLegacyState,
+} from "./core/legacies.js";
+import {
   clearCourse,
   compassDirection,
   courseBearing,
@@ -2485,6 +2493,12 @@ function loadGameState() {
   game.specialists = normalizeSpecialistState(game.specialists);
   game.rivals = normalizeRivalState(game.rivals);
   game.maritimeHazards = normalizeMaritimeHazardState(game.maritimeHazards);
+  game.legacy = normalizeLegacyState(game.legacy);
+  game.legacyProgress ||= { piratesRepelled: 0 };
+  game.legacyProgress.piratesRepelled = Math.max(
+    0,
+    Math.floor(Number(game.legacyProgress.piratesRepelled) || 0),
+  );
   game.navigation = normalizeNavigationState(
     game.navigation,
     ports.map((port) => port.name),
@@ -3950,6 +3964,96 @@ function renderMilestone(root) {
     root.append(done);
   }
 }
+
+function renderLegacies(root) {
+  if (!root) return;
+  root.innerHTML = "";
+  if (!game.milestone.complete) {
+    root.innerHTML =
+      '<p class="empty-note">Reach Merchant Prince to choose a lasting legacy.</p>';
+    return;
+  }
+  if (!game.legacy.selected) {
+    const intro = document.createElement("p");
+    intro.className = "small";
+    intro.textContent =
+      "Choose one long-term identity. The choice is permanent for this save and unlocks a checklist, final crisis, ending summary, and sandbox continuation.";
+    root.append(intro);
+    const grid = document.createElement("div");
+    grid.className = "legacy-grid";
+    for (const path of Object.values(LEGACY_PATHS)) {
+      const card = document.createElement("div");
+      card.className = "legacy-card";
+      card.innerHTML = `<b>${path.name}</b><span>${path.description}</span><span class="small">Final crisis: ${path.crisisTitle}</span>`;
+      const button = document.createElement("button");
+      button.className = "parchment";
+      button.textContent = `Pursue ${path.name}`;
+      button.onclick = () => {
+        game.legacy.selected = path.id;
+        addNews("Legacy chosen", `You will pursue the ${path.name} legacy.`);
+        renderLegacies(root);
+        saveGameState();
+      };
+      card.append(button);
+      grid.append(card);
+    }
+    root.append(grid);
+    return;
+  }
+  const path = LEGACY_PATHS[game.legacy.selected];
+  const heading = document.createElement("div");
+  heading.className = "event-banner";
+  heading.innerHTML = `<b>${path.name}</b>${path.description}`;
+  root.append(heading);
+  for (const item of legacyChecklist(game)) {
+    const row = document.createElement("div");
+    row.className = "milestone-step " + (item.done ? "done" : "pending");
+    row.innerHTML = `<b>${item.done ? "✓ " : ""}${item.title}</b><div class="small">${item.detail}</div>`;
+    root.append(row);
+  }
+  const crisis = document.createElement("div");
+  crisis.className = "legacy-crisis";
+  crisis.innerHTML = `<b>${path.crisisTitle}</b><span>${path.crisis}</span>`;
+  const ready = legacyReadyForCapstone(game);
+  if (!game.legacy.capstoneComplete) {
+    const button = document.createElement("button");
+    button.className = "parchment";
+    button.textContent = ready
+      ? "Complete capstone voyage"
+      : "Checklist incomplete";
+    button.disabled = !ready;
+    button.onclick = () => {
+      const result = completeLegacyCapstone(game);
+      if (!result.ok) return showMessage(result.reason);
+      addNews(`${result.path.name} legacy fulfilled`, result.path.ending);
+      showMessage(`${result.path.name.toUpperCase()} · Legacy fulfilled`, 6);
+      renderLegacies(root);
+      saveGameState();
+    };
+    crisis.append(button);
+  }
+  root.append(crisis);
+  if (game.legacy.capstoneComplete) {
+    const ending = document.createElement("div");
+    ending.className = "event-banner legacy-ending";
+    ending.innerHTML = `<b>Ending: ${path.name}</b>${path.ending}`;
+    const sandbox = document.createElement("button");
+    sandbox.className = "parchment";
+    sandbox.textContent = game.legacy.sandbox
+      ? "Sandbox mode active"
+      : "Continue in sandbox mode";
+    sandbox.disabled = game.legacy.sandbox;
+    sandbox.onclick = () => {
+      continueLegacySandbox(game);
+      showMessage("Sandbox mode active · Continue trading freely.", 5);
+      renderLegacies(root);
+      saveGameState();
+    };
+    ending.append(sandbox);
+    root.append(ending);
+  }
+}
+
 function renderContractList(root, contracts, active = false) {
   root.innerHTML = "";
   if (!contracts.length) {
@@ -5119,6 +5223,10 @@ function chooseCombatAction(action) {
   );
   if (action === "surrender")
     game.specialists = adjustSpecialistLoyalty(game.specialists, "gunner", -8);
+  if (result.outcome === "repelled") {
+    game.legacyProgress ||= { piratesRepelled: 0 };
+    game.legacyProgress.piratesRepelled += 1;
+  }
   game.coins -= result.coinsLost;
   addNews(`Sea encounter: ${result.outcome}`, result.description);
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
@@ -5348,6 +5456,7 @@ function renderMarket() {
 }
 function renderLedger() {
   renderMilestone(document.getElementById("milestoneLedger"));
+  renderLegacies(document.getElementById("legacyLedger"));
   renderContractList(
     document.getElementById("activeContractsLedger"),
     game.activeContracts,
