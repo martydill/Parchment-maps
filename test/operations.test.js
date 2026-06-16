@@ -20,8 +20,11 @@ import {
   repairOperations,
   repairShipComponent,
   resolveCombatAction,
+  routePlanEffects,
+  ROUTE_PLANS,
   resolveHostileEncounter,
   resolveVoyageOperations,
+  normalizeRoutePlan,
   shipCondition,
   weatherRoughness,
 } from "../src/core/operations.js";
@@ -61,6 +64,15 @@ test("operations state normalizes old and invalid saves", () => {
   assert.equal(partial.nextObligationId, 3);
   assert.equal(partial.obligations.length, 1);
   assert.equal(partial.components.hull, 80);
+  assert.equal(partial.routePlan, "balanced");
+  assert.equal(
+    normalizeOperationsState({ routePlan: "fast" }).routePlan,
+    "fast",
+  );
+  assert.equal(
+    normalizeOperationsState({ routePlan: "reckless" }).routePlan,
+    "balanced",
+  );
 
   const componentSave = normalizeOperationsState({
     condition: 70,
@@ -147,7 +159,7 @@ test("voyages consume supplies and convert comfort and weather into consequences
     { days: 2, provisionsNeeded: 4, conditionRisk: 3 },
   );
   const result = resolveVoyageOperations(createOperationsState(), {
-    distance: 1240,
+    distance: 2500,
     days: 2,
     roughness: 0.8,
     stats: { crewComfort: 1, stormResistance: 1 },
@@ -180,6 +192,79 @@ test("voyages consume supplies and convert comfort and weather into consequences
   assert.equal(capped.repairs, 1);
   assert.equal(capped.operations.condition, 65.4);
   assert.ok(capped.speedMultiplier < 0.7);
+});
+
+test("route plans change readiness estimates and voyage consequences", () => {
+  assert.equal(normalizeRoutePlan("cautious"), "cautious");
+  assert.equal(normalizeRoutePlan("unknown"), "balanced");
+  assert.equal(
+    routePlanEffects("battle").defenseBonus,
+    ROUTE_PLANS.battle.defenseBonus,
+  );
+
+  const stats = { crewComfort: 1, stormResistance: 1 };
+  const balanced = estimateVoyageReadiness(2500, stats, "balanced");
+  const fast = estimateVoyageReadiness(2500, stats, "fast");
+  const cautious = estimateVoyageReadiness(2500, stats, "cautious");
+  const rationing = estimateVoyageReadiness(2500, stats, "rationing");
+
+  assert.ok(fast.days < balanced.days);
+  assert.ok(fast.conditionRisk > balanced.conditionRisk);
+  assert.ok(cautious.days > balanced.days);
+  assert.ok(cautious.conditionRisk < balanced.conditionRisk);
+  assert.ok(rationing.provisionsNeeded < balanced.provisionsNeeded);
+
+  const baseVoyage = resolveVoyageOperations(createOperationsState(), {
+    distance: 2500,
+    roughness: 0.8,
+    stats,
+    routePlan: "balanced",
+  });
+  const fastVoyage = resolveVoyageOperations(createOperationsState(), {
+    distance: 2500,
+    roughness: 0.8,
+    stats,
+    routePlan: "fast",
+  });
+  const cautiousVoyage = resolveVoyageOperations(createOperationsState(), {
+    distance: 2500,
+    roughness: 0.8,
+    stats,
+    routePlan: "cautious",
+  });
+  const rationedVoyage = resolveVoyageOperations(createOperationsState(), {
+    distance: 2500,
+    roughness: 0.8,
+    stats,
+    routePlan: "rationing",
+  });
+  const plannedStateVoyage = resolveVoyageOperations(
+    { ...createOperationsState(), routePlan: "cautious" },
+    {
+      distance: 2500,
+      roughness: 0.8,
+      stats,
+    },
+  );
+  const battleVoyage = resolveVoyageOperations(createOperationsState(), {
+    distance: 2500,
+    roughness: 0.8,
+    stats,
+    routePlan: "battle",
+  });
+
+  assert.equal(fastVoyage.routePlan, "fast");
+  assert.ok(
+    fastVoyage.componentDamage.rigging > baseVoyage.componentDamage.rigging,
+  );
+  assert.ok(cautiousVoyage.damage < baseVoyage.damage);
+  assert.ok(rationedVoyage.provisionsNeeded < baseVoyage.provisionsNeeded);
+  assert.ok(rationedVoyage.operations.morale < baseVoyage.operations.morale);
+  assert.equal(plannedStateVoyage.routePlan, "cautious");
+  assert.equal(battleVoyage.routePlan, "battle");
+  assert.ok(
+    battleVoyage.componentDamage.weapons > baseVoyage.componentDamage.weapons,
+  );
 });
 
 test("weather roughness uses explicit weather data and storm resistance", () => {
