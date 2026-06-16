@@ -3244,14 +3244,10 @@ function drawDynamicTradeWorld(c, z) {
     c.textAlign = "center";
     c.textBaseline = "middle";
     c.fillText("✦", 0, -1 / z);
-    if (visible || progress) {
+    if ((visible || progress) && progress?.status !== "surveyed") {
       c.fillStyle = "rgba(47,29,15,.82)";
       c.font = `${progress ? "700 " : ""}${12 / z}px Georgia`;
-      c.fillText(
-        progress?.status === "surveyed" ? "surveyed" : "shore survey",
-        0,
-        -25 / z,
-      );
+      c.fillText("shore survey", 0, -25 / z);
     }
     c.restore();
   }
