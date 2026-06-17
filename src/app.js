@@ -5633,18 +5633,23 @@ function renderShipPanel() {
   const fittings = document.getElementById("shipRegisterFittings");
   fittings.innerHTML = "<h4>Fitted gear</h4>";
   const gearList = document.createElement("div");
+  gearList.className = "fitted-gear-list";
   for (const slot of UPGRADE_SLOTS) {
     const equippedId = game.shipUpgrades.equipped[slot.id];
     const upgrade =
       SHIP_UPGRADES[slot.id].find((item) => item.id === equippedId) || null;
     const row = document.createElement("div");
-    row.className = "standing-row";
+    row.className = "fitted-gear-row";
     row.innerHTML =
-      "<span>" +
+      '<span class="fitted-gear-slot">' +
       slot.name +
-      '<span class="small">' +
+      "</span>" +
+      '<span class="fitted-gear-name">' +
       (upgrade ? upgrade.name : "—") +
-      "</span></span>";
+      "</span>" +
+      '<span class="fitted-gear-stats">' +
+      (upgrade ? upgradeEffects(upgrade) : "Nothing fitted") +
+      "</span>";
     gearList.append(row);
   }
   fittings.append(gearList);

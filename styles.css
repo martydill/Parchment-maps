@@ -1556,6 +1556,31 @@ button.parchment.secondary {
 .standing-row:last-child {
   border-bottom: 0;
 }
+.fitted-gear-list {
+  margin-top: 6px;
+}
+.fitted-gear-row {
+  display: grid;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(71, 44, 23, 0.16);
+}
+.fitted-gear-row:last-child {
+  border-bottom: 0;
+}
+.fitted-gear-slot {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.68;
+}
+.fitted-gear-name {
+  font-weight: 700;
+}
+.fitted-gear-stats {
+  font-size: 12px;
+  color: #74401e;
+}
 .component-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
