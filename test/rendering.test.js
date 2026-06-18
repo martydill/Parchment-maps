@@ -59,3 +59,28 @@ test("map land checks include horizontally wrapped coordinates", () => {
   assert.equal(isLandPoint(-80, 20, 100, landShapes), true);
   assert.equal(isLandPoint(50, 20, 100, landShapes), false);
 });
+
+test("map land checks include land polygons crossing the world seam", () => {
+  const landShapes = [
+    {
+      poly: [
+        [88, 10],
+        [112, 10],
+        [112, 30],
+        [88, 30],
+      ],
+    },
+    {
+      poly: [
+        [-14, 50],
+        [18, 50],
+        [18, 70],
+        [-14, 70],
+      ],
+    },
+  ];
+
+  assert.equal(isLandPoint(6, 20, 100, landShapes), true);
+  assert.equal(isLandPoint(94, 60, 100, landShapes), true);
+  assert.equal(isLandPoint(50, 60, 100, landShapes), false);
+});

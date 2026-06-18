@@ -54,6 +54,7 @@ export function createGameState() {
     voyageDistance: 0,
     voyageDayProgress: 0,
     voyageDaysElapsed: 0,
+    firstMeridianCrossed: false,
     departedFromPort: null,
     discoveries: createDiscoveryState(),
     exploration: createExplorationState(),

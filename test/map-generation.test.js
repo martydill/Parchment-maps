@@ -80,9 +80,11 @@ test("map transforms constrain longitude and polar margins", () => {
   });
   const above = transform.point(-250, -100);
   const below = transform.point(350, 200);
+  const wrapped = transform.point(101, 0);
 
   assert.ok(above.x >= 0 && above.x <= 80);
   assert.ok(below.x >= 0 && below.x <= 80);
+  assert.ok(wrapped.x > 0 && wrapped.x < 1);
   assert.equal(above.y, 20);
   assert.equal(below.y, 140);
   assert.equal(transform.horizontalLength(10), 8);

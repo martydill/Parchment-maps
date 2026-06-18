@@ -3,11 +3,12 @@ import {
   nearestWrapped,
   normalizeAngle,
   wrap,
+  wrappedDelta,
   wrappedDistance as calculateWrappedDistance,
 } from "./core/math.js";
 import {
   expandPolygon,
-  pointInPolygon,
+  pointInWrappedPolygon,
   polygonCentroid,
   raySegmentDistance,
 } from "./core/geometry.js";
@@ -271,6 +272,15 @@ localStorage.setItem(MAP_SEED_KEY, mapSeed);
 const mapTransform = createMapTransform(mapSeed);
 const WORLD = { w: mapTransform.width, h: mapTransform.height };
 
+function unwrapLandPolygon(poly) {
+  if (!poly.length) return;
+  let previousX = poly[0][0];
+  for (let index = 1; index < poly.length; index++) {
+    previousX += wrappedDelta(poly[index][0], previousX, WORLD.w);
+    poly[index][0] = previousX;
+  }
+}
+
 function transformWorldData() {
   const regions = lands
     .filter((land) => land.name)
@@ -318,6 +328,7 @@ function transformWorldData() {
       point[0] = mapped.x;
       point[1] = mapped.y;
     }
+    unwrapLandPolygon(land.poly);
   }
   for (const port of ports) mapRecord(port, port.land);
   for (const site of discoverySites) mapRecord(site);
@@ -2373,8 +2384,7 @@ function renderIntelOffice() {
 initializeMerchantShips();
 
 function onLand(x, y) {
-  const wx = wrapX(x);
-  return lands.some((land) => pointInPolygon(wx, y, land.poly));
+  return lands.some((land) => pointInWrappedPolygon(x, y, land.poly, WORLD.w));
 }
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
@@ -2465,7 +2475,9 @@ function revealCurrentView(force = false) {
 function explorationLandForSite(site) {
   return (
     lands.find((land) => land.name && land.name === site.land) ||
-    lands.find((land) => pointInPolygon(site.x, site.y, land.poly)) ||
+    lands.find((land) =>
+      pointInWrappedPolygon(site.x, site.y, land.poly, WORLD.w),
+    ) ||
     lands.reduce((nearest, land) => {
       const center = polygonCentroid(land.poly);
       const distance = wrappedDistance(site.x, site.y, center.x, center.y);
@@ -2549,6 +2561,7 @@ function loadGameState() {
 
   Object.assign(game, saved.game);
   game.mapSeed = mapSeed;
+  game.firstMeridianCrossed = Boolean(game.firstMeridianCrossed);
   normalizeVoyageTimeState();
   game.windStrength = clamp(
     Number.isFinite(game.windStrength) ? game.windStrength : 0.14,
@@ -3726,11 +3739,13 @@ function update(dt) {
       });
     }
 
-    if (oldCycle !== newCycle)
+    if (oldCycle !== newCycle && !game.firstMeridianCrossed) {
+      game.firstMeridianCrossed = true;
       showMessage(
         "FIRST MERIDIAN CROSSED · the world continues around the globe.",
         3.8,
       );
+    }
   }
   camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
   camera.y += (ship.y - camera.y) * Math.min(1, dt * 4.5);

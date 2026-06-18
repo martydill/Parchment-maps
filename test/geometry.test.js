@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   expandPolygon,
   pointInPolygon,
+  pointInWrappedPolygon,
   polygonCentroid,
   raySegmentDistance,
 } from "../src/core/geometry.js";
@@ -19,6 +20,27 @@ test("pointInPolygon identifies interior and exterior points", () => {
   assert.equal(pointInPolygon(5, 5, square), true);
   assert.equal(pointInPolygon(15, 5, square), false);
   assert.equal(pointInPolygon(0, 0, []), false);
+});
+
+test("pointInWrappedPolygon treats seam-crossing polygons as continuous", () => {
+  const westOverflow = [
+    [-12, 10],
+    [24, 10],
+    [24, 40],
+    [-12, 40],
+  ];
+  const eastOverflow = [
+    [82, 10],
+    [112, 10],
+    [112, 40],
+    [82, 40],
+  ];
+
+  assert.equal(pointInWrappedPolygon(96, 25, westOverflow, 100), true);
+  assert.equal(pointInWrappedPolygon(-4, 25, westOverflow, 100), true);
+  assert.equal(pointInWrappedPolygon(4, 25, eastOverflow, 100), true);
+  assert.equal(pointInWrappedPolygon(104, 25, eastOverflow, 100), true);
+  assert.equal(pointInWrappedPolygon(50, 25, eastOverflow, 100), false);
 });
 
 test("raySegmentDistance returns only forward intersections on the segment", () => {

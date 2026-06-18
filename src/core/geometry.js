@@ -15,6 +15,14 @@ export function pointInPolygon(x, y, polygon) {
   return inside;
 }
 
+export function pointInWrappedPolygon(x, y, polygon, worldWidth) {
+  if (!worldWidth) return pointInPolygon(x, y, polygon);
+  const wrappedX = ((x % worldWidth) + worldWidth) % worldWidth;
+  return [-worldWidth, 0, worldWidth].some((offset) =>
+    pointInPolygon(wrappedX + offset, y, polygon),
+  );
+}
+
 function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
 }

@@ -1,6 +1,6 @@
 import {
   expandPolygon,
-  pointInPolygon,
+  pointInWrappedPolygon,
   polygonCentroid,
 } from "./core/geometry.js";
 import { unwrapPath } from "./core/routes.js";
@@ -28,8 +28,9 @@ function seeded(n) {
 }
 
 export function isLandPoint(x, y, worldWidth, landShapes = lands) {
-  const wrappedX = ((x % worldWidth) + worldWidth) % worldWidth;
-  return landShapes.some((land) => pointInPolygon(wrappedX, y, land.poly));
+  return landShapes.some((land) =>
+    pointInWrappedPolygon(x, y, land.poly, worldWidth),
+  );
 }
 
 export function createRoughSeaParticles(seas, isOnLand) {
@@ -717,6 +718,31 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     poly.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])));
     c.closePath();
   }
+  function appendPolyPath(c, poly) {
+    poly.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])));
+    c.closePath();
+  }
+  function translatedPoly(poly, offsetX) {
+    return poly.map(([x, y]) => [x + offsetX, y]);
+  }
+  function polygonWorldOffsets(poly) {
+    const xs = poly.map(([x]) => x);
+    const offsets = [0];
+    if (Math.min(...xs) < 0) offsets.push(WORLD.w);
+    if (Math.max(...xs) > WORLD.w) offsets.push(-WORLD.w);
+    return offsets;
+  }
+  function drawWrappedPolyPath(c, poly, drawPath) {
+    for (const offset of polygonWorldOffsets(poly)) {
+      drawPath(translatedPoly(poly, offset));
+    }
+  }
+  function wrappedClipPath(c, poly) {
+    c.beginPath();
+    for (const offset of polygonWorldOffsets(poly)) {
+      appendPolyPath(c, translatedPoly(poly, offset));
+    }
+  }
   function drawWaveGlyph(c, x, y, s = 1, alpha = 0.18) {
     c.save();
     c.translate(x, y);
@@ -1149,32 +1175,36 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
       for (const off of [22, 14, 7]) {
-        polyPath(m, expandPolygon(l.poly, off));
-        m.strokeStyle = `rgba(54,43,25,${off === 22 ? 0.22 : off === 14 ? 0.34 : 0.48})`;
-        m.lineWidth = off === 22 ? 2 : 1.5;
-        m.stroke();
+        drawWrappedPolyPath(m, expandPolygon(l.poly, off), (poly) => {
+          polyPath(m, poly);
+          m.strokeStyle = `rgba(54,43,25,${off === 22 ? 0.22 : off === 14 ? 0.34 : 0.48})`;
+          m.lineWidth = off === 22 ? 2 : 1.5;
+          m.stroke();
+        });
       }
-      polyPath(m, l.poly);
-      m.fillStyle = l.color;
-      m.fill();
-      m.strokeStyle = "#3b2b1a";
-      m.lineWidth = 7;
-      m.stroke();
-      polyPath(m, l.poly);
-      m.strokeStyle = "rgba(230,211,157,.54)";
-      m.lineWidth = 2;
-      m.stroke();
+      drawWrappedPolyPath(m, l.poly, (poly) => {
+        polyPath(m, poly);
+        m.fillStyle = l.color;
+        m.fill();
+        m.strokeStyle = "#3b2b1a";
+        m.lineWidth = 7;
+        m.stroke();
+        polyPath(m, poly);
+        m.strokeStyle = "rgba(230,211,157,.54)";
+        m.lineWidth = 2;
+        m.stroke();
+      });
 
       // land stipple and short hatching clipped to each island
       m.save();
-      polyPath(m, l.poly);
+      wrappedClipPath(m, l.poly);
       m.clip();
       const lr = seeded(400 + li * 31);
       m.fillStyle = "rgba(52,38,22,.16)";
       for (let i = 0; i < 320; i++) {
         const x = lr() * WORLD.w,
           y = lr() * WORLD.h;
-        if (pointInPolygon(x, y, l.poly))
+        if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
           m.fillRect(x, y, 1 + lr() * 1.5, 1 + lr() * 1.5);
       }
       m.strokeStyle = "rgba(47,36,23,.12)";
@@ -1182,7 +1212,7 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       for (let i = 0; i < 90; i++) {
         const x = lr() * WORLD.w,
           y = lr() * WORLD.h;
-        if (pointInPolygon(x, y, l.poly)) {
+        if (pointInWrappedPolygon(x, y, l.poly, WORLD.w)) {
           m.beginPath();
           m.moveTo(x, y);
           m.lineTo(x + 8 + lr() * 12, y - 3 - lr() * 5);
@@ -1270,8 +1300,8 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
             x = l.poly[0][0] + detailRnd() * 900;
             y = l.poly[0][1] + detailRnd() * 650;
             g++;
-          } while (!pointInPolygon(x, y, l.poly) && g < 80);
-          if (pointInPolygon(x, y, l.poly))
+          } while (!pointInWrappedPolygon(x, y, l.poly, WORLD.w) && g < 80);
+          if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
             drawTree(m, x, y, 9 + detailRnd() * 10);
         }
       }
@@ -1284,8 +1314,8 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
             x = l.poly[0][0] + detailRnd() * 820;
             y = l.poly[0][1] + detailRnd() * 620;
             g++;
-          } while (!pointInPolygon(x, y, l.poly) && g < 80);
-          if (pointInPolygon(x, y, l.poly))
+          } while (!pointInWrappedPolygon(x, y, l.poly, WORLD.w) && g < 80);
+          if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
             drawMountain(m, x, y, 12 + detailRnd() * 15);
         }
       }

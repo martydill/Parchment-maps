@@ -19,6 +19,10 @@ function unitValue(seed, channel) {
   return (value >>> 0) / 4294967296;
 }
 
+function wrapLongitude(x, width) {
+  return ((x % width) + width) % width;
+}
+
 export function createDistinctMapSeed(previousSeed, randomValues) {
   const values = randomValues || new Uint32Array(2);
   if (!randomValues && globalThis.crypto?.getRandomValues)
@@ -67,7 +71,7 @@ export function createMapTransform(
       polarFade;
     const projectedX = x * scaleX + xWarp;
     return {
-      x: Math.max(0, Math.min(width, projectedX)),
+      x: wrapLongitude(projectedX, width),
       y: Math.max(
         margin,
         Math.min(height - margin, margin + y * scaleY + yWarp),
@@ -98,14 +102,11 @@ export function createMapTransform(
     const translationY = (unitValue(regionSeed, 7) - 0.5) * 300;
 
     return {
-      x: Math.max(
-        0,
-        Math.min(
-          width,
-          projectedCenter.x +
-            translationX +
-            Math.cos(direction) * distance * coastline,
-        ),
+      x: wrapLongitude(
+        projectedCenter.x +
+          translationX +
+          Math.cos(direction) * distance * coastline,
+        width,
       ),
       y: Math.max(
         margin,
