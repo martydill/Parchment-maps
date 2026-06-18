@@ -1,3 +1,5 @@
+import { estimateVoyageDays } from "./voyage-time.js";
+
 export function createContractOffer({
   origin,
   index,
@@ -7,6 +9,7 @@ export function createContractOffer({
   cargoNames,
   getPort,
   distanceBetween,
+  estimateDays,
 }) {
   const destinationName =
     destinations[(index + day + origin.name.length) % destinations.length];
@@ -35,7 +38,9 @@ export function createContractOffer({
       ),
       influence: origin.name === "Goldhaven" ? 8 : 5 + index,
       faction: sponsor,
-      estimatedDays: Math.max(2, Math.ceil(distance / 430)),
+      estimatedDays: estimateDays
+        ? estimateDays(distance, { origin, destination })
+        : estimateVoyageDays(distance),
       acceptedDay: null,
       deadline: null,
     },

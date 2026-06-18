@@ -44,7 +44,7 @@ test("createContractOffer builds cargo commissions and advances the serial", () 
       reward: 88,
       influence: 5,
       faction: "First",
-      estimatedDays: 2,
+      estimatedDays: 1,
       acceptedDay: null,
       deadline: null,
     },
@@ -71,7 +71,7 @@ test("createContractOffer builds courier work and selects local or guild sponsor
   }).offer;
   assert.equal(guild.faction, "Guild of Gilded Oars");
   assert.equal(guild.influence, 8);
-  assert.equal(guild.estimatedDays, 3);
+  assert.equal(guild.estimatedDays, 1);
 });
 
 test("contractOffersForPort reuses fresh caches and refreshes expired ones", () => {

@@ -156,7 +156,7 @@ test("voyages consume supplies and convert comfort and weather into consequences
       crewComfort: 1,
       stormResistance: 1,
     }),
-    { days: 2, provisionsNeeded: 4, conditionRisk: 3 },
+    { days: 1, provisionsNeeded: 2, conditionRisk: 3 },
   );
   const result = resolveVoyageOperations(createOperationsState(), {
     distance: 2500,

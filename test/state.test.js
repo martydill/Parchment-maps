@@ -24,6 +24,9 @@ test("createGameState returns independent complete state objects", () => {
   assert.deepEqual(second.warehouses, {});
   assert.equal(first.day, 1);
   assert.equal(first.holdMax, 18);
+  assert.equal(first.voyageDistance, 0);
+  assert.equal(first.voyageDayProgress, 0);
+  assert.equal(first.voyageDaysElapsed, 0);
 });
 
 test("cargoCount includes trade and sealed contract cargo", () => {

@@ -6,6 +6,7 @@ import {
   crewWeeklyWage,
   normalizeCrewState,
 } from "./crew.js";
+import { estimateVoyageDays } from "./voyage-time.js";
 
 export const FACTION_PRIVILEGES = Object.freeze([
   {
@@ -239,12 +240,10 @@ export function routePlanEffects(planId) {
 function voyageRequirements(
   distance,
   stats,
-  days = Math.max(
-    1,
-    Math.ceil(
-      (distance / 620) * routePlanEffects(stats.routePlan).daysMultiplier,
-    ),
-  ),
+  days = estimateVoyageDays(distance, {
+    maxSpeed: stats.maxSpeed,
+    ...routePlanEffects(stats.routePlan),
+  }),
 ) {
   const plan = routePlanEffects(stats.routePlan);
   const provisionsNeeded = Math.max(

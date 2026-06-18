@@ -43,6 +43,10 @@ import {
   serializeSave,
 } from "./core/persistence.js";
 import {
+  estimateVoyageDays,
+  SAILING_SECONDS_PER_DAY,
+} from "./core/voyage-time.js";
+import {
   beginAtHomePort,
   bindBeginButton,
   recoverNavigablePosition,
@@ -1495,6 +1499,34 @@ function advanceDays(days) {
   maybeStartShortage();
   updateMilestoneCompletion();
 }
+function normalizeVoyageTimeState() {
+  if (game.departedFromPort === null) return resetVoyageTimeState();
+  const totalProgress = Math.max(0, Number(game.voyageDayProgress) || 0);
+  const wholeProgressDays = Math.floor(totalProgress);
+  game.voyageDayProgress = totalProgress - wholeProgressDays;
+  game.voyageDaysElapsed =
+    wholeProgressDays +
+    Math.max(0, Math.floor(Number(game.voyageDaysElapsed) || 0));
+}
+function resetVoyageTimeState() {
+  game.voyageDayProgress = 0;
+  game.voyageDaysElapsed = 0;
+}
+function settledVoyageDays() {
+  return Math.max(
+    1,
+    game.voyageDaysElapsed + (game.voyageDayProgress > 0.0001 ? 1 : 0),
+  );
+}
+function advanceUnderwayTime(dt) {
+  if (game.departedFromPort === null || ship.anchored) return;
+  game.voyageDayProgress += Math.max(0, dt) / SAILING_SECONDS_PER_DAY;
+  const fullDays = Math.floor(game.voyageDayProgress);
+  if (!fullDays) return;
+  game.voyageDayProgress -= fullDays;
+  game.voyageDaysElapsed += fullDays;
+  advanceDays(fullDays);
+}
 function revealContractDestination(port) {
   exploredCtx.save();
   exploredCtx.fillStyle = "#fff";
@@ -1521,7 +1553,12 @@ function makeContractOffer(origin, index) {
     cargoNames: contractCargoNames,
     getPort: getPortByName,
     distanceBetween: (destination, source) =>
+      routeDistanceBetween(source.name, destination.name) ??
       wrappedDistance(destination.x, destination.y, source.x, source.y),
+    estimateDays: (distance) =>
+      estimateVoyageDays(distance, {
+        maxSpeed: operationalShipStats().maxSpeed,
+      }),
   });
   game.contractSerial = result.nextSerial;
   return result.offer;
@@ -1766,6 +1803,31 @@ function orientRoute(route, origin, destination) {
 }
 function routesFrom(portName) {
   return findRoutesFrom(merchantRoutePaths, portName);
+}
+function routeBetween(origin, destination) {
+  return merchantRoutePaths.find(
+    (route) =>
+      (route.a === origin && route.b === destination) ||
+      (route.a === destination && route.b === origin),
+  );
+}
+function routeDistanceBetween(origin, destination) {
+  const route = routeBetween(origin, destination);
+  if (!route) return null;
+  return pathLength(orientRoute(route, origin, destination));
+}
+function departurePortAtAnchor() {
+  if (nearPort) return nearPort;
+  let bestPort = null;
+  let bestDistance = 180;
+  for (const port of ports) {
+    const distance = wrappedDistance(ship.x, ship.y, port.x, port.y);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPort = port;
+    }
+  }
+  return bestPort;
 }
 function chooseMerchantCargo(origin, destination) {
   let best = "spice",
@@ -2487,6 +2549,7 @@ function loadGameState() {
 
   Object.assign(game, saved.game);
   game.mapSeed = mapSeed;
+  normalizeVoyageTimeState();
   game.windStrength = clamp(
     Number.isFinite(game.windStrength) ? game.windStrength : 0.14,
     0.08,
@@ -3488,6 +3551,11 @@ function update(dt) {
   if (ship.anchored) {
     ship.speed = 0;
     if (inp.active) {
+      const departurePort = departurePortAtAnchor();
+      if (game.departedFromPort === null && departurePort) {
+        game.departedFromPort = departurePort.name;
+        resetVoyageTimeState();
+      }
       ship.anchored = false;
       showMessage(
         "Casting off — keep dragging toward where you want to sail.",
@@ -3608,6 +3676,7 @@ function update(dt) {
       newCycle = Math.floor(nx / WORLD.w);
     const d = Math.hypot(nx - ship.x, ny - ship.y);
     game.voyageDistance += d;
+    if (d > 0.1) advanceUnderwayTime(dt);
     ship.x = nx;
     ship.y = ny;
 
@@ -4997,12 +5066,10 @@ function openPort() {
       `${paid} crown${paid === 1 ? "" : "s"} paid in harbor dues.${paid < fee ? " The unpaid balance angered local officials." : ""}`,
     );
     const routePlan = routePlanEffects(game.operations.routePlan);
-    const days = Math.max(
-      1,
-      Math.ceil((game.voyageDistance / 620) * routePlan.daysMultiplier),
-    );
+    const days = settledVoyageDays();
+    const remainingDays = Math.max(0, days - game.voyageDaysElapsed);
     const distance = game.voyageDistance;
-    advanceDays(days);
+    advanceDays(remainingDays);
     const stats = operationalShipStats();
     const crewModifiers = crewVoyageModifiers(game.operations.crew);
     stats.stormResistance *= crewModifiers.stormResistance;
@@ -5101,6 +5168,7 @@ function openPort() {
         `The passage consumed ${operations.provisionsUsed} provisions and caused ${operations.damage}% wear.`,
       );
     game.voyageDistance = 0;
+    resetVoyageTimeState();
     game.departedFromPort = null;
   }
   const obligations = fulfillObligationsAtPort(
@@ -6226,6 +6294,7 @@ document.getElementById("closePort").addEventListener("click", () => {
   ship.anchored = true;
   game.departedFromPort = leaving ? leaving.name : null;
   game.voyageDistance = 0;
+  resetVoyageTimeState();
   revealCurrentView(true);
   showMessage(
     "At anchor. Drag the wheel toward open water when you are ready to cast off.",

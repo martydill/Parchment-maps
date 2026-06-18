@@ -52,6 +52,8 @@ export function createGameState() {
     regionalCrises: createCrisisState(),
     merchantSightings: {},
     voyageDistance: 0,
+    voyageDayProgress: 0,
+    voyageDaysElapsed: 0,
     departedFromPort: null,
     discoveries: createDiscoveryState(),
     exploration: createExplorationState(),
