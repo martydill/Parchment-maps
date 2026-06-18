@@ -6145,6 +6145,14 @@ function openExploration() {
       0,
       plan.provisions - game.operations.provisions,
     );
+    button.disabled = provisionShortage > 0;
+    if (button.disabled) {
+      button.setAttribute(
+        "aria-label",
+        `${plan.label} unavailable; need ${provisionShortage} more provisions`,
+      );
+      button.title = `Need ${provisionShortage} more provisions`;
+    }
     button.innerHTML =
       `<b>${plan.label}</b><span>${plan.days} day${plan.days === 1 ? "" : "s"}</span>` +
       `<span class="small">${plan.provisions} provisions${provisionShortage ? ` · need ${provisionShortage} more` : ""} · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
