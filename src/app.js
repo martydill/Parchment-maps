@@ -56,6 +56,7 @@ import {
   cargoLotDescription,
   cargoValueMultiplier,
   createCargoLot,
+  grantCargo,
   moveCargoLot,
   normalizeCargoCompartments,
   normalizeCargoLot,
@@ -86,9 +87,10 @@ import {
 import {
   activeDiscoveryTrade,
   advanceDiscoveryConsequences,
-  discoverNearby,
   DISCOVERY_DISPOSITIONS,
+  discoverySample,
   normalizeDiscoveryState,
+  recordDiscovery,
   resolveDiscovery,
   seasonalSiteActive,
 } from "./core/discoveries.js";
@@ -357,6 +359,7 @@ let last = performance.now();
 let gameStarted = false;
 let nearPort = null;
 let nearExplorationSite = null;
+let nearDiscovery = null;
 let currentPort = null;
 let selectedTown = null;
 let messageTimer = 0;
@@ -3254,6 +3257,29 @@ function drawDynamicTradeWorld(c, z) {
     }
     c.restore();
   }
+  if (nearDiscovery) {
+    const x = nearestWrappedX(nearDiscovery.x, camera.x);
+    c.save();
+    c.translate(x, nearDiscovery.y);
+    c.fillStyle = "rgba(46, 64, 60, .82)";
+    c.strokeStyle = "rgba(244, 218, 157, .95)";
+    c.lineWidth = 2 / z;
+    c.setLineDash([5 / z, 4 / z]);
+    c.beginPath();
+    c.arc(0, 0, (16 * 1.15) / z, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = "#fff0c0";
+    c.font = 14 / z + "px Georgia";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(nearDiscovery.icon, 0, 0);
+    c.fillStyle = "rgba(47,29,15,.85)";
+    c.font = `700 ${12 / z}px Georgia`;
+    c.fillText("click to investigate", 0, -26 / z);
+    c.restore();
+  }
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
     if (!record) continue;
@@ -3641,26 +3667,6 @@ function update(dt) {
   visibility.revealCooldown -= dt;
   if (visibility.revealCooldown <= 0) {
     revealCurrentView();
-    const found = discoverNearby(
-      game.discoveries,
-      discoverySites,
-      ship,
-      game.day,
-      wrappedDistance,
-    );
-    for (const discovery of found) {
-      addNews(
-        "Discovery: " + discovery.site.name,
-        discovery.site.description +
-          " Decide in the Captain’s Ledger whether to keep, sell, or share it.",
-      );
-      showMessage(
-        "DISCOVERY · " +
-          discovery.site.name +
-          " — recorded in the Captain’s Ledger",
-        4.5,
-      );
-    }
     visibility.revealCooldown = 0.12;
   }
   ship.trail.unshift({
@@ -3692,6 +3698,27 @@ function update(dt) {
     }
   }
   ui.explore.style.display = nearExplorationSite ? "block" : "none";
+  nearDiscovery = null;
+  if (!nearPort && !nearExplorationSite) {
+    let nearestDiscoveryDistance = Infinity;
+    // A clear day (or a taller mast) lets you spot a find from farther off,
+    // while fog forces you close. Current sight range sets the detection
+    // radius, floored at the site's own radius so one you're atop is always
+    // investigable regardless of weather.
+    const sight = Math.max(visibility.radius, 0);
+    for (const site of discoverySites) {
+      if (site.requiresExpedition) continue;
+      if (game.discoveries.found[site.id]) continue;
+      const distance = wrappedDistance(ship.x, ship.y, site.x, site.y);
+      if (
+        distance <= Math.max(site.radius, sight) &&
+        distance < nearestDiscoveryDistance
+      ) {
+        nearestDiscoveryDistance = distance;
+        nearDiscovery = site;
+      }
+    }
+  }
   if (messageTimer > 0) {
     messageTimer -= dt;
     if (messageTimer <= 0) ui.message.classList.remove("show");
@@ -3807,6 +3834,15 @@ canvas.addEventListener("pointerup", (e) => {
   if (merchant) {
     openVesselDetails(merchant);
     return;
+  }
+  if (nearDiscovery) {
+    const dx = nearestWrappedX(nearDiscovery.x, world.x) - world.x;
+    if (
+      Math.hypot(dx, nearDiscovery.y - world.y) < Math.max(30, 18 / camera.zoom)
+    ) {
+      claimDiscovery(nearDiscovery);
+      return;
+    }
   }
   const discovery = discoveryAtPoint(
     world.x,
@@ -5864,12 +5900,16 @@ function handleDiscoveryDisposition(id, disposition) {
       result.consequence.standing.faction,
       result.consequence.standing.amount,
     );
-  const outcome =
-    disposition === "secret"
-      ? "The coordinates remain in your private log."
-      : result.consequence.route
-        ? "Merchants are preparing to exploit the route; local markets will change."
-        : "The information is now public.";
+  let outcome;
+  if (disposition === "secret") {
+    outcome = "The coordinates remain in your private log.";
+  } else if (result.consequence.route) {
+    const route = result.consequence.route;
+    const perDay = Math.round(route.units);
+    outcome = `A trade route has opened: about ${perDay} unit${perDay === 1 ? "" : "s"} of ${goods[route.good]?.name || route.good} per day will move from ${route.origin} to ${route.destination}, beginning Day ${route.maturesDay}.`;
+  } else {
+    outcome = "The information is now public.";
+  }
   addNews("Fate of " + result.site.name, outcome);
   showMessage(
     result.site.name +
@@ -5883,6 +5923,36 @@ function handleDiscoveryDisposition(id, disposition) {
   updateHud();
   renderLedger();
   saveGameState();
+}
+function claimDiscovery(site) {
+  if (!site || game.discoveries.found[site.id]) return;
+  const record = recordDiscovery(game.discoveries, site.id, game.day);
+  let recovery = "";
+  const sample = discoverySample(site);
+  if (sample) {
+    const grant = grantCargo(
+      game,
+      sample.good,
+      sample.units,
+      goods,
+      cargoCapacities(),
+      { origin: site.name, day: game.day },
+    );
+    record.recovered = { good: sample.good, units: grant.granted };
+    if (grant.granted > 0)
+      recovery = `Recovered ${grant.granted} ${goods[sample.good].name}`;
+  }
+  addNews(
+    "Discovery: " + site.name,
+    `${site.description}${recovery ? ` ${recovery}.` : ""} Decide in the Captain’s Ledger whether to keep, sell, or share it.`,
+  );
+  showMessage(
+    `DISCOVERY · ${site.name}${recovery ? ` · ${recovery}` : ""}`,
+    4.5,
+  );
+  updateHud();
+  saveGameState();
+  openDiscoveryDetails(site);
 }
 function openDiscoveryDetails(site) {
   if (!site) return;
@@ -5913,16 +5983,27 @@ function renderDiscoveryPanel(id) {
     ["Chart value", site.saleValue + " crowns"],
     ["Standing", "+" + site.standingValue + " if shared"],
   ];
+  if (record.recovered) {
+    const name = goods[record.recovered.good]?.name || record.recovered.good;
+    metaRows.splice(1, 0, [
+      "Recovered",
+      record.recovered.units > 0
+        ? `${record.recovered.units} ${name} in the hold`
+        : `Hold full — ${name} left behind`,
+    ]);
+  }
   if (site.season)
     metaRows.push([
       "Season",
       seasonalSiteActive(site, game.day) ? "In season" : "Out of season",
     ]);
-  if (site.route)
+  if (site.route) {
+    const perDay = Math.round(site.route.units);
     metaRows.push([
       "Opens route",
-      site.route.origin + " → " + site.route.destination,
+      `${goods[site.route.good]?.name || site.route.good}, ~${perDay}/day: ${site.route.origin} → ${site.route.destination}`,
     ]);
+  }
   for (const [label, value] of metaRows) {
     const item = document.createElement("div");
     item.className = "summary-item";
@@ -6025,17 +6106,29 @@ function undertakeExpedition(site, approach) {
   const discovery = discoverySites.find(
     (entry) => entry.id === result.discoveryId,
   );
+  let recovery = "";
   if (discovery && !game.discoveries.found[discovery.id]) {
-    game.discoveries.found[discovery.id] = {
-      id: discovery.id,
-      foundDay: game.day,
-      disposition: null,
-      resolvedDay: null,
-    };
+    const record = recordDiscovery(game.discoveries, discovery.id, game.day);
+    if (result.record.success) {
+      const sample = discoverySample(discovery);
+      if (sample) {
+        const grant = grantCargo(
+          game,
+          sample.good,
+          sample.units,
+          goods,
+          cargoCapacities(),
+          { origin: discovery.name, day: game.day },
+        );
+        record.recovered = { good: sample.good, units: grant.granted };
+        if (grant.granted > 0)
+          recovery = `, plus ${grant.granted} ${goods[sample.good].name} for the hold`;
+      }
+    }
   }
   revealExplorationSurvey(site, result.record.success);
   const outcome = result.record.success
-    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered.`
+    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered${recovery}.`
     : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.`;
   addNews("Shore expedition: " + site.name, outcome);
   showMessage(

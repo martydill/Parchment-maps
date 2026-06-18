@@ -5,8 +5,9 @@ import {
   activeDiscoveryTrade,
   advanceDiscoveryConsequences,
   createDiscoveryState,
-  discoverNearby,
+  discoverySample,
   normalizeDiscoveryState,
+  recordDiscovery,
   resolveDiscovery,
   seasonalSiteActive,
 } from "../src/core/discoveries.js";
@@ -29,34 +30,24 @@ const catalog = [
     },
   },
 ];
-const distance = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
 
-test("nearby discoveries are recorded once", () => {
+test("recordDiscovery records a find once and preserves existing records", () => {
   const state = createDiscoveryState();
-  assert.equal(
-    discoverNearby(state, catalog, { x: 20, y: 20 }, 2, distance).length,
-    0,
-  );
-  const found = discoverNearby(state, catalog, { x: 12, y: 12 }, 3, distance);
-  assert.equal(found[0].record.foundDay, 3);
-  assert.equal(
-    discoverNearby(state, catalog, { x: 10, y: 10 }, 4, distance).length,
-    0,
-  );
-});
+  const first = recordDiscovery(state, "reef-cut", 1);
+  assert.equal(first.id, "reef-cut");
+  assert.equal(first.foundDay, 1);
+  assert.equal(first.disposition, null);
+  assert.equal(first.resolvedDay, null);
 
-test("expedition discoveries are not revealed by sailing nearby", () => {
-  const state = createDiscoveryState();
-  const expeditionCatalog = [{ ...catalog[0], requiresExpedition: true }];
-  assert.deepEqual(
-    discoverNearby(state, expeditionCatalog, { x: 10, y: 10 }, 1, distance),
-    [],
-  );
+  const again = recordDiscovery(state, "reef-cut", 9);
+  assert.equal(again, first);
+  assert.equal(again.foundDay, 1);
+  assert.equal(Object.keys(state.found).length, 1);
 });
 
 test("selling a discovery pays and schedules a public route consequence", () => {
   const state = createDiscoveryState();
-  discoverNearby(state, catalog, { x: 10, y: 10 }, 1, distance);
+  recordDiscovery(state, "reef-cut", 1);
   const result = resolveDiscovery(state, catalog, "reef-cut", "sell", 4);
   assert.equal(result.ok, true);
   assert.equal(result.consequence.coins, 80);
@@ -72,7 +63,7 @@ test("selling a discovery pays and schedules a public route consequence", () => 
 
 test("sharing grants standing while secrecy prevents public routes", () => {
   const shared = createDiscoveryState();
-  discoverNearby(shared, catalog, { x: 10, y: 10 }, 1, distance);
+  recordDiscovery(shared, "reef-cut", 1);
   const result = resolveDiscovery(shared, catalog, "reef-cut", "share", 2);
   assert.deepEqual(result.consequence.standing, {
     faction: "Navigators",
@@ -80,7 +71,7 @@ test("sharing grants standing while secrecy prevents public routes", () => {
   });
 
   const secret = createDiscoveryState();
-  discoverNearby(secret, catalog, { x: 10, y: 10 }, 1, distance);
+  recordDiscovery(secret, "reef-cut", 1);
   const hidden = resolveDiscovery(secret, catalog, "reef-cut", "secret", 2);
   assert.equal(hidden.consequence.public, false);
   assert.equal(secret.routeConsequences.length, 0);
@@ -99,7 +90,7 @@ test("sharing grants standing while secrecy prevents public routes", () => {
     false,
   );
   const invalid = createDiscoveryState();
-  discoverNearby(invalid, catalog, { x: 10, y: 10 }, 1, distance);
+  recordDiscovery(invalid, "reef-cut", 1);
   assert.equal(
     resolveDiscovery(invalid, catalog, "reef-cut", "bad", 2).ok,
     false,
@@ -113,7 +104,7 @@ test("sharing grants standing while secrecy prevents public routes", () => {
     },
   ];
   const routeFree = createDiscoveryState();
-  discoverNearby(routeFree, routeFreeCatalog, { x: 10, y: 10 }, 1, distance);
+  recordDiscovery(routeFree, "ruin", 1);
   assert.equal(
     resolveDiscovery(routeFree, routeFreeCatalog, "ruin", "sell", 2).consequence
       .route,
@@ -144,4 +135,38 @@ test("normalization and seasonal windows handle old saves and cycle boundaries",
   assert.equal(seasonalSiteActive(seasonal, 5), true);
   assert.equal(seasonalSiteActive(seasonal, 6), false);
   assert.equal(seasonalSiteActive(seasonal, 15), true);
+});
+
+test("discovery samples recover goods only from resource finds, deterministically", () => {
+  const resourceTypes = [
+    "Hidden resource deposit",
+    "Salvage site",
+    "Smuggler cove",
+    "Rare ecosystem",
+  ];
+  for (const type of resourceTypes) {
+    const site = {
+      id: `site-${type}`,
+      type,
+      route: { good: "ore", units: 1.5 },
+    };
+    const sample = discoverySample(site);
+    assert.equal(sample.good, "ore");
+    assert.ok(
+      sample.units >= 1 && sample.units <= 3,
+      `${type} yielded out-of-range units`,
+    );
+    assert.equal(discoverySample(site).units, sample.units);
+  }
+
+  const nonResource = {
+    id: "beacon",
+    type: "Navigational landmark",
+    route: { good: "ore", units: 1.5 },
+  };
+  assert.equal(discoverySample(nonResource), null);
+
+  const routeFree = { id: "bare-deposit", type: "Hidden resource deposit" };
+  assert.equal(discoverySample(routeFree), null);
+  assert.equal(discoverySample(null), null);
 });

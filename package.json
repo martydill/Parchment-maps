@@ -10,5 +10,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.4"
   }
 }

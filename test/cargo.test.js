@@ -10,6 +10,7 @@ import {
   cargoValueMultiplier,
   compartmentUsage,
   createCargoLot,
+  grantCargo,
   moveCargoLot,
   normalizeCargoCompartments,
   normalizeCargoLot,
@@ -658,4 +659,58 @@ test("cargo descriptions include every optional detail and fallback label", () =
     }),
     /Fresh · Goldhaven Crown Exchange · Notable provenance/,
   );
+});
+
+test("grantCargo loads recovered goods into the hold and syncs counts", () => {
+  const goods = { ore: { name: "Iron Ore", base: 11 } };
+  const game = { cargoLots: [], cargo: {}, cargoCost: {} };
+  const capacities = cargoCompartmentCapacities(20);
+  const result = grantCargo(game, "ore", 3, goods, capacities, {
+    origin: "Moon-Iron Seam",
+    day: 5,
+  });
+  assert.equal(result.granted, 3);
+  assert.equal(result.requested, 3);
+  assert.equal(game.cargoLots.length, 3);
+  assert.equal(game.cargo.ore, 3);
+  assert.equal(game.cargoCost.ore.length, 3);
+  for (const lot of game.cargoLots) {
+    assert.equal(lot.key, "ore");
+    assert.equal(lot.origin, "Moon-Iron Seam");
+  }
+});
+
+test("grantCargo clamps to remaining hold capacity", () => {
+  const goods = { ore: { name: "Iron Ore", base: 11 } };
+  const game = { cargoLots: [], cargo: {}, cargoCost: {} };
+  const capacities = cargoCompartmentCapacities(4);
+  assert.equal(grantCargo(game, "ore", 3, goods, capacities).granted, 3);
+  const overflow = grantCargo(game, "ore", 3, goods, capacities);
+  assert.equal(overflow.granted, 1);
+  assert.equal(overflow.requested, 3);
+  assert.equal(game.cargoLots.length, 4);
+});
+
+test("grantCargo grants nothing when the hold is full or the good is unknown", () => {
+  const goods = { ore: { name: "Iron Ore", base: 11 } };
+  const fullGame = { cargoLots: [], cargo: {}, cargoCost: {} };
+  const tightCapacities = cargoCompartmentCapacities(2);
+  grantCargo(fullGame, "ore", 2, goods, tightCapacities);
+  assert.equal(
+    grantCargo(fullGame, "ore", 1, goods, tightCapacities).granted,
+    0,
+  );
+  assert.equal(fullGame.cargoLots.length, 2);
+
+  const emptyGame = { cargoLots: [], cargo: {}, cargoCost: {} };
+  const rejected = grantCargo(
+    emptyGame,
+    "unobtainium",
+    2,
+    goods,
+    cargoCompartmentCapacities(20),
+  );
+  assert.equal(rejected.granted, 0);
+  assert.ok(rejected.reason);
+  assert.equal(emptyGame.cargoLots.length, 0);
 });

@@ -3,6 +3,7 @@
 
 import { continentalCoast, ruggedCoast } from "./core/coastlines.js";
 import { pointInPolygon, polygonCentroid } from "./core/geometry.js";
+import { RESOURCE_DISCOVERY_TYPES } from "./core/discoveries.js";
 
 export const HOME_PORT = {
   name: "Goldhaven",
@@ -490,19 +491,45 @@ const discoveryFactions = [
   "Reedboat Families",
 ];
 
-// Fill the expanded world with a deterministic catalog of one hundred unique
-// finds. Positions follow open-water bands rather than random generation, so
-// old and new saves always share the same chart.
-for (let index = discoverySites.length; index < 100; index++) {
-  const feature = discoveryFeatures[index % discoveryFeatures.length];
-  const givenName = discoveryNames[(index * 7) % discoveryNames.length];
+// Fill the expanded world with a deterministic catalog of unique finds.
+// Positions follow open-water bands rather than random generation, so old and
+// new saves always share the same chart. The first BASE_DISCOVERY_SITES entries
+// form the shared chart; the entries beyond that are extra resource deposits
+// (the discovery types that yield recoverable cargo), appended after the base
+// catalog so older saves keep their existing finds at the same coordinates.
+const BASE_DISCOVERY_SITES = 100;
+const EXTRA_RESOURCE_DEPOSITS = 32;
+const resourceFeatures = discoveryFeatures.filter((feature) =>
+  RESOURCE_DISCOVERY_TYPES.has(feature.type),
+);
+const usedNames = new Set();
+for (
+  let index = discoverySites.length;
+  index < BASE_DISCOVERY_SITES + EXTRA_RESOURCE_DEPOSITS;
+  index++
+) {
+  const extra = index >= BASE_DISCOVERY_SITES;
+  const feature = extra
+    ? resourceFeatures[(index - BASE_DISCOVERY_SITES) % resourceFeatures.length]
+    : discoveryFeatures[index % discoveryFeatures.length];
+  let nameSlot = (index * 7) % discoveryNames.length;
+  let givenName = discoveryNames[nameSlot];
+  let name = `${givenName} ${feature.suffix}`;
+  while (usedNames.has(name)) {
+    nameSlot = (nameSlot + 1) % discoveryNames.length;
+    givenName = discoveryNames[nameSlot];
+    name = `${givenName} ${feature.suffix}`;
+  }
+  usedNames.add(name);
   const origin = discoveryPorts[index % discoveryPorts.length];
   const destination = discoveryPorts[(index * 7 + 3) % discoveryPorts.length];
   const seasonal = feature.type === "Seasonal fishing ground";
   discoverySites.push({
-    id: `charted-find-${String(index + 1).padStart(3, "0")}`,
+    id: extra
+      ? `resource-find-${String(index - BASE_DISCOVERY_SITES + 1).padStart(3, "0")}`
+      : `charted-find-${String(index + 1).padStart(3, "0")}`,
     type: feature.type,
-    name: `${givenName} ${feature.suffix}`,
+    name,
     x: 180 + ((index * 593) % 6040),
     y: 110 + ((index * 337) % 2050),
     radius: 38 + (index % 4) * 4,

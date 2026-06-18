@@ -26,11 +26,32 @@ test("production chains support the expanded manufactured-goods catalog", () => 
   assert.ok(outputs.has("tools"));
 });
 
-test("the world contains one hundred varied, uniquely identified discoveries", () => {
-  assert.equal(discoverySites.length, 100);
-  assert.equal(new Set(discoverySites.map((site) => site.id)).size, 100);
-  assert.equal(new Set(discoverySites.map((site) => site.name)).size, 100);
+test("the world contains a varied, uniquely identified set of discoveries", () => {
+  assert.equal(discoverySites.length, 132);
+  assert.equal(
+    new Set(discoverySites.map((site) => site.id)).size,
+    discoverySites.length,
+  );
+  assert.equal(
+    new Set(discoverySites.map((site) => site.name)).size,
+    discoverySites.length,
+  );
   assert.ok(new Set(discoverySites.map((site) => site.type)).size >= 10);
+  // The appended resource deposits are exactly the cargo-yielding types.
+  const resourceTypes = new Set([
+    "Hidden resource deposit",
+    "Salvage site",
+    "Smuggler cove",
+    "Rare ecosystem",
+  ]);
+  for (const site of discoverySites.filter((entry) =>
+    entry.id.startsWith("resource-find"),
+  )) {
+    assert.ok(
+      resourceTypes.has(site.type),
+      `${site.id} should be a resource deposit`,
+    );
+  }
 
   for (const site of discoverySites) {
     assert.ok(site.description);

@@ -1,8 +1,34 @@
+import { hash } from "./cargo.js";
+
 export const DISCOVERY_DISPOSITIONS = {
   secret: { label: "Keep secret" },
   sell: { label: "Sell the chart" },
   share: { label: "Share with faction" },
 };
+
+// Discovery types whose flavor promises recoverable goods. Finding one of
+// these grants a small cargo sample of the site's trade good.
+export const RESOURCE_DISCOVERY_TYPES = Object.freeze(
+  new Set([
+    "Hidden resource deposit",
+    "Salvage site",
+    "Smuggler cove",
+    "Rare ecosystem",
+  ]),
+);
+
+// A one-time sample recovered on find: the route's good and a deterministic
+// 1-3 units (per-site, so every save shares the same haul). Returns null when
+// the find yields no recoverable goods.
+export function discoverySample(site) {
+  if (!site || !RESOURCE_DISCOVERY_TYPES.has(site.type) || !site.route) {
+    return null;
+  }
+  return {
+    good: site.route.good,
+    units: 1 + (hash(site.id) % 3),
+  };
+}
 
 export function createDiscoveryState() {
   return {
@@ -25,23 +51,18 @@ export function normalizeDiscoveryState(value) {
   };
 }
 
-export function discoverNearby(state, catalog, position, day, distance) {
-  const discovered = [];
-  for (const site of catalog) {
-    if (site.requiresExpedition) continue;
-    if (state.found[site.id]) continue;
-    if (distance(position.x, position.y, site.x, site.y) > site.radius)
-      continue;
-    const record = {
-      id: site.id,
-      foundDay: day,
-      disposition: null,
-      resolvedDay: null,
-    };
-    state.found[site.id] = record;
-    discovered.push({ site, record });
-  }
-  return discovered;
+// Records that a discovery has been found (by clicking it, or as an expedition
+// reward). Creates the record if it is new, or returns the existing one.
+export function recordDiscovery(state, id, day) {
+  if (state.found[id]) return state.found[id];
+  const record = {
+    id,
+    foundDay: day,
+    disposition: null,
+    resolvedDay: null,
+  };
+  state.found[id] = record;
+  return record;
 }
 
 export function resolveDiscovery(state, catalog, id, disposition, day) {

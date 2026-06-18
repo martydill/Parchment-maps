@@ -47,7 +47,7 @@ export const CARGO_COMPARTMENTS = Object.freeze({
   },
 });
 
-function hash(text) {
+export function hash(text) {
   let value = 2166136261;
   for (const character of text) {
     value ^= character.charCodeAt(0);
@@ -285,6 +285,42 @@ export function syncCargoCounts(game, goods) {
     game.cargo[key] = lots.length;
     game.cargoCost[key] = lots.map((lot) => lot.cost);
   }
+}
+
+// Adds recovered cargo (a discovery sample, salved goods, etc.) to the hold,
+// respecting total capacity. Each lot is placed in the best available
+// compartment, mirroring the purchase flow. Returns how many actually went
+// aboard versus requested, so callers can report partial/overflow cases.
+export function grantCargo(
+  game,
+  goodKey,
+  units,
+  goods,
+  capacities,
+  { origin = "Survey", day = 1 } = {},
+) {
+  const good = goods[goodKey];
+  if (!good) return { granted: 0, requested: units, reason: "Unknown good." };
+  const total = Object.values(capacities).reduce(
+    (sum, slots) => sum + (Number(slots) || 0),
+    0,
+  );
+  const space = Math.max(0, total - (game.cargoLots?.length || 0));
+  const granted = Math.min(Math.max(0, Math.floor(units)), space);
+  for (let index = 0; index < granted; index += 1) {
+    const lot = createCargoLot({
+      key: goodKey,
+      cost: good.base,
+      origin,
+      day,
+      sequence: game.cargoLots.length,
+      good,
+    });
+    lot.compartment = bestCargoCompartment(lot, capacities, game.cargoLots);
+    game.cargoLots.push(lot);
+  }
+  syncCargoCounts(game, goods);
+  return { granted, requested: units };
 }
 
 export function cargoValueMultiplier(lot, destination, good = {}) {
