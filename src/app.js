@@ -3718,6 +3718,7 @@ function update(dt) {
         type: "storm",
         cycle,
         voyageDistance: game.voyageDistance,
+        day: game.day,
       });
       openMaritimeHazard("storm", {
         name: weather.name,
@@ -5228,9 +5229,9 @@ function openMaritimeHazard(type, details) {
           ["force", "Keep way on and force the passage"],
         ]
       : [
-          ["heave-to", "Heave to under shortened canvas"],
-          ["seek-lee", "Seek shelter in the nearest lee"],
-          ["run", "Run before the storm"],
+          ["heave-to", "Heave to · 1 day, light strain"],
+          ["seek-lee", "Seek lee · 2 days, extra provisions"],
+          ["run", "Run before it · heavy rigging risk"],
         ];
   document.getElementById("hazardKicker").textContent =
     type === "shoal" ? "Breakers under the bow" : "Heavy weather closes in";
@@ -5285,6 +5286,10 @@ function chooseMaritimeHazardAction(action) {
     0,
     game.operations.provisions - (result.provisionsUsed || 0),
   );
+  if (result.daysLost) {
+    advanceDays(result.daysLost);
+    result.description += ` The maneuver cost ${result.daysLost} day${result.daysLost === 1 ? "" : "s"}.`;
+  }
   ship.speed *= result.speedMultiplier;
   if (result.cargoLossRisk > 0.2 && game.cargoLots.length) {
     const lost = game.cargoLots.shift();

@@ -25,10 +25,16 @@ test("maritime hazard state normalizes legacy and malformed saves", () => {
   assert.deepEqual(
     normalizeMaritimeHazardState({
       lastStormCycle: 2.8,
+      lastStormDay: 9.7,
       lastShoalDistance: 140.5,
       encounters: -3,
     }),
-    { lastStormCycle: 2, lastShoalDistance: 140.5, encounters: 0 },
+    {
+      lastStormCycle: 2,
+      lastStormDay: 9,
+      lastShoalDistance: 140.5,
+      encounters: 0,
+    },
   );
   assert.deepEqual(
     normalizeMaritimeHazardState({}),
@@ -80,22 +86,33 @@ test("shoal exposure uses elliptical bounds and wrapped longitude", () => {
 
 test("storms trigger once per sufficiently rough weather cycle", () => {
   assert.equal(stormCycle(1, 0), 0);
-  assert.equal(stormCycle(2, 500), 1);
+  assert.equal(stormCycle(4, 400), 1);
   assert.equal(
     shouldTriggerStorm(createMaritimeHazardState(), {
       day: 1,
       voyageDistance: 0,
-      roughness: 0.5,
+      roughness: 0.6,
     }),
     true,
   );
   assert.equal(
     shouldTriggerStorm(
-      { lastStormCycle: 0 },
+      { lastStormCycle: 0, lastStormDay: -10 },
       {
         day: 1,
         voyageDistance: 0,
-        roughness: 0.5,
+        roughness: 0.6,
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldTriggerStorm(
+      { lastStormCycle: -1, lastStormDay: 1 },
+      {
+        day: 3,
+        voyageDistance: 0,
+        roughness: 0.6,
       },
     ),
     false,
@@ -104,7 +121,7 @@ test("storms trigger once per sufficiently rough weather cycle", () => {
     shouldTriggerStorm(createMaritimeHazardState(), {
       day: 1,
       voyageDistance: 0,
-      roughness: 0.2,
+      roughness: 0.5,
     }),
     false,
   );
@@ -115,9 +132,11 @@ test("hazard encounters update the matching persistent cooldown", () => {
     type: "storm",
     cycle: 3,
     voyageDistance: 400,
+    day: 12,
   });
   assert.deepEqual(storm, {
     lastStormCycle: 3,
+    lastStormDay: 12,
     lastShoalDistance: -1_000_000_000,
     encounters: 1,
   });
@@ -127,7 +146,12 @@ test("hazard encounters update the matching persistent cooldown", () => {
       cycle: 4,
       voyageDistance: 700,
     }),
-    { lastStormCycle: 3, lastShoalDistance: 700, encounters: 2 },
+    {
+      lastStormCycle: 3,
+      lastStormDay: 12,
+      lastShoalDistance: 700,
+      encounters: 2,
+    },
   );
 });
 
@@ -182,6 +206,8 @@ test("storm decisions distinguish shelter, endurance, and speed", () => {
   });
   assert.equal(heave.speedMultiplier, 0);
   assert.equal(heave.provisionsUsed, 1);
+  assert.equal(heave.daysLost, 1);
+  assert.ok(heave.componentDamage.hull >= 1);
   const shelter = resolveStormAction({
     action: "seek-lee",
     roughness: 0.8,
@@ -189,6 +215,7 @@ test("storm decisions distinguish shelter, endurance, and speed", () => {
   });
   assert.equal(shelter.moraleChange, 3);
   assert.equal(shelter.provisionsUsed, 2);
+  assert.equal(shelter.daysLost, 2);
   const dangerousRun = resolveStormAction({
     action: "run",
     roughness: 1,
@@ -196,6 +223,7 @@ test("storm decisions distinguish shelter, endurance, and speed", () => {
   });
   assert.equal(dangerousRun.moraleChange, -5);
   assert.ok(dangerousRun.componentDamage.rigging > 1);
+  assert.equal(dangerousRun.daysLost, 0);
   assert.equal(
     resolveStormAction({
       action: "run",

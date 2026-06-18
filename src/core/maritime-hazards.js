@@ -3,6 +3,7 @@ import { clamp, wrappedDelta } from "./math.js";
 export function createMaritimeHazardState() {
   return {
     lastStormCycle: -1,
+    lastStormDay: -1_000_000_000,
     lastShoalDistance: -1_000_000_000,
     encounters: 0,
   };
@@ -15,6 +16,9 @@ export function normalizeMaritimeHazardState(value) {
     lastStormCycle: Math.floor(
       Number(value.lastStormCycle ?? fresh.lastStormCycle),
     ),
+    lastStormDay: Number.isFinite(Number(value.lastStormDay))
+      ? Math.floor(Number(value.lastStormDay))
+      : fresh.lastStormDay,
     lastShoalDistance: Number.isFinite(Number(value.lastShoalDistance))
       ? Number(value.lastShoalDistance)
       : fresh.lastShoalDistance,
@@ -64,26 +68,35 @@ export function shoalAtPosition(position, shoals, worldWidth) {
   return nearest;
 }
 
-export function stormCycle(day, voyageDistance, interval = 1050) {
+export function stormCycle(day, voyageDistance, interval = 2200) {
   return Math.floor(((day - 1) * 620 + voyageDistance) / interval);
 }
 
 export function shouldTriggerStorm(
   hazardState,
-  { day, voyageDistance, roughness },
+  { day, voyageDistance, roughness, minRoughness = 0.52, cooldownDays = 3 },
 ) {
   const state = normalizeMaritimeHazardState(hazardState);
   const cycle = stormCycle(day, voyageDistance);
-  return roughness >= 0.42 && cycle > state.lastStormCycle;
+  return (
+    roughness >= minRoughness &&
+    cycle > state.lastStormCycle &&
+    day - state.lastStormDay >= cooldownDays
+  );
 }
 
 export function markHazardEncounter(
   hazardState,
-  { type, cycle, voyageDistance },
+  { type, cycle, voyageDistance, day },
 ) {
   const next = normalizeMaritimeHazardState(hazardState);
   next.encounters += 1;
-  if (type === "storm") next.lastStormCycle = cycle;
+  if (type === "storm") {
+    next.lastStormCycle = cycle;
+    const encounterDay = Number(day);
+    if (Number.isFinite(encounterDay))
+      next.lastStormDay = Math.max(next.lastStormDay, Math.floor(encounterDay));
+  }
   if (type === "shoal") next.lastShoalDistance = voyageDistance;
   return next;
 }
@@ -148,11 +161,12 @@ export function resolveStormAction({
       description:
         "The ship rode out the worst of the squall under shortened canvas.",
       componentDamage: {
-        hull: Math.round(danger * 3),
-        rigging: Math.round(danger * 2),
+        hull: Math.max(1, Math.round(1 + danger * 3)),
+        rigging: Math.max(1, Math.round(1 + danger * 2)),
       },
       moraleChange: 1,
       provisionsUsed: 1,
+      daysLost: 1,
       speedMultiplier: 0,
     };
   if (action === "seek-lee")
@@ -160,9 +174,10 @@ export function resolveStormAction({
       outcome: "Shelter found",
       description:
         "Careful piloting found a lee that spared the hull, though the detour cost time.",
-      componentDamage: { rigging: Math.round(danger * 2) },
+      componentDamage: { rigging: Math.max(0, Math.round(danger * 2)) },
       moraleChange: 3,
       provisionsUsed: 2,
+      daysLost: 2,
       speedMultiplier: 0.18,
     };
   const damage = Math.max(1, Math.round(2 + danger * 8));
@@ -177,6 +192,7 @@ export function resolveStormAction({
     },
     moraleChange: danger > 0.55 ? -5 : 2,
     provisionsUsed: 0,
+    daysLost: 0,
     speedMultiplier: 0.72,
   };
 }
