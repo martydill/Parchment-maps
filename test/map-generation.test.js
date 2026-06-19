@@ -241,3 +241,153 @@ test("unreachable point recovery keeps cities unchanged without open water or va
 
   assert.deepEqual(cities, [{ name: "Boxed", x: 100, y: 100 }]);
 });
+
+test("point separation ignores invalid settings and locked overlaps", () => {
+  const invalidWidth = [{ name: "Invalid", x: 0, y: 0 }];
+  assert.equal(separateWrappedPoints(invalidWidth, { width: 0 }), invalidWidth);
+
+  const invalidDistance = [{ name: "Invalid distance", x: 0, y: 0 }];
+  assert.equal(
+    separateWrappedPoints(invalidDistance, { width: 100, minDistance: 0 }),
+    invalidDistance,
+  );
+
+  const locked = [
+    { name: "A", x: 10, y: 10 },
+    { name: "B", x: 10, y: 10 },
+  ];
+  separateWrappedPoints(locked, {
+    width: 100,
+    minDistance: 20,
+    locked: () => true,
+  });
+  assert.deepEqual(locked, [
+    { name: "A", x: 10, y: 10 },
+    { name: "B", x: 10, y: 10 },
+  ]);
+});
+
+test("unreachable point recovery rejects each malformed search option", () => {
+  const invalidOptions = [
+    { isOpen: () => true, width: Number.NaN },
+    { isOpen: () => true, width: 0 },
+    { isOpen: () => true, width: 100, maxReach: -1 },
+    { isOpen: () => true, width: 100, searchRadius: 0 },
+    { isOpen: () => true, width: 100, step: 0 },
+    { isOpen: () => true, width: 100, samples: 0 },
+  ];
+
+  for (const options of invalidOptions) {
+    const cities = [{ name: "Harbor", x: 20, y: 30 }];
+    assert.equal(moveUnreachablePointsToOpenWater(cities, options), cities);
+    assert.deepEqual(cities, [{ name: "Harbor", x: 20, y: 30 }]);
+  }
+});
+
+test("map seed fallback handles empty entropy and missing browser crypto", () => {
+  assert.notEqual(createDistinctMapSeed("old", new Uint32Array()), "old");
+
+  const originalCrypto = globalThis.crypto;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  try {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: undefined,
+    });
+    assert.notEqual(createDistinctMapSeed("old"), "old");
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "crypto", descriptor);
+    else if (originalCrypto !== undefined)
+      Object.defineProperty(globalThis, "crypto", {
+        configurable: true,
+        value: originalCrypto,
+      });
+  }
+});
+
+test("point separation moves only the unlocked side of an overlap", () => {
+  const firstLocked = [
+    { name: "A", x: 50, y: 50, locked: true },
+    { name: "B", x: 60, y: 50 },
+  ];
+  separateWrappedPoints(firstLocked, {
+    width: 200,
+    minDistance: 40,
+    locked: (record) => record.locked,
+  });
+  assert.deepEqual(firstLocked[0], { name: "A", x: 50, y: 50, locked: true });
+  assert.equal(firstLocked[1].x, 90);
+
+  const secondLocked = [
+    { name: "A", x: 50, y: 50 },
+    { name: "B", x: 60, y: 50, locked: true },
+  ];
+  separateWrappedPoints(secondLocked, {
+    width: 200,
+    minDistance: 40,
+    locked: (record) => record.locked,
+  });
+  assert.equal(secondLocked[0].x, 20);
+  assert.deepEqual(secondLocked[1], { name: "B", x: 60, y: 50, locked: true });
+});
+
+test("map seed fallback still avoids matching the previous seed", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  const originalNow = Date.now;
+  const originalRandom = Math.random;
+  try {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: { getRandomValues: undefined },
+    });
+    Date.now = () => 36;
+    Math.random = () => 0.5;
+
+    assert.equal(createDistinctMapSeed("10-i"), "10-i-new");
+  } finally {
+    Date.now = originalNow;
+    Math.random = originalRandom;
+    if (descriptor) Object.defineProperty(globalThis, "crypto", descriptor);
+  }
+});
+
+test("map point helpers accept their default option bags", () => {
+  const separated = [{ name: "Default", x: 0, y: 0 }];
+  assert.equal(separateWrappedPoints(separated), separated);
+
+  const reachable = [{ name: "Reachable", x: 5, y: 6 }];
+  assert.equal(
+    moveUnreachablePointsToOpenWater(reachable, {
+      isOpen: () => true,
+      width: 100,
+    }),
+    reachable,
+  );
+});
+
+test("point separation handles exact overlaps and reach checks around blocked points", () => {
+  const overlapping = [
+    { name: "A", x: 20, y: 20 },
+    { name: "B", x: 20, y: 20 },
+  ];
+  separateWrappedPoints(overlapping, {
+    width: 100,
+    minDistance: 20,
+    iterations: 1,
+  });
+  assert.deepEqual(overlapping, [
+    { name: "A", x: 10, y: 20 },
+    { name: "B", x: 30, y: 20 },
+  ]);
+
+  const nearWater = [{ name: "Near water", x: 50, y: 50 }];
+  moveUnreachablePointsToOpenWater(nearWater, {
+    isOpen: (x, y) => Math.hypot(x - 74, y - 50) < 1,
+    width: 200,
+    maxReach: 24,
+    searchRadius: 100,
+    step: 24,
+    samples: 4,
+  });
+  assert.deepEqual(nearWater, [{ name: "Near water", x: 50, y: 50 }]);
+});

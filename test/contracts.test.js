@@ -106,3 +106,38 @@ test("contractCargoCount sums cargo across active contracts", () => {
   assert.equal(contractCargoCount([]), 0);
   assert.equal(contractCargoCount([{ cargoUnits: 2 }, { cargoUnits: 3 }]), 5);
 });
+
+test("createContractOffer supports custom voyage estimates and single-faction ports", () => {
+  const custom = offer({
+    index: 1,
+    day: 0,
+    origin: {
+      name: "Harbor",
+      x: 0,
+      y: 0,
+      factions: [{ name: "Only Guild" }],
+    },
+    estimateDays: (distance, { origin, destination }) => {
+      assert.equal(distance, 1000);
+      assert.equal(origin.name, "Harbor");
+      assert.equal(destination.name, "Far");
+      return 9;
+    },
+  }).offer;
+
+  assert.equal(custom.faction, "Only Guild");
+  assert.equal(custom.estimatedDays, 9);
+});
+
+test("contract offer caches use default refresh and offer counts", () => {
+  assert.deepEqual(
+    contractOffersForPort({
+      day: 12,
+      createOffer: (index) => ({ id: `new-${index}` }),
+    }),
+    {
+      refreshedDay: 12,
+      offers: [{ id: "new-0" }, { id: "new-1" }, { id: "new-2" }],
+    },
+  );
+});

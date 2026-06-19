@@ -67,3 +67,15 @@ test("polygonCentroid averages vertices and expandPolygon moves them outward", (
     [2, 1],
   ]);
 });
+
+test("wrapped polygon checks fall back to plain polygons without a world width", () => {
+  const square = [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+  ];
+
+  assert.equal(pointInWrappedPolygon(5, 5, square, 0), true);
+  assert.equal(pointInWrappedPolygon(15, 5, square, 0), false);
+});
