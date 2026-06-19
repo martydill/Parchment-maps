@@ -4,10 +4,20 @@ import test from "node:test";
 import {
   createDistinctMapSeed,
   createMapTransform,
+  moveUnreachablePointsToOpenWater,
+  separateWrappedPoints,
   transformPath,
   transformPointRecord,
   transformTuple,
 } from "../src/core/map-generation.js";
+
+function wrappedDistance(a, b, width) {
+  let dx =
+    (((b.x % width) + width) % width) - (((a.x % width) + width) % width);
+  if (dx > width / 2) dx -= width;
+  if (dx < -width / 2) dx += width;
+  return Math.hypot(dx, b.y - a.y);
+}
 
 test("map seed generation always differs from the previous seed", () => {
   assert.equal(
@@ -126,4 +136,108 @@ test("map helpers transform records, tuples, and paths in place", () => {
   assert.equal(labelTuple[2], "label");
   assert.notDeepEqual(path[0], [100, 200]);
   assert.notDeepEqual(path[1], [300, 400]);
+});
+
+test("point separation spaces nearby cities in a wrapping world", () => {
+  const cities = [
+    { name: "West", x: 12, y: 100 },
+    { name: "East", x: 790, y: 100 },
+    { name: "South", x: 100, y: 112 },
+  ];
+
+  assert.equal(
+    separateWrappedPoints(cities, { width: 800, minDistance: 80 }),
+    cities,
+  );
+
+  for (let a = 0; a < cities.length; a++) {
+    for (let b = a + 1; b < cities.length; b++) {
+      assert.ok(
+        wrappedDistance(cities[a], cities[b], 800) >= 79.999,
+        `${cities[a].name} and ${cities[b].name} should be separated`,
+      );
+    }
+  }
+
+  for (const city of cities) {
+    assert.ok(city.x >= 0 && city.x < 800);
+  }
+});
+
+test("point separation keeps locked cities fixed and clamps to map margins", () => {
+  const cities = [
+    { name: "Home", x: 400, y: 20, home: true },
+    { name: "Neighbor", x: 400, y: 24 },
+  ];
+
+  separateWrappedPoints(cities, {
+    width: 800,
+    height: 200,
+    minDistance: 80,
+    margin: 30,
+    locked: (city) => city.home,
+  });
+
+  assert.deepEqual(cities[0], { name: "Home", x: 400, y: 20, home: true });
+  assert.equal(cities[1].x, 400);
+  assert.equal(cities[1].y, 100);
+});
+
+test("unreachable point recovery moves inland cities to open water", () => {
+  const cities = [{ name: "Inland", x: 100, y: 100 }];
+  const isOpen = (x, y) =>
+    wrappedDistance({ x, y }, { x: 100, y: 100 }, 500) > 100;
+
+  assert.equal(
+    moveUnreachablePointsToOpenWater(cities, {
+      isOpen,
+      width: 500,
+      maxReach: 50,
+      searchRadius: 160,
+      step: 50,
+      samples: 4,
+    }),
+    cities,
+  );
+
+  assert.deepEqual(cities, [{ name: "Inland", x: 250, y: 100 }]);
+});
+
+test("unreachable point recovery leaves reachable and locked cities unchanged", () => {
+  const cities = [
+    { name: "Harbor", x: 80, y: 100 },
+    { name: "Near Shore", x: 100, y: 100 },
+    { name: "Home", x: 300, y: 100, home: true },
+  ];
+  const original = structuredClone(cities);
+  const isOpen = (x, y) =>
+    x < 90 || wrappedDistance({ x, y }, { x: 300, y: 100 }, 500) > 100;
+
+  moveUnreachablePointsToOpenWater(cities, {
+    isOpen,
+    width: 500,
+    maxReach: 50,
+    searchRadius: 160,
+    step: 50,
+    samples: 4,
+    locked: (city) => city.home,
+  });
+
+  assert.deepEqual(cities, original);
+});
+
+test("unreachable point recovery keeps cities unchanged without open water or valid options", () => {
+  const cities = [{ name: "Boxed", x: 100, y: 100 }];
+
+  assert.equal(moveUnreachablePointsToOpenWater(cities), cities);
+  moveUnreachablePointsToOpenWater(cities, {
+    isOpen: () => false,
+    width: 500,
+    maxReach: 50,
+    searchRadius: 60,
+    step: 50,
+    samples: 4,
+  });
+
+  assert.deepEqual(cities, [{ name: "Boxed", x: 100, y: 100 }]);
 });

@@ -253,6 +253,8 @@ import {
 import {
   createDistinctMapSeed,
   createMapTransform,
+  moveUnreachablePointsToOpenWater,
+  separateWrappedPoints,
 } from "./core/map-generation.js";
 import {
   createMapRendering,
@@ -330,7 +332,23 @@ function transformWorldData() {
     }
     unwrapLandPolygon(land.poly);
   }
+  const openWaterAt = (x, y) =>
+    !lands.some((land) => pointInWrappedPolygon(x, y, land.poly, WORLD.w));
   for (const port of ports) mapRecord(port, port.land);
+  separateWrappedPoints(ports, {
+    width: WORLD.w,
+    height: WORLD.h,
+    minDistance: 150,
+    margin: 90,
+    locked: (port) => port.home,
+  });
+  moveUnreachablePointsToOpenWater(ports, {
+    isOpen: openWaterAt,
+    width: WORLD.w,
+    maxReach: 70,
+    searchRadius: 460,
+    locked: (port) => port.home,
+  });
   for (const site of discoverySites) mapRecord(site);
   for (const site of explorationSites) mapRecord(site);
   for (const tuple of forests) mapTuple(tuple);
