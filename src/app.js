@@ -1045,6 +1045,14 @@ const merchantColors = [
   "#6a5d52",
   "#8b8542",
 ];
+const merchantVesselClasses = [
+  "cutter",
+  "sloop",
+  "carrack",
+  "barque",
+  "brig",
+  "dhow",
+];
 const merchantShips = [];
 let selectedMerchant = null;
 
@@ -1923,6 +1931,7 @@ function initializeMerchantShips() {
           : ""),
       rivalId: RIVAL_CAPTAINS[i % RIVAL_CAPTAINS.length].id,
       color: merchantColors[i % merchantColors.length],
+      vesselClass: merchantVesselClasses[i % merchantVesselClasses.length],
       origin,
       destination,
       points,
@@ -2656,7 +2665,13 @@ function loadGameState() {
       const rival =
         rivalForMerchant(merchant) ||
         RIVAL_CAPTAINS[merchantIndex % RIVAL_CAPTAINS.length];
-      const restored = { ...merchant, rivalId: rival?.id };
+      const restored = {
+        ...merchant,
+        rivalId: rival?.id,
+        vesselClass:
+          merchant.vesselClass ||
+          merchantVesselClasses[merchantIndex % merchantVesselClasses.length],
+      };
       if (savedMapSeed) return restored;
       const mapped = mapTransform.point(merchant.x, merchant.y);
       return { ...restored, x: mapped.x, y: mapped.y };
@@ -3480,7 +3495,16 @@ function render() {
   ctx.translate(vw / 2, vh / 2);
   ctx.scale(z, z);
   ctx.translate(-camera.x, -camera.y);
-  drawShip(ctx, ship.x, ship.y, ship.angle, game.windAngle, game.windStrength);
+  drawShip(
+    ctx,
+    ship.x,
+    ship.y,
+    ship.angle,
+    game.windAngle,
+    game.windStrength,
+    game.shipUpgrades.activeClass,
+    z,
+  );
   if (nearPort) {
     const px = nearestWrappedX(nearPort.x, ship.x);
     ctx.strokeStyle = "rgba(173,54,39,.85)";
@@ -6588,7 +6612,15 @@ function renderChart() {
   c.save();
   c.translate(wrapX(ship.x) * sx, ship.y * sy);
   c.scale(0.5, 0.5);
-  drawShip(c, 0, 0, ship.angle, game.windAngle, game.windStrength);
+  drawShip(
+    c,
+    0,
+    0,
+    ship.angle,
+    game.windAngle,
+    game.windStrength,
+    game.shipUpgrades.activeClass,
+  );
   c.restore();
   renderChartedCities();
 }

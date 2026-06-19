@@ -77,48 +77,149 @@ function strokeHandDrawn(c, drawPath, color, width, z = 1) {
   c.restore();
 }
 
-export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
-  c.save();
-  c.translate(renderX, merchant.y);
-  c.rotate(merchant.angle + Math.PI / 2);
+const SHIP_DRAW_PROFILES = Object.freeze({
+  cutter: Object.freeze({
+    shadow: [3, 5, 7, 16],
+    bow: -14,
+    stern: 16,
+    beam: 6,
+    waist: 5,
+    deckY: 7,
+    mastY: -9,
+    masts: [0],
+    sail: "gaff",
+    pennantY: -5,
+  }),
+  sloop: Object.freeze({
+    shadow: [4, 5, 6, 18],
+    bow: -18,
+    stern: 15,
+    beam: 4.4,
+    waist: 3.8,
+    deckY: 7,
+    mastY: -11,
+    masts: [0],
+    sail: "tall",
+    pennantY: -7,
+  }),
+  carrack: Object.freeze({
+    shadow: [4, 6, 10, 19],
+    bow: -15,
+    stern: 18,
+    beam: 8.5,
+    waist: 7.2,
+    deckY: 6,
+    mastY: -9,
+    masts: [-4, 4],
+    sail: "square",
+    sternCastle: true,
+    pennantY: -8,
+  }),
+  barque: Object.freeze({
+    shadow: [4, 6, 7, 20],
+    bow: -18,
+    stern: 18,
+    beam: 5.8,
+    waist: 4.9,
+    deckY: 8,
+    mastY: -12,
+    masts: [-3, 3],
+    sail: "split",
+    lookout: true,
+    pennantY: -9,
+  }),
+  brig: Object.freeze({
+    shadow: [4, 6, 8, 18],
+    bow: -16,
+    stern: 17,
+    beam: 7,
+    waist: 5.8,
+    deckY: 7,
+    mastY: -10,
+    masts: [-3, 4],
+    sail: "square",
+    guns: true,
+    pennantY: -6,
+  }),
+  dhow: Object.freeze({
+    shadow: [4, 5, 8, 17],
+    bow: -17,
+    stern: 15,
+    beam: 5.6,
+    waist: 4.2,
+    deckY: 7,
+    mastY: -10,
+    masts: [0],
+    sail: "lateen",
+    outrigger: true,
+    pennantY: -6,
+  }),
+});
+
+const SHIP_PROFILE_IDS = Object.freeze(Object.keys(SHIP_DRAW_PROFILES));
+
+function shipDrawProfile(vesselClass, fallbackSeed = 0) {
+  if (SHIP_DRAW_PROFILES[vesselClass]) return SHIP_DRAW_PROFILES[vesselClass];
+  const index = Math.abs(Math.floor(fallbackSeed)) % SHIP_PROFILE_IDS.length;
+  return SHIP_DRAW_PROFILES[SHIP_PROFILE_IDS[index]];
+}
+
+function drawHullPath(c, profile) {
+  c.beginPath();
+  c.moveTo(0, profile.bow);
+  c.quadraticCurveTo(profile.beam, profile.bow * 0.35, profile.waist, 9);
+  c.quadraticCurveTo(profile.beam * 0.75, profile.stern - 3, 0, profile.stern);
+  c.quadraticCurveTo(-profile.beam * 0.8, profile.stern - 3, -profile.waist, 8);
+  c.quadraticCurveTo(-profile.beam, profile.bow * 0.35, 0, profile.bow);
+  c.closePath();
+}
+
+function drawShipShape(c, profile, color, z, bx = 0, by = 0) {
   c.fillStyle = "rgba(35,24,14,.2)";
   c.beginPath();
-  c.ellipse(3, 5, 7, 16, -0.08, 0, Math.PI * 2);
+  c.ellipse(...profile.shadow, -0.08, 0, Math.PI * 2);
   c.fill();
 
   c.fillStyle = "#704425";
-  c.beginPath();
-  c.moveTo(0, -14);
-  c.quadraticCurveTo(7, -5, 6, 9);
-  c.quadraticCurveTo(4, 13, 0, 16);
-  c.quadraticCurveTo(-5, 12, -6, 8);
-  c.quadraticCurveTo(-7, -5, 0, -14);
-  c.closePath();
+  drawHullPath(c, profile);
   c.fill();
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(0, -14);
-      c.quadraticCurveTo(7, -5, 6, 9);
-      c.quadraticCurveTo(4, 13, 0, 16);
-      c.quadraticCurveTo(-5, 12, -6, 8);
-      c.quadraticCurveTo(-7, -5, 0, -14);
-      c.closePath();
-    },
-    "#2b1a10",
-    1.25,
-    z,
-  );
+  strokeHandDrawn(c, () => drawHullPath(c, profile), "#2b1a10", 1.25, z);
+
+  if (profile.sternCastle) {
+    c.fillStyle = "rgba(47,29,17,.28)";
+    c.fillRect(-profile.beam * 0.65, 8, profile.beam * 1.3, 5.5);
+  }
+  if (profile.outrigger) {
+    strokeHandDrawn(
+      c,
+      () => {
+        c.beginPath();
+        c.moveTo(-profile.beam - 4, -2);
+        c.quadraticCurveTo(-profile.beam - 7, 5, -profile.beam - 5, 13);
+        c.moveTo(-profile.beam - 1, 2);
+        c.lineTo(-profile.beam - 5, 8);
+      },
+      "#342116",
+      0.8,
+      z,
+    );
+  }
 
   strokeHandDrawn(
     c,
     () => {
       c.beginPath();
-      c.moveTo(-4, 7);
-      c.quadraticCurveTo(0, 10, 5, 7);
-      c.moveTo(0, -10);
-      c.lineTo(0, 9);
+      c.moveTo(-profile.waist * 0.75, profile.deckY);
+      c.quadraticCurveTo(
+        0,
+        profile.deckY + 3,
+        profile.waist * 0.85,
+        profile.deckY,
+      );
+      for (const mastX of profile.masts) {
+        c.moveTo(mastX, profile.bow + 4);
+        c.lineTo(mastX, profile.stern - 7);
+      }
     },
     "#342116",
     0.9,
@@ -126,33 +227,99 @@ export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
   );
 
   c.fillStyle = "#ead9aa";
-  c.beginPath();
-  c.moveTo(1, -9);
-  c.quadraticCurveTo(7, -4, 9, 4);
-  c.quadraticCurveTo(5, 3, 1, 6);
-  c.closePath();
-  c.fill();
+  if (profile.sail === "lateen") {
+    c.beginPath();
+    c.moveTo(-1, profile.mastY - 3);
+    c.lineTo(11 + bx * 0.6, -2 + by * 0.6);
+    c.lineTo(-2, 7);
+    c.closePath();
+    c.fill();
+  } else if (profile.sail === "square") {
+    for (const mastX of profile.masts) {
+      c.beginPath();
+      c.moveTo(mastX - 6, profile.mastY);
+      c.lineTo(mastX + 7 + bx * 0.35, profile.mastY + 1 + by * 0.35);
+      c.lineTo(mastX + 5 + bx * 0.45, 4 + by * 0.45);
+      c.lineTo(mastX - 5, 5);
+      c.closePath();
+      c.fill();
+    }
+  } else if (profile.sail === "split") {
+    c.beginPath();
+    c.moveTo(-4, profile.mastY);
+    c.quadraticCurveTo(4 + bx * 0.5, -7 + by * 0.5, 9 + bx, 2 + by);
+    c.lineTo(-4, 5);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(3, -10);
+    c.quadraticCurveTo(10 + bx * 0.4, -5 + by * 0.4, 12 + bx, 5 + by);
+    c.lineTo(3, 7);
+    c.closePath();
+    c.fill();
+  } else {
+    c.beginPath();
+    c.moveTo(1, profile.mastY);
+    c.quadraticCurveTo(8 + bx * 0.65, -4 + by * 0.65, 10 + bx, 5 + by);
+    c.quadraticCurveTo(5 + bx * 0.35, 4 + by * 0.35, 1, 7);
+    c.closePath();
+    c.fill();
+  }
+
   strokeHandDrawn(
     c,
     () => {
       c.beginPath();
-      c.moveTo(1, -9);
-      c.quadraticCurveTo(7, -4, 9, 4);
-      c.quadraticCurveTo(5, 3, 1, 6);
-      c.closePath();
+      for (const mastX of profile.masts) {
+        c.moveTo(mastX - 5, profile.mastY + 1);
+        c.quadraticCurveTo(
+          mastX + 2 + bx * 0.35,
+          -3 + by * 0.35,
+          mastX + 6 + bx,
+          4 + by,
+        );
+      }
     },
     "#483321",
     0.85,
     z,
   );
 
-  c.fillStyle = merchant.color;
+  if (profile.lookout) {
+    c.fillStyle = "#4f321e";
+    c.beginPath();
+    c.arc(0, profile.bow + 4, 2.1, 0, Math.PI * 2);
+    c.fill();
+  }
+  if (profile.guns) {
+    c.fillStyle = "#27180f";
+    for (const x of [-profile.beam * 0.55, profile.beam * 0.55]) {
+      c.beginPath();
+      c.arc(x, 7, 1, 0, Math.PI * 2);
+      c.arc(x, 12, 1, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
+  c.fillStyle = color;
   c.beginPath();
-  c.moveTo(1, -5);
-  c.lineTo(7, -1);
-  c.lineTo(1, 1);
+  c.moveTo(1, profile.pennantY);
+  c.lineTo(7, profile.pennantY + 4);
+  c.lineTo(1, profile.pennantY + 6);
   c.closePath();
   c.fill();
+}
+
+export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
+  c.save();
+  c.translate(renderX, merchant.y);
+  c.rotate(merchant.angle + Math.PI / 2);
+  drawShipShape(
+    c,
+    shipDrawProfile(merchant.vesselClass, merchant.idNum),
+    merchant.color,
+    z,
+  );
   c.restore();
 }
 
@@ -398,7 +565,16 @@ export function drawWeatherEffects(c, opts) {
   drawWeatherLightning(c, lightning, vw, vh, time);
 }
 
-export function drawShip(c, x, y, a, windAngle = 0, windStrength = 0) {
+export function drawShip(
+  c,
+  x,
+  y,
+  a,
+  windAngle = 0,
+  windStrength = 0,
+  vesselClass = "cutter",
+  z = 1,
+) {
   c.save();
   c.translate(x, y);
   c.rotate(a + Math.PI / 2);
@@ -408,129 +584,15 @@ export function drawShip(c, x, y, a, windAngle = 0, windStrength = 0) {
   const flutter = Math.sin(performance.now() / 150) * (windStrength * 2);
   const bx = Math.cos(localWind) * (billow + flutter);
   const by = Math.sin(localWind) * (billow + flutter);
-
-  c.fillStyle = "rgba(37,25,14,.2)";
-  c.beginPath();
-  c.ellipse(5, 7, 12, 27, -0.08, 0, Math.PI * 2);
-  c.fill();
-
-  c.fillStyle = "#754726";
-  c.beginPath();
-  c.moveTo(0, -25);
-  c.quadraticCurveTo(13, -12, 11, 17);
-  c.quadraticCurveTo(8, 23, 0, 28);
-  c.quadraticCurveTo(-8, 23, -11, 17);
-  c.quadraticCurveTo(-13, -11, 0, -25);
-  c.closePath();
-  c.fill();
-  strokeHandDrawn(
+  c.scale(1.7, 1.7);
+  drawShipShape(
     c,
-    () => {
-      c.beginPath();
-      c.moveTo(0, -25);
-      c.quadraticCurveTo(13, -12, 11, 17);
-      c.quadraticCurveTo(8, 23, 0, 28);
-      c.quadraticCurveTo(-8, 23, -11, 17);
-      c.quadraticCurveTo(-13, -11, 0, -25);
-      c.closePath();
-    },
-    "#2b1b11",
-    2,
+    shipDrawProfile(vesselClass),
+    "#9c3d2c",
+    z / 1.7,
+    bx / 1.7,
+    by / 1.7,
   );
-
-  c.fillStyle = "rgba(47,29,17,.24)";
-  c.beginPath();
-  c.moveTo(-8, 14);
-  c.quadraticCurveTo(0, 19, 9, 14);
-  c.lineTo(8, 20);
-  c.quadraticCurveTo(0, 25, -8, 20);
-  c.closePath();
-  c.fill();
-
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(-9, 11);
-      c.quadraticCurveTo(0, 16, 10, 11);
-      c.moveTo(-8, 17);
-      c.quadraticCurveTo(0, 22, 8, 17);
-    },
-    "#4b2b19",
-    1,
-  );
-
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(0, -17);
-      c.lineTo(0, 15);
-    },
-    "#332217",
-    1.7,
-  );
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(-8, 13);
-      c.lineTo(0, -16);
-      c.lineTo(10, 12);
-    },
-    "rgba(61,43,28,.72)",
-    0.8,
-  );
-
-  c.fillStyle = "#ead9aa";
-  c.beginPath();
-  c.moveTo(1, -12);
-  c.quadraticCurveTo(12 + bx, -5 + by, 17 + bx, 6 + by);
-  c.quadraticCurveTo(9 + bx, 5 + by, 1, 10);
-  c.closePath();
-  c.fill();
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(1, -12);
-      c.quadraticCurveTo(12 + bx, -5 + by, 17 + bx, 6 + by);
-      c.quadraticCurveTo(9 + bx, 5 + by, 1, 10);
-      c.closePath();
-    },
-    "#493321",
-    1.25,
-  );
-
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(3, -8);
-      c.quadraticCurveTo(8 + bx * 0.5, -5 + by * 0.5, 13 + bx, 1 + by);
-      c.moveTo(3, 5);
-      c.quadraticCurveTo(8 + bx * 0.5, 3 + by * 0.5, 14 + bx, 4 + by);
-    },
-    "rgba(122,88,49,.55)",
-    0.7,
-  );
-
-  c.fillStyle = "#9c3d2c";
-  c.beginPath();
-  const jbx = bx * 0.4;
-  const jby = by * 0.4;
-  c.moveTo(2, -5);
-  c.quadraticCurveTo(8 + jbx, -2 + jby, 12 + jbx, 0 + jby);
-  c.lineTo(2, 3);
-  c.closePath();
-  c.fill();
-
-  c.fillStyle = "#d8b768";
-  for (const deckX of [-5, 5]) {
-    c.beginPath();
-    c.arc(deckX, 12, 1.1, 0, Math.PI * 2);
-    c.fill();
-  }
   c.restore();
 }
 
