@@ -1873,7 +1873,22 @@ button.parchment.secondary {
 }
 .hazard-actions {
   display: grid;
-  gap: 9px;
+  gap: 12px;
+}
+.hazard-action button.parchment {
+  margin: 0;
+}
+.hazard-actions .danger {
+  border-color: #843b2b;
+}
+.hazard-consequence {
+  margin: 4px auto 0;
+  max-width: 46ch;
+  text-align: center;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  font-style: italic;
+  opacity: 0.8;
 }
 .combat-scroll {
   width: min(92vw, 660px);

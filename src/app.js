@@ -3351,9 +3351,6 @@ function drawDynamicTradeWorld(c, z) {
     c.textAlign = "center";
     c.textBaseline = "middle";
     c.fillText(nearDiscovery.icon, 0, 0);
-    c.fillStyle = "rgba(47,29,15,.85)";
-    c.font = `700 ${12 / z}px Georgia`;
-    c.fillText("click to investigate", 0, -26 / z);
     c.restore();
   }
   for (const site of discoverySites) {
@@ -5232,8 +5229,52 @@ function openCombatEncounter(encounter, stats) {
   document.getElementById("combatPanel").style.display = "grid";
 }
 
+function resolvePendingHazard(pending, action, stats) {
+  if (pending.type === "shoal") {
+    return resolveShoalAction({
+      action,
+      exposure: pending.details.exposure,
+      speed: pending.details.speed,
+      seamanship: seamanshipBonus(),
+    });
+  }
+  return resolveStormAction({
+    action,
+    roughness: pending.details.roughness,
+    stormResistance: stats.stormResistance,
+    seamanship: seamanshipBonus(),
+  });
+}
+
+// Hazards resolve deterministically from values known when the modal opens, so
+// we can preview each option's exact outcome. This mirrors what
+// chooseMaritimeHazardAction applies so the caption never misleads.
+function describeHazardConsequence(result, hasCargo) {
+  const parts = [];
+  const damage = Object.entries(result.componentDamage || {})
+    .filter(([, amount]) => amount > 0)
+    .map(([key, amount]) => `${SHIP_COMPONENTS[key]?.label ?? key} -${amount}`);
+  if (damage.length) parts.push(damage.join(", "));
+  if (result.moraleChange)
+    parts.push(
+      `${result.moraleChange > 0 ? "+" : ""}${result.moraleChange} morale`,
+    );
+  if (result.provisionsUsed) parts.push(`-${result.provisionsUsed} provisions`);
+  if (result.daysLost)
+    parts.push(
+      `${result.daysLost} day${result.daysLost === 1 ? "" : "s"} lost`,
+    );
+  if (result.speedMultiplier < 1) {
+    const lost = Math.round((1 - result.speedMultiplier) * 100);
+    parts.push(lost >= 100 ? "ship stalled" : `-${lost}% speed`);
+  }
+  if (hasCargo && result.cargoLossRisk > 0.2) parts.push("loses 1 cargo lot");
+  return parts.length ? parts.join("  ·  ") : "no lasting harm";
+}
+
 function openMaritimeHazard(type, details) {
   pendingMaritimeHazard = { type, details };
+  const stats = operationalShipStats();
   const actions = document.getElementById("hazardActions");
   actions.innerHTML = "";
   const options =
@@ -5244,9 +5285,9 @@ function openMaritimeHazard(type, details) {
           ["force", "Keep way on and force the passage"],
         ]
       : [
-          ["heave-to", "Heave to · 1 day, light strain"],
-          ["seek-lee", "Seek lee · 2 days, extra provisions"],
-          ["run", "Run before it · heavy rigging risk"],
+          ["heave-to", "Heave to"],
+          ["seek-lee", "Seek lee"],
+          ["run", "Run before it"],
         ];
   document.getElementById("hazardKicker").textContent =
     type === "shoal" ? "Breakers under the bow" : "Heavy weather closes in";
@@ -5258,15 +5299,23 @@ function openMaritimeHazard(type, details) {
       : "The wind hardens, visibility closes, and steep seas begin breaking over the weather rail.";
   document.getElementById("hazardAssessment").textContent =
     type === "shoal"
-      ? `${Math.round(details.exposure * 100)}% bank exposure · ${shipSpeedKnots(details.speed, operationalShipStats().waterlineLengthFt).toFixed(1)} knots. Slowing down favors careful soundings; forcing the bank risks hull, rudder, and cargo fittings.`
-      : `${Math.round(details.roughness * 100)}% sea severity · storm resistance ${operationalShipStats().stormResistance.toFixed(2)}. Heaving to is safest, shelter costs time and provisions, and running preserves way at greater rigging risk.`;
+      ? `${Math.round(details.exposure * 100)}% bank exposure · ${shipSpeedKnots(details.speed, stats.waterlineLengthFt).toFixed(1)} knots. Slowing down favors careful soundings; forcing the bank risks hull, rudder, and cargo fittings.`
+      : `${Math.round(details.roughness * 100)}% sea severity · storm resistance ${stats.stormResistance.toFixed(2)}. Heaving to is safest, shelter costs time and provisions, and running preserves way at greater rigging risk.`;
+  const hasCargo = game.cargoLots.length > 0;
   for (const [action, label] of options) {
+    const result = resolvePendingHazard(pendingMaritimeHazard, action, stats);
+    const wrap = document.createElement("div");
+    wrap.className = "hazard-action";
     const button = document.createElement("button");
     button.className =
       "parchment" + (action === "force" || action === "run" ? " danger" : "");
     button.textContent = label;
     button.onclick = () => chooseMaritimeHazardAction(action);
-    actions.append(button);
+    const caption = document.createElement("p");
+    caption.className = "hazard-consequence";
+    caption.textContent = describeHazardConsequence(result, hasCargo);
+    wrap.append(button, caption);
+    actions.append(wrap);
   }
   document.getElementById("hazardPanel").style.display = "grid";
 }
@@ -5274,20 +5323,7 @@ function openMaritimeHazard(type, details) {
 function chooseMaritimeHazardAction(action) {
   if (!pendingMaritimeHazard) return;
   const stats = operationalShipStats();
-  const result =
-    pendingMaritimeHazard.type === "shoal"
-      ? resolveShoalAction({
-          action,
-          exposure: pendingMaritimeHazard.details.exposure,
-          speed: pendingMaritimeHazard.details.speed,
-          seamanship: seamanshipBonus(),
-        })
-      : resolveStormAction({
-          action,
-          roughness: pendingMaritimeHazard.details.roughness,
-          stormResistance: stats.stormResistance,
-          seamanship: seamanshipBonus(),
-        });
+  const result = resolvePendingHazard(pendingMaritimeHazard, action, stats);
   game.operations = applyComponentDamage(
     game.operations,
     result.componentDamage,
