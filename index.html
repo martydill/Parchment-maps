@@ -8,6 +8,18 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>The Gilded Archipelago — Encircling World V9</title>
+    <script>
+      (() => {
+        try {
+          const saved = JSON.parse(
+            localStorage.getItem("gilded-archipelago-save"),
+          );
+          if (saved?.version === 1 && saved.gameStarted === true) {
+            document.documentElement.classList.add("has-saved-voyage");
+          }
+        } catch {}
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css?v=10" />
   </head>
   <body>
@@ -139,12 +151,15 @@
         <span id="courseDetail">Take your first Guild commission.</span>
         <span id="courseAction">Show me where →</span>
       </button>
-      <button id="plottedCourse" type="button" hidden>
+      <div id="plottedCourse" hidden>
         <span class="course-kicker">Plotted course</span>
         <b id="plottedCourseTitle"></b>
         <span id="plottedCourseDetail"></span>
-        <span id="plottedCourseAction">Open chart · click to clear</span>
-      </button>
+        <span id="plottedCourseActions">
+          <button id="plottedCourseOpen" type="button">Open chart</button>
+          <button id="plottedCourseClear" type="button">Clear course</button>
+        </span>
+      </div>
       <button
         id="mapButton"
         class="main-icon-button"
@@ -260,7 +275,8 @@
         </p>
         <div class="intro-actions">
           <button class="parchment" id="beginButton" type="button">
-            Begin at Goldhaven
+            <span class="start-new-label">Begin at Goldhaven</span>
+            <span class="start-continue-label">Continue voyage</span>
           </button>
           <button class="parchment secondary" id="newMapButton" type="button">
             Generate another world

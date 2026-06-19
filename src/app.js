@@ -2823,13 +2823,44 @@ const ui = {
   plottedCourse: document.getElementById("plottedCourse"),
   plottedCourseTitle: document.getElementById("plottedCourseTitle"),
   plottedCourseDetail: document.getElementById("plottedCourseDetail"),
+  plottedCourseOpen: document.getElementById("plottedCourseOpen"),
+  plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
 const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
 const newMapButton = document.getElementById("newMapButton");
 document.getElementById("introWorldSeed").textContent = mapSeed;
+let restoredVoyageAwaitingStart = false;
+
+function revealStartedGame({
+  message = null,
+  openChart = true,
+  save = false,
+} = {}) {
+  intro.style.display = "none";
+  ui.dock.style.display = nearPort ? "block" : "none";
+  ui.town.style.display = nearPort ? "block" : "none";
+  revealCurrentView(true);
+  if (message) showMessage(message, 4.5);
+  if (save) saveGameState();
+  if (openChart) {
+    window.setTimeout(() => {
+      minimapWrap.style.display = "grid";
+      renderChart();
+    }, 0);
+  }
+}
 
 function beginGame() {
+  if (restoredVoyageAwaitingStart) {
+    restoredVoyageAwaitingStart = false;
+    revealStartedGame({
+      message: "Voyage restored from this browser.",
+      openChart: false,
+    });
+    return;
+  }
+
   nearPort = beginAtHomePort({
     camera,
     homePort: HOME_PORT,
@@ -2837,10 +2868,6 @@ function beginGame() {
     ship,
   });
   gameStarted = true;
-  intro.style.display = "none";
-  ui.dock.style.display = "block";
-  ui.town.style.display = "block";
-  revealCurrentView(true);
   addNews(
     "The first commission",
     "The Guild of Gilded Oars has posted three introductory commissions at Goldhaven. Fulfill them to build influence.",
@@ -2849,15 +2876,23 @@ function beginGame() {
     "Sails on the horizon",
     "Independent merchants now carry real cargo between the archipelago’s ports. Their arrivals will change local stock and prices.",
   );
-  showMessage(
-    "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
-    4.5,
-  );
-  saveGameState();
-  window.setTimeout(() => {
-    minimapWrap.style.display = "grid";
-    renderChart();
-  }, 0);
+  revealStartedGame({
+    message:
+      "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
+    save: true,
+  });
+}
+
+function prepareRestoredVoyageStartup() {
+  restoredVoyageAwaitingStart = true;
+  document.documentElement.classList.add("has-saved-voyage");
+  nearPort =
+    ports.find(
+      (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
+    ) || null;
+  ui.dock.style.display = nearPort ? "block" : "none";
+  ui.town.style.display = nearPort ? "block" : "none";
+  revealCurrentView(true);
 }
 
 bindBeginButton(beginButton, beginGame);
@@ -2988,7 +3023,11 @@ function followCurrentObjective() {
 }
 
 ui.course.addEventListener("click", followCurrentObjective);
-ui.plottedCourse.addEventListener("click", () => {
+ui.plottedCourseOpen.addEventListener("click", () => {
+  minimapWrap.style.display = "grid";
+  renderChart();
+});
+ui.plottedCourseClear.addEventListener("click", () => {
   const destination = game.navigation.destination;
   clearCourse(game.navigation);
   updateHud();
@@ -5268,7 +5307,66 @@ function openCombatEncounter(encounter, stats) {
     `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
   document.getElementById("combatEnemy").textContent =
     `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3`;
+  renderCombatActions();
   document.getElementById("combatPanel").style.display = "grid";
+}
+
+function previewCombatAction(action) {
+  return resolveCombatAction({
+    action,
+    attackStrength: pendingCombat.encounter.attackStrength,
+    defense:
+      pendingCombat.stats.defense + specialistCombatBonus(game.specialists),
+    maxSpeed: pendingCombat.stats.maxSpeed,
+    morale: game.operations.morale,
+    coins: game.coins,
+    seed: pendingCombat.seed,
+  });
+}
+
+function describeCombatConsequence(action, result) {
+  const outcomeLabels = {
+    escaped: "Escapes",
+    caught: "Caught",
+    parleyed: "Pays them off",
+    repelled: "Repels boarders",
+    boarded: "Boarded",
+    surrendered: "Surrenders",
+  };
+  const parts = [outcomeLabels[result.outcome] ?? result.outcome];
+  const damage = Object.entries(result.componentDamage || {})
+    .filter(([, amount]) => amount > 0)
+    .map(([key, amount]) => `${SHIP_COMPONENTS[key]?.label ?? key} -${amount}`);
+  if (damage.length) parts.push(damage.join(", "));
+  if (result.moraleChange)
+    parts.push(
+      `${result.moraleChange > 0 ? "+" : ""}${result.moraleChange} morale`,
+    );
+  if (result.coinsLost) parts.push(`-${result.coinsLost} crowns`);
+  if (action === "surrender") parts.push("Gunner loyalty -8");
+  return parts.join("  ·  ");
+}
+
+function renderCombatActions() {
+  const labels = {
+    flee: "Run under full sail",
+    parley: "Heave to and parley",
+    fight: "Clear the decks",
+    surrender: "Strike colors",
+  };
+  document.querySelectorAll("[data-combat-action]").forEach((button) => {
+    const action = button.dataset.combatAction;
+    const labelText = document.createElement("span");
+    labelText.className = "combat-action-label";
+    labelText.textContent = labels[action] ?? button.textContent.trim();
+    const consequence = document.createElement("span");
+    consequence.className = "combat-consequence";
+    consequence.textContent = describeCombatConsequence(
+      action,
+      previewCombatAction(action),
+    );
+    button.replaceChildren(labelText, consequence);
+  });
 }
 
 function resolvePendingHazard(pending, action, stats) {
@@ -5351,12 +5449,15 @@ function openMaritimeHazard(type, details) {
     const button = document.createElement("button");
     button.className =
       "parchment" + (action === "force" || action === "run" ? " danger" : "");
-    button.textContent = label;
+    const labelText = document.createElement("span");
+    labelText.className = "hazard-action-label";
+    labelText.textContent = label;
+    const consequence = document.createElement("span");
+    consequence.className = "hazard-consequence";
+    consequence.textContent = describeHazardConsequence(result, hasCargo);
+    button.append(labelText, consequence);
     button.onclick = () => chooseMaritimeHazardAction(action);
-    const caption = document.createElement("p");
-    caption.className = "hazard-consequence";
-    caption.textContent = describeHazardConsequence(result, hasCargo);
-    wrap.append(button, caption);
+    wrap.append(button);
     actions.append(wrap);
   }
   document.getElementById("hazardPanel").style.display = "grid";
@@ -6492,7 +6593,8 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
   if (loadGameState()) {
     updateHud();
     if (gameStarted) {
-      document.getElementById("intro").style.display = "none";
+      prepareRestoredVoyageStartup();
+      intro.style.display = "grid";
     }
     menuPanel.style.display = "none";
   }
@@ -6698,15 +6800,7 @@ camera.x = ship.x;
 camera.y = ship.y;
 updateHud();
 if (restoredSavedGame && gameStarted) {
-  intro.style.display = "none";
-  nearPort =
-    ports.find(
-      (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
-    ) || null;
-  ui.dock.style.display = nearPort ? "block" : "none";
-  ui.town.style.display = nearPort ? "block" : "none";
-  revealCurrentView(true);
-  showMessage("Voyage restored from this browser.", 3);
+  prepareRestoredVoyageStartup();
 } else if (new URLSearchParams(location.search).has("autostart")) {
   requestAnimationFrame(() => beginButton.click());
 }

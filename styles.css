@@ -89,7 +89,7 @@ body {
 #message {
   position: absolute;
   left: 50%;
-  top: calc(max(10px, env(safe-area-inset-top)) + 72px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 56px);
   transform: translateX(-50%);
   max-width: min(86vw, 540px);
   text-align: center;
@@ -487,6 +487,15 @@ button.parchment {
 .intro-actions button {
   margin: 0;
   white-space: nowrap;
+}
+.start-continue-label {
+  display: none;
+}
+.has-saved-voyage .start-new-label {
+  display: none;
+}
+.has-saved-voyage .start-continue-label {
+  display: inline;
 }
 #beginButton {
   box-shadow:
@@ -1871,18 +1880,34 @@ button.parchment.secondary {
   width: min(92vw, 660px);
   border-color: rgba(53, 100, 111, 0.72);
 }
+#hazardPanel .detail-card {
+  margin-bottom: 16px;
+}
 .hazard-actions {
   display: grid;
+  justify-items: center;
   gap: 12px;
 }
+.hazard-action {
+  display: flex;
+  justify-content: center;
+}
 .hazard-action button.parchment {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
   margin: 0;
+  min-height: 58px;
+  line-height: 1.2;
 }
 .hazard-actions .danger {
   border-color: #843b2b;
 }
+.hazard-action-label {
+  display: block;
+}
 .hazard-consequence {
-  margin: 4px auto 0;
+  display: block;
   max-width: 46ch;
   text-align: center;
   font-size: 12.5px;
@@ -1920,11 +1945,28 @@ button.parchment.secondary {
   gap: 9px;
 }
 .combat-actions button.parchment {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
   margin: 0;
+  min-height: 58px;
+  line-height: 1.2;
 }
 .combat-actions .danger {
   border-color: #843b2b;
   color: #67291f;
+}
+.combat-action-label {
+  display: block;
+}
+.combat-consequence {
+  display: block;
+  max-width: 46ch;
+  text-align: center;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  font-style: italic;
+  opacity: 0.8;
 }
 @media (max-width: 520px) {
   .combat-balance,
@@ -1948,6 +1990,9 @@ button.parchment.secondary {
 }
 .discovery-scroll {
   width: min(92vw, 600px);
+}
+#discoveryDisposition {
+  margin-top: 12px;
 }
 .report-seal {
   width: 94px;
@@ -2081,7 +2126,6 @@ button.parchment.secondary {
   border-left: 5px solid #66c8b5;
   border-radius: 8px;
   box-shadow: 0 7px 22px rgba(0, 0, 0, 0.42);
-  cursor: pointer;
 }
 #plottedCourse[hidden] {
   display: none;
@@ -2090,12 +2134,29 @@ button.parchment.secondary {
   font-size: 12px;
   line-height: 1.35;
 }
-#plottedCourseAction {
+#plottedCourseActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 4px;
+}
+#plottedCourseActions button {
+  min-height: 30px;
+  padding: 6px 9px;
+  color: #d8fbf1;
+  background: rgba(11, 37, 39, 0.72);
+  border: 1px solid rgba(159, 225, 210, 0.62);
+  border-radius: 6px;
   color: #9fe1d2;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  cursor: pointer;
+}
+#plottedCourseClear {
+  color: #ffd4c5;
+  border-color: rgba(215, 104, 76, 0.68);
 }
 #courseCard.ready {
   border-left-color: #69a866;
