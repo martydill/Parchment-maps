@@ -5,6 +5,9 @@ import {
   contractCargoCount,
   contractOffersForPort,
   createContractOffer,
+  createSurveyContractOffer,
+  surveyContractProgress,
+  surveyContractThemeCount,
 } from "../src/core/contracts.js";
 
 const ports = {
@@ -139,5 +142,297 @@ test("contract offer caches use default refresh and offer counts", () => {
       refreshedDay: 12,
       offers: [{ id: "new-0" }, { id: "new-1" }, { id: "new-2" }],
     },
+  );
+});
+
+test("survey contract catalogue has broad commission variety", () => {
+  assert.ok(surveyContractThemeCount() >= 18);
+
+  const titles = new Set(
+    Array.from(
+      { length: surveyContractThemeCount() },
+      (_, day) =>
+        createSurveyContractOffer({
+          origin: { name: "Harbor", factions: [] },
+          index: 2,
+          day: day + 10,
+          serial: 100 + day,
+        }).offer.title,
+    ),
+  );
+  assert.equal(titles.size, surveyContractThemeCount());
+});
+
+test("createSurveyContractOffer builds zero-hold exploration commissions", () => {
+  const result = createSurveyContractOffer({
+    origin: {
+      name: "Goldhaven",
+      factions: [{ name: "Royal Navy" }, { name: "Free Keel Brotherhood" }],
+    },
+    index: 0,
+    day: 1,
+    serial: 12,
+  });
+
+  assert.equal(result.nextSerial, 13);
+  assert.equal(result.offer.id, "S12");
+  assert.equal(result.offer.kind, "survey");
+  assert.equal(result.offer.cargoUnits, 0);
+  assert.equal(result.offer.destination, null);
+  assert.ok(result.offer.survey.required >= 1);
+  assert.deepEqual(result.offer.survey.completed, []);
+});
+
+test("surveyContractProgress completes matching discovery commissions once", () => {
+  const contract = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 13,
+    serial: 20,
+  }).offer;
+  assert.equal(contract.survey.key, "free-keel-secret");
+
+  const site = { id: "starfall", faction: "Free Keel Brotherhood" };
+  assert.equal(
+    surveyContractProgress(contract, {
+      type: "discovery",
+      site,
+      disposition: "sell",
+    }),
+    null,
+  );
+  assert.deepEqual(
+    surveyContractProgress(contract, {
+      type: "discovery",
+      site,
+      disposition: "secret",
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+  assert.equal(
+    surveyContractProgress(contract, {
+      type: "discovery",
+      site,
+      disposition: "secret",
+    }),
+    null,
+  );
+});
+
+test("surveyContractProgress tracks multi-site exploration commissions", () => {
+  const contract = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [{ name: "Navy" }] },
+    index: 2,
+    day: 10,
+    serial: 30,
+  }).offer;
+  assert.equal(contract.survey.key, "northern-chain");
+
+  assert.equal(
+    surveyContractProgress(contract, {
+      type: "exploration",
+      site: { id: "south", y: 900 },
+    }),
+    null,
+  );
+  assert.deepEqual(
+    surveyContractProgress(contract, {
+      type: "exploration",
+      site: { id: "north-1", y: 700 },
+    }),
+    { complete: false, completed: 1, required: 3 },
+  );
+  assert.deepEqual(
+    surveyContractProgress(contract, {
+      type: "exploration",
+      site: { id: "north-2", y: 650 },
+    }),
+    { complete: false, completed: 2, required: 3 },
+  );
+  assert.deepEqual(
+    surveyContractProgress(contract, {
+      type: "exploration",
+      site: { id: "north-3", y: 500 },
+    }),
+    { complete: true, completed: 3, required: 3 },
+  );
+});
+
+test("surveyContractProgress matches Glasswater, reef, and mineral objectives", () => {
+  const glasswater = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 11,
+    serial: 40,
+  }).offer;
+  assert.equal(glasswater.survey.key, "glasswater-passage");
+  assert.equal(glasswater.faction, "Chartmakers’ Hall");
+  assert.deepEqual(
+    surveyContractProgress(glasswater, {
+      type: "discovery",
+      disposition: "share",
+      site: {
+        id: "glass",
+        route: { origin: "Lethariel", destination: "Glasswater" },
+      },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+
+  const reef = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 12,
+    serial: 41,
+  }).offer;
+  assert.equal(reef.survey.key, "navy-reefs");
+  assert.deepEqual(
+    surveyContractProgress(reef, {
+      type: "exploration",
+      site: { id: "reef-1", hazards: "Hidden reefs, sudden squalls" },
+    }),
+    { complete: false, completed: 1, required: 2 },
+  );
+
+  const minerals = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 14,
+    serial: 42,
+  }).offer;
+  assert.equal(minerals.survey.key, "deep-delvers-minerals");
+  assert.deepEqual(
+    surveyContractProgress(minerals, {
+      type: "discovery",
+      disposition: "share",
+      site: { id: "ore", route: { good: "ore" } },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+});
+
+test("surveyContractProgress ignores malformed contracts and unknown themes", () => {
+  assert.equal(surveyContractProgress(null, { site: { id: "x" } }), null);
+  assert.equal(
+    surveyContractProgress({ kind: "cargo" }, { site: { id: "x" } }),
+    null,
+  );
+  assert.equal(
+    surveyContractProgress({ kind: "survey", survey: {} }, null),
+    null,
+  );
+  assert.equal(
+    surveyContractProgress(
+      {
+        kind: "survey",
+        survey: { key: "missing", target: "exploration", completed: [] },
+      },
+      { type: "exploration", site: { id: "x" } },
+    ),
+    null,
+  );
+});
+
+test("survey objective matchers cover fallback route and description branches", () => {
+  const glassByOrigin = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 11,
+    serial: 50,
+  }).offer;
+  assert.deepEqual(
+    surveyContractProgress(glassByOrigin, {
+      type: "discovery",
+      disposition: "share",
+      site: {
+        id: "glass-origin",
+        route: { origin: "Glasswater", destination: "Pearlstrand" },
+      },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+
+  const glassByBenefit = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 11,
+    serial: 51,
+  }).offer;
+  assert.deepEqual(
+    surveyContractProgress(glassByBenefit, {
+      type: "discovery",
+      disposition: "share",
+      site: { id: "glass-benefit", benefit: "Safer Glasswater passage." },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+
+  const mineralsByFaction = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 14,
+    serial: 52,
+  }).offer;
+  assert.deepEqual(
+    surveyContractProgress(mineralsByFaction, {
+      type: "discovery",
+      disposition: "share",
+      site: { id: "delver", faction: "Deep Delvers’ Union" },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+
+  const mineralsByType = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [] },
+    index: 2,
+    day: 14,
+    serial: 53,
+  }).offer;
+  assert.deepEqual(
+    surveyContractProgress(mineralsByType, {
+      type: "discovery",
+      disposition: "share",
+      site: { id: "deposit", type: "Hidden resource deposit" },
+    }),
+    { complete: true, completed: 1, required: 1 },
+  );
+});
+
+test("survey contracts cover sponsor and nonmatching progress branches", () => {
+  const freeKeel = createSurveyContractOffer({
+    origin: { name: "Harbor" },
+    index: 2,
+    day: 13,
+    serial: 60,
+  }).offer;
+  assert.equal(freeKeel.faction, "Free Keel Brotherhood");
+
+  const northern = createSurveyContractOffer({
+    origin: { name: "Harbor", factions: [{ name: "Surveyors" }] },
+    index: 2,
+    day: 10,
+    serial: 61,
+  }).offer;
+  assert.equal(
+    surveyContractProgress(northern, {
+      type: "discovery",
+      site: { id: "wrong-type", y: 500 },
+    }),
+    null,
+  );
+
+  assert.equal(
+    surveyContractProgress(
+      {
+        kind: "survey",
+        survey: {
+          key: "northern-chain",
+          target: "exploration",
+          completed: ["north"],
+        },
+      },
+      { type: "exploration", site: { id: "north", y: 500 } },
+    ),
+    null,
   );
 });
