@@ -4,11 +4,13 @@ import test from "node:test";
 import {
   advanceCrises,
   applyCrisisAftermath,
+  cargoInterventionStatus,
   CRISIS_TEMPLATES,
   createCrisisState,
   crisisAtPort,
   crisisEconomyModifiers,
   interveneInCrisis,
+  interveneInCrisisWithCargo,
   normalizeCrisisState,
 } from "../src/core/crises.js";
 
@@ -65,6 +67,66 @@ test("a funded intervention resolves only an active crisis", () => {
     interveneInCrisis(result.state, "missing", 500, 17).reason,
     "Unknown regional crisis.",
   );
+});
+
+test("cargo interventions require relief goods and consume matching lots", () => {
+  const active = advanceCrises(createCrisisState(), 28).state;
+  const partialCargo = [
+    { id: "medicine-1", key: "medicine" },
+    { id: "herbs-1", key: "herbs" },
+  ];
+  const partial = interveneInCrisisWithCargo(
+    active,
+    "fenFever",
+    partialCargo,
+    26,
+  );
+  assert.equal(partial.ok, false);
+  assert.equal(partial.reason, "Required relief cargo is not aboard.");
+  assert.deepEqual(partial.status.missing, { medicine: 1, herbs: 1 });
+  assert.equal(partial.cargoLots, partialCargo);
+
+  const cargoLots = [
+    { id: "medicine-1", key: "medicine" },
+    { id: "grain-1", key: "grain" },
+    { id: "medicine-2", key: "medicine" },
+    { id: "herbs-1", key: "herbs" },
+    { id: "herbs-2", key: "herbs" },
+  ];
+  const status = cargoInterventionStatus(CRISIS_TEMPLATES.fenFever, cargoLots);
+  assert.equal(status.ready, true);
+  assert.deepEqual(status.missing, {});
+
+  const result = interveneInCrisisWithCargo(active, "fenFever", cargoLots, 27);
+  assert.equal(result.ok, true);
+  assert.equal(result.state.arcs.fenFever.phase, "aftermath");
+  assert.equal(result.state.arcs.fenFever.outcome, "resolved");
+  assert.deepEqual(result.consumedLotIds, [
+    "medicine-1",
+    "medicine-2",
+    "herbs-1",
+    "herbs-2",
+  ]);
+  assert.deepEqual(result.cargoLots, [{ id: "grain-1", key: "grain" }]);
+});
+
+test("cargo interventions reject inactive, unknown, and unsupplied crises", () => {
+  const warning = advanceCrises(createCrisisState(), 12).state;
+  assert.equal(
+    interveneInCrisisWithCargo(warning, "loomUnrest", [], 12).reason,
+    "This crisis cannot be supplied at present.",
+  );
+  assert.equal(
+    interveneInCrisisWithCargo(warning, "missing", [], 12).reason,
+    "Unknown regional crisis.",
+  );
+  assert.equal(cargoInterventionStatus({}, []).ready, false);
+  assert.deepEqual(
+    cargoInterventionStatus(CRISIS_TEMPLATES.loomUnrest, [null, {}]).missing,
+    { grain: 3, tea: 1 },
+  );
+  const invalidCargo = interveneInCrisisWithCargo(warning, "missing", null, 12);
+  assert.deepEqual(invalidCargo.cargoLots, []);
 });
 
 test("crisis modifiers distinguish warning, emergency, and both aftermaths", () => {
