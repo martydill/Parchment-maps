@@ -29,6 +29,7 @@ export function createExplorationState() {
     expeditionSerial: 1,
     sites: {},
     history: [],
+    aftermath: [],
   };
 }
 
@@ -45,6 +46,9 @@ export function normalizeExplorationState(value) {
         ? value.sites
         : fresh.sites,
     history: Array.isArray(value.history) ? value.history : fresh.history,
+    aftermath: Array.isArray(value.aftermath)
+      ? value.aftermath.slice(0, 40)
+      : fresh.aftermath,
   };
 }
 
@@ -193,6 +197,133 @@ function resolveHazardEffects({
 }
 
 /* node:coverage enable */
+/* node:coverage disable */
+const AFTERMATH_FACTIONS = Object.freeze([
+  "Guild of Gilded Oars",
+  "Free Keel Brotherhood",
+  "Lantern League",
+  "Velvet Circle",
+  "Deep Delvers’ Union",
+  "Pearl Senate",
+]);
+
+const CREW_TRAITS = Object.freeze([
+  { name: "Sure-footed", role: "deck", experience: 3, loyalty: 1 },
+  { name: "Shorewise", role: "marines", experience: 2, loyalty: 2 },
+  { name: "Relic-minded", role: "stewards", experience: 2, loyalty: 1 },
+  { name: "Field repairer", role: "artisans", experience: 3, loyalty: 1 },
+]);
+
+function siteText(site) {
+  return `${site?.name || ""} ${site?.type || ""} ${site?.objective || ""} ${site?.hazards || ""}`;
+}
+
+export function resolveExpeditionAftermath({ site, approach, record }) {
+  if (!site || !record) return [];
+  const events = [];
+  const base = `${site.id}:${record.id}:${approach}:aftermath`;
+  const roll = (salt) => hash(`${base}:${salt}`) % 100;
+  const completedDay = Math.max(
+    0,
+    Math.floor(Number(record.completedDay) || 0),
+  );
+  const text = siteText(site).toLowerCase();
+
+  if (record.injuries > 0) {
+    const role = roll("injury-role") >= 55 ? "deck" : "marines";
+    events.push({
+      type: "crew-treatment",
+      title: "Landing-party injury",
+      summary: `${record.injuries} ${role} hand${record.injuries === 1 ? " needs" : "s need"} treatment after ${site.name}.`,
+      role,
+      injuries: record.injuries,
+      treatmentCost: 6 + record.injuries * 4,
+      dueDay: completedDay + 5,
+    });
+  }
+
+  if (record.success && (record.exceptional || roll("trait") < 34)) {
+    const trait = CREW_TRAITS[roll("trait-kind") % CREW_TRAITS.length];
+    events.push({
+      type: "crew-trait",
+      title: `${trait.name} ${trait.role}`,
+      summary: `The ${trait.role} learned ${trait.name.toLowerCase()} habits while surveying ${site.name}.`,
+      role: trait.role,
+      trait: trait.name,
+      experience: trait.experience + (record.exceptional ? 1 : 0),
+      loyalty: trait.loyalty,
+    });
+  }
+
+  if (record.success && (record.reward >= 50 || roll("rival") < 28)) {
+    events.push({
+      type: "rival-interest",
+      title: "Rival hears of the site",
+      summary: `Dockside talk carries news of ${site.name} to a rival captain.`,
+      rivalIndex: roll("rival-pick") % 9,
+      reputation: 3,
+      relationship: -2,
+    });
+  }
+
+  if (record.success && (record.discoveryId || record.exceptional)) {
+    const faction =
+      AFTERMATH_FACTIONS[roll("faction") % AFTERMATH_FACTIONS.length];
+    events.push({
+      type: "exclusive-demand",
+      title: "Exclusive access demanded",
+      summary: `${faction} petitions for first claim on ${site.name}.`,
+      faction,
+      standing: -4,
+      expiresDay: completedDay + 12,
+    });
+  }
+
+  if (
+    !record.success &&
+    (approach === "deep" || record.hazard?.profile === "fogbound")
+  ) {
+    events.push({
+      type: "stranded-party",
+      title: "Landing party stranded",
+      summary: `Bad weather strands the boats from ${site.name} for another day.`,
+      days: 1,
+      provisions: 1 + (approach === "deep" ? 1 : 0),
+    });
+  }
+
+  if (
+    record.success &&
+    record.discoveryId &&
+    (record.hazard?.profile === "ruins" || roll("artifact") < 45)
+  ) {
+    events.push({
+      type: "artifact-omen",
+      title: "Restless artifact",
+      summary: `An artifact from ${site.name} is quiet for now, but the crew expects consequences.`,
+      discoveryId: record.discoveryId,
+      triggerDay: completedDay + 7 + (roll("artifact-day") % 5),
+    });
+  }
+
+  if (
+    record.success &&
+    (text.includes("anchorage") || site.type === "Uncharted anchorage")
+  ) {
+    events.push({
+      type: "named-anchorage",
+      title: `${site.name} Anchorage`,
+      summary: `The survey names a safe anchorage at ${site.name}.`,
+      anchorage: `${site.name} Anchorage`,
+      x: site.x,
+      y: site.y,
+    });
+  }
+
+  return events;
+}
+
+/* node:coverage enable */
 export function expeditionRequirements(approach) {
   return APPROACHES[approach] || null;
 }
@@ -249,9 +380,12 @@ export function resolveExpedition({
     reward,
     hazard,
   };
+  record.aftermath = resolveExpeditionAftermath({ site, approach, record });
   state.expeditionSerial++;
   state.history.unshift(record);
   state.history = state.history.slice(0, 30);
+  state.aftermath.unshift(...record.aftermath);
+  state.aftermath = state.aftermath.slice(0, 40);
   const previous = state.sites[site.id] || { visits: 0, status: "charted" };
   state.sites[site.id] = {
     ...previous,

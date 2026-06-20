@@ -7,6 +7,7 @@ import {
   expeditionRequirements,
   normalizeExplorationState,
   resolveExpedition,
+  resolveExpeditionAftermath,
 } from "../src/core/exploration.js";
 
 const site = {
@@ -29,6 +30,7 @@ test("exploration state normalizes old and malformed saves", () => {
       expeditionSerial: 4,
       sites: { cliffs: { visits: 1 } },
       history: [{ id: 3 }],
+      aftermath: [],
     },
   );
   assert.deepEqual(
@@ -36,8 +38,15 @@ test("exploration state normalizes old and malformed saves", () => {
       expeditionSerial: 0,
       sites: null,
       history: {},
+      aftermath: {},
     }),
     createExplorationState(),
+  );
+  assert.equal(
+    normalizeExplorationState({
+      aftermath: Array.from({ length: 50 }, (_, id) => ({ id })),
+    }).aftermath.length,
+    40,
   );
 });
 
@@ -482,4 +491,149 @@ test("hazard defaults and no-incident cliffs remain stable", () => {
     hazardContext: { visibilityKm: 12 },
   });
   assert.equal(midFog.record.hazard.damage.rudder, undefined);
+});
+
+test("expedition aftermath records living-world consequences", () => {
+  const state = createExplorationState();
+  const result = resolveExpedition({
+    state,
+    site: {
+      ...site,
+      id: "anchorage-ruin",
+      name: "Bell Haven",
+      type: "Uncharted anchorage",
+      objective: "Survey the anchorage and recover an artifact.",
+      hazards: "Unstable ruins",
+    },
+    approach: "recon",
+    day: 3,
+    provisions: 30,
+    morale: 100,
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.record.aftermath.length > 0);
+  assert.deepEqual(state.aftermath, result.record.aftermath);
+  assert.ok(
+    result.record.aftermath.some((event) => event.type === "named-anchorage"),
+  );
+  assert.ok(
+    result.record.aftermath.some((event) => event.type === "crew-trait"),
+  );
+  assert.ok(
+    result.record.aftermath.some((event) => event.type === "exclusive-demand"),
+  );
+});
+
+test("failed deep expeditions can strand parties and require treatment", () => {
+  const result = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, difficulty: 100, hazards: "fogbound channels" },
+    approach: "deep",
+    day: 1,
+    provisions: 30,
+    morale: 0,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.record.success, false);
+  assert.ok(
+    result.record.aftermath.some((event) => event.type === "stranded-party"),
+  );
+  assert.ok(
+    result.record.aftermath.some((event) => event.type === "crew-treatment"),
+  );
+});
+
+test("standalone aftermath resolver handles missing input and crew trait rewards", () => {
+  assert.deepEqual(
+    resolveExpeditionAftermath({ site: null, record: null }),
+    [],
+  );
+  const events = resolveExpeditionAftermath({
+    site: { ...site, name: "High Spur", hazards: "clear slopes" },
+    approach: "standard",
+    record: {
+      id: 7,
+      completedDay: 12,
+      success: true,
+      exceptional: true,
+      injuries: 0,
+      reward: 120,
+      discoveryId: null,
+      hazard: { profile: "general" },
+    },
+  });
+
+  assert.ok(events.some((event) => event.type === "crew-trait"));
+  assert.ok(events.some((event) => event.type === "rival-interest"));
+});
+
+test("artifact omens always follow successful ruin discoveries", () => {
+  const events = resolveExpeditionAftermath({
+    site: { ...site, name: "Old Vault", hazards: "Unstable ruins" },
+    approach: "standard",
+    record: {
+      id: 11,
+      completedDay: 9,
+      success: true,
+      exceptional: false,
+      injuries: 0,
+      reward: 40,
+      discoveryId: "vault-relic",
+      hazard: { profile: "ruins" },
+    },
+  });
+
+  const omen = events.find((event) => event.type === "artifact-omen");
+  assert.equal(omen.discoveryId, "vault-relic");
+  assert.ok(omen.triggerDay > 9);
+});
+
+test("aftermath resolver covers fallback text and alternate branch conditions", () => {
+  const injuryEvents = resolveExpeditionAftermath({
+    site: { id: "fallback-site" },
+    approach: "standard",
+    record: {
+      id: 1,
+      completedDay: "bad",
+      success: false,
+      exceptional: false,
+      injuries: 1,
+      reward: 0,
+      discoveryId: null,
+      hazard: { profile: "fogbound" },
+    },
+  });
+  const treatment = injuryEvents.find(
+    (event) => event.type === "crew-treatment",
+  );
+  assert.match(treatment.summary, /hand needs treatment/);
+  assert.equal(treatment.dueDay, 5);
+  assert.equal(
+    injuryEvents.find((event) => event.type === "stranded-party").provisions,
+    1,
+  );
+
+  const anchorageEvents = resolveExpeditionAftermath({
+    site: {
+      id: "type-only-anchorage",
+      name: "Needle",
+      type: "Uncharted anchorage",
+      objective: "",
+      hazards: "",
+    },
+    approach: "recon",
+    record: {
+      id: 2,
+      completedDay: 4,
+      success: true,
+      exceptional: false,
+      injuries: 0,
+      reward: 0,
+      discoveryId: null,
+      hazard: null,
+    },
+  });
+  assert.ok(anchorageEvents.some((event) => event.type === "named-anchorage"));
 });

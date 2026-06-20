@@ -38,6 +38,7 @@ const freshGroup = (role) => ({
   fatigue: 0,
   injuries: 0,
   loyalty: 70,
+  traits: [],
 });
 
 export function createCrewState() {
@@ -66,6 +67,11 @@ export function normalizeCrewState(value) {
       group.count,
     );
     group.loyalty = clamp(Number(saved.loyalty), 0, 100);
+    group.traits = Array.isArray(saved.traits)
+      ? [
+          ...new Set(saved.traits.filter((trait) => typeof trait === "string")),
+        ].slice(0, 6)
+      : [];
   }
   fresh.mutinyPressure = clamp(Number(value.mutinyPressure), 0, 100);
   fresh.lastIncidentDay = Math.max(

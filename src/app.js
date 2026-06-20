@@ -6559,6 +6559,60 @@ function explorationHazardContext() {
   };
 }
 
+function applyExpeditionAftermath(events) {
+  const notes = [];
+  for (const event of events || []) {
+    if (event.type === "crew-treatment") {
+      const group =
+        game.operations.crew.groups[event.role] ||
+        game.operations.crew.groups.deck;
+      group.injuries = Math.min(group.count, group.injuries + event.injuries);
+      notes.push(`${event.title}: ${event.summary}`);
+    } else if (event.type === "crew-trait") {
+      const group = game.operations.crew.groups[event.role];
+      if (!group) continue;
+      group.experience = clamp(group.experience + event.experience, 0, 100);
+      group.loyalty = clamp(group.loyalty + event.loyalty, 0, 100);
+      group.traits = Array.from(
+        new Set([...(group.traits || []), event.trait]),
+      );
+      notes.push(`${event.title}: ${event.summary}`);
+    } else if (event.type === "rival-interest") {
+      const rival = RIVAL_CAPTAINS[event.rivalIndex % RIVAL_CAPTAINS.length];
+      const standing = game.rivals.captains[rival.id];
+      standing.reputation = clamp(
+        standing.reputation + event.reputation,
+        0,
+        100,
+      );
+      standing.relationship = clamp(
+        standing.relationship + event.relationship,
+        -100,
+        100,
+      );
+      notes.push(`${rival.captain}: ${event.summary}`);
+    } else if (event.type === "exclusive-demand") {
+      changeStanding(event.faction, event.standing);
+      notes.push(`${event.faction}: ${event.summary}`);
+    } else if (event.type === "stranded-party") {
+      game.operations.provisions = Math.max(
+        0,
+        game.operations.provisions - event.provisions,
+      );
+      advanceDays(event.days);
+      notes.push(event.summary);
+    } else if (event.type === "artifact-omen") {
+      notes.push(
+        `${event.summary} Watch for trouble near day ${event.triggerDay}.`,
+      );
+    } else if (event.type === "named-anchorage") {
+      notes.push(event.summary);
+    }
+  }
+  if (notes.length) addNews("Expedition aftermath", notes.join(" "));
+  return notes;
+}
+
 function undertakeExpedition(site, approach) {
   const result = resolveExpedition({
     state: game.exploration,
@@ -6611,6 +6665,7 @@ function undertakeExpedition(site, approach) {
       }
     }
   }
+  const aftermathNotes = applyExpeditionAftermath(result.record.aftermath);
   revealExplorationSurvey(site, result.record.success);
   if (result.record.success)
     completeSurveyContracts({ type: "exploration", site });
@@ -6625,9 +6680,12 @@ function undertakeExpedition(site, approach) {
     )
     .join(", ");
   const damageText = damageSummary ? ` Ship damage: ${damageSummary}.` : "";
+  const aftermathText = aftermathNotes.length
+    ? ` Aftermath: ${aftermathNotes.join(" ")}`
+    : "";
   const outcome = result.record.success
-    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered${recovery}.${hazardSummary}${damageText}`
-    : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.${hazardSummary}${damageText}`;
+    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered${recovery}.${hazardSummary}${damageText}${aftermathText}`
+    : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.${hazardSummary}${damageText}${aftermathText}`;
   addNews("Shore expedition: " + site.name, outcome);
   showMessage(
     result.record.success
