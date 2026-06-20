@@ -100,6 +100,13 @@ import {
   seasonalSiteActive,
 } from "./core/discoveries.js";
 import {
+  RUMOR_COST,
+  createRumorLead,
+  expireRumorLeads,
+  normalizeRumorLeads,
+  targetMatchesFaction,
+} from "./core/rumors.js";
+import {
   EXPLORATION_APPROACHES,
   normalizeExplorationState,
   resolveExpedition,
@@ -2599,6 +2606,9 @@ function loadGameState() {
     0.22,
   );
   game.discoveries = normalizeDiscoveryState(game.discoveries);
+  game.discoveries.rumorLeads = normalizeRumorLeads(
+    game.discoveries.rumorLeads,
+  );
   game.exploration = normalizeExplorationState(game.exploration);
   game.regionalCrises = normalizeCrisisState(game.regionalCrises);
   game.operations = normalizeOperationsState(game.operations);
@@ -3846,6 +3856,7 @@ function update(dt) {
     y: ship.y - Math.sin(ship.angle) * 20,
   });
   if (ship.trail.length > 28) ship.trail.pop();
+  checkRumorLeads();
   nearPort = null;
   let best = 78;
   for (const p of ports) {
@@ -4492,6 +4503,11 @@ function renderPortOpportunities() {
       tab: "market",
     },
     {
+      title: "Buy a rumor lead",
+      detail: `${RUMOR_COST} crowns for a broad chart circle pointing to a hidden discovery or expedition site.`,
+      action: buyRumorLead,
+    },
+    {
       title: damaged
         ? "Your vessel needs attention"
         : "Prepare the next voyage",
@@ -4508,9 +4524,11 @@ function renderPortOpportunities() {
     item.innerHTML = `<div><b>${row.title}</b><span class="small">${row.detail}</span></div>`;
     const button = document.createElement("button");
     button.className = "parchment";
-    button.textContent = "Open";
-    button.onclick = () =>
-      activateSectionTabs(document.getElementById("portPanel"), row.tab);
+    button.textContent = row.action ? "Buy" : "Open";
+    button.onclick = row.action
+      ? row.action
+      : () =>
+          activateSectionTabs(document.getElementById("portPanel"), row.tab);
     item.append(button);
     root.append(item);
   }
@@ -6091,16 +6109,126 @@ function renderShipPanel() {
     cargoRoot.append(empty);
   }
 }
+
+function activeRumorLeads() {
+  return game.discoveries.rumorLeads.filter(
+    (lead) =>
+      !lead.resolvedDay && !lead.expiredDay && game.day <= lead.expiresDay,
+  );
+}
+function hasRumorSpecialist() {
+  return game.specialists.officers.some(
+    (officer) =>
+      ["navigator", "naturalist"].includes(officer.id) && officer.loyalty >= 45,
+  );
+}
+function rumorTargetsForPort(port) {
+  const localFactions = port.factions.map((faction) => faction.name);
+  const known = new Set([
+    ...Object.keys(game.discoveries.found),
+    ...Object.keys(game.exploration.sites),
+    ...game.discoveries.rumorLeads
+      .filter((lead) => !lead.resolvedDay && !lead.expiredDay)
+      .map((lead) => lead.targetId),
+  ]);
+  const candidates = [
+    ...discoverySites.filter((site) => !known.has(site.id)),
+    ...explorationSites.filter((site) => !known.has(site.id)),
+  ];
+  const factional = candidates.filter((target) =>
+    targetMatchesFaction(target, localFactions),
+  );
+  return factional.length ? factional : candidates;
+}
+function buyRumorLead() {
+  if (!currentPort) return;
+  if (game.coins < RUMOR_COST)
+    return showMessage("You cannot afford tavern rumors.");
+  const targets = rumorTargetsForPort(currentPort);
+  if (!targets.length) return showMessage("No fresh rumors circulate here.");
+  const target = targets[game.day % targets.length];
+  const lead = createRumorLead({
+    port: currentPort,
+    target,
+    day: game.day,
+    worldWidth: WORLD.w,
+    factionRelated: targetMatchesFaction(
+      target,
+      currentPort.factions.map((f) => f.name),
+    ),
+    specialistBonus: hasRumorSpecialist(),
+    falseLead: game.day % 9 === 0,
+  });
+  game.coins -= RUMOR_COST;
+  game.discoveries.rumorLeads.unshift(lead);
+  addNews(
+    "Rumor purchased",
+    `${currentPort.name} whispers point ${lead.clue} The search circle has been marked on your chart through Day ${lead.expiresDay}.`,
+  );
+  showMessage(`RUMOR LEAD · ${lead.clue}`, 4);
+  renderPortSystems();
+  updateHud();
+  saveGameState();
+}
+function resolveRumorLead(lead) {
+  lead.resolvedDay = game.day;
+  if (lead.falseLead) {
+    addNews("False rumor", `${lead.clue} led only to empty water.`);
+    showMessage("FALSE RUMOR · the clue found only empty water", 3.5);
+    return;
+  }
+  if (lead.targetKind === "expedition") {
+    const site = explorationSites.find((entry) => entry.id === lead.targetId);
+    if (site) {
+      revealExplorationSurvey(site, false);
+      addNews(
+        "Expedition lead confirmed",
+        `${site.name} has been sketched onto your chart. Sail there slowly to launch an expedition.`,
+      );
+      showMessage(`EXPEDITION LEAD · ${site.name} marked`, 4);
+    }
+    return;
+  }
+  const site = discoverySites.find((entry) => entry.id === lead.targetId);
+  if (site) claimDiscovery(site);
+}
+function checkRumorLeads() {
+  for (const lead of expireRumorLeads(game.discoveries.rumorLeads, game.day))
+    addNews("Rumor expired", `${lead.clue} is no longer considered reliable.`);
+  for (const lead of activeRumorLeads()) {
+    const distance = wrappedDistance(ship.x, ship.y, lead.x, lead.y);
+    if (distance <= lead.radius) resolveRumorLead(lead);
+  }
+}
+
 function renderDiscoveries() {
   const root = document.getElementById("discoveryLedger");
   root.innerHTML = "";
   const records = Object.values(game.discoveries.found).sort(
     (a, b) => b.foundDay - a.foundDay,
   );
-  if (!records.length) {
+  const visibleLeads = game.discoveries.rumorLeads.some(
+    (lead) => !lead.resolvedDay,
+  );
+  if (!records.length && !visibleLeads) {
     root.innerHTML =
       '<p class="empty-note">No hidden places recorded. Sail beyond familiar coasts and investigate close sightings.</p>';
     return;
+  }
+  const leads = game.discoveries.rumorLeads
+    .filter((lead) => !lead.resolvedDay)
+    .slice(0, 8);
+  for (const lead of leads) {
+    const card = document.createElement("div");
+    card.className = "discovery-card rumor-card";
+    const status = lead.expiredDay
+      ? `Expired Day ${lead.expiredDay}`
+      : `Search by Day ${lead.expiresDay}`;
+    card.innerHTML =
+      `<div class="intel-head"><h4>🗺 ${lead.title || "Rumor lead"}</h4><span class="contract-tag">${status}</span></div>` +
+      `<div class="town-kicker">${lead.source} · ${lead.origin}${lead.interpreted ? " · interpreted" : ""}</div>` +
+      `<p class="small">“${lead.clue}”</p><p><b>Search zone:</b> broad circle on the chart, radius ${Math.round(lead.radius)} leagues.</p>`;
+    root.append(card);
   }
   for (const record of records) {
     const site = discoverySites.find((entry) => entry.id === record.id);
@@ -6676,6 +6804,27 @@ function renderChart() {
       c.textAlign = "center";
       c.fillText(objective.title, p.x * sx, p.y * sy - 25);
     }
+  }
+  for (const lead of activeRumorLeads()) {
+    c.strokeStyle = lead.falseLead
+      ? "rgba(180,92,70,.75)"
+      : "rgba(244,218,157,.85)";
+    c.fillStyle = "rgba(244,218,157,.12)";
+    c.lineWidth = 2;
+    c.setLineDash([6, 6]);
+    for (const offset of [-WORLD.w, 0, WORLD.w]) {
+      c.beginPath();
+      c.arc(
+        (lead.x + offset) * sx,
+        lead.y * sy,
+        lead.radius * sx,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+      c.stroke();
+    }
+    c.setLineDash([]);
   }
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {

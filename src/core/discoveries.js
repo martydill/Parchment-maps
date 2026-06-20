@@ -1,4 +1,5 @@
 import { hash } from "./cargo.js";
+import { normalizeRumorLeads } from "./rumors.js";
 
 export const DISCOVERY_DISPOSITIONS = {
   secret: { label: "Keep secret" },
@@ -34,6 +35,7 @@ export function createDiscoveryState() {
   return {
     found: {},
     routeConsequences: [],
+    rumorLeads: [],
   };
 }
 
@@ -48,6 +50,7 @@ export function normalizeDiscoveryState(value) {
     routeConsequences: Array.isArray(value.routeConsequences)
       ? value.routeConsequences
       : fresh.routeConsequences,
+    rumorLeads: normalizeRumorLeads(value.rumorLeads),
   };
 }
 
