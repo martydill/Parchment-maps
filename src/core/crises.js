@@ -19,6 +19,12 @@ export const CRISIS_TEMPLATES = Object.freeze({
       result:
         "Your relief fund secured an accord. The looms reopen under safer terms and the workforce rallies.",
     },
+    cargoIntervention: {
+      label: "Deliver strike provisions",
+      requirements: { grain: 3, tea: 1 },
+      result:
+        "Your food and tea wagons kept both pickets and negotiators at the table. The compact holds because the city ate while it argued.",
+    },
     activeModifiers: { price: 1.5, production: -1.8, consumption: 0.2 },
     resolvedModifiers: { price: 0.94, production: 0.35, consumption: 0 },
     ignoredModifiers: { price: 1.16, production: -0.3, consumption: 0 },
@@ -42,6 +48,12 @@ export const CRISIS_TEMPLATES = Object.freeze({
       cost: 110,
       result:
         "Quarantine barges and paid healers contained the fever. Trade resumes under new public-health rules.",
+    },
+    cargoIntervention: {
+      label: "Land emergency medicine",
+      requirements: { medicine: 2, herbs: 2 },
+      result:
+        "Your medicines and fresh herbs stocked the quarantine barges before the fever outran the healers. Mallowfen remembers the captain who brought cures, not coin.",
     },
     activeModifiers: { price: 1.65, production: -0.4, consumption: 1.6 },
     resolvedModifiers: { price: 0.9, production: 0.2, consumption: 0.15 },
@@ -67,6 +79,12 @@ export const CRISIS_TEMPLATES = Object.freeze({
       result:
         "Your engineers reached the trapped delvers and installed safer supports. A modernized mine emerges from the disaster.",
     },
+    cargoIntervention: {
+      label: "Deliver rescue supports",
+      requirements: { timber: 3, iron: 2 },
+      result:
+        "Your timber and iron reached the minehead before the lower galleries failed. Rescue crews shored up the delvings and carried survivors into daylight.",
+    },
     activeModifiers: { price: 1.58, production: -2, consumption: 0.3 },
     resolvedModifiers: { price: 0.93, production: 0.45, consumption: 0 },
     ignoredModifiers: { price: 1.2, production: -0.4, consumption: 0 },
@@ -75,10 +93,18 @@ export const CRISIS_TEMPLATES = Object.freeze({
   }),
 });
 
+function freezeCargoIntervention(intervention) {
+  return Object.freeze({
+    ...intervention,
+    requirements: Object.freeze({ ...intervention.requirements }),
+  });
+}
+
 function crisis(data) {
   return Object.freeze({
     ...data,
     intervention: Object.freeze(data.intervention),
+    cargoIntervention: freezeCargoIntervention(data.cargoIntervention),
     activeModifiers: Object.freeze(data.activeModifiers),
     resolvedModifiers: Object.freeze(data.resolvedModifiers),
     ignoredModifiers: Object.freeze(data.ignoredModifiers),
@@ -187,6 +213,78 @@ export function interveneInCrisis(state, id, coins, day) {
     cost: template.intervention.cost,
     coins: coins - template.intervention.cost,
     state: normalized,
+    arc,
+    template,
+  };
+}
+
+export function cargoInterventionStatus(template, cargoLots = []) {
+  const requirements = template?.cargoIntervention?.requirements || {};
+  const aboard = cargoLots.reduce((counts, lot) => {
+    if (lot?.key) counts[lot.key] = (counts[lot.key] || 0) + 1;
+    return counts;
+  }, {});
+  const missing = {};
+  for (const [key, needed] of Object.entries(requirements)) {
+    const remaining = Math.max(0, Math.floor(needed) - (aboard[key] || 0));
+    if (remaining > 0) missing[key] = remaining;
+  }
+  return {
+    requirements: { ...requirements },
+    aboard,
+    missing,
+    ready: Object.keys(requirements).length > 0 && !Object.keys(missing).length,
+  };
+}
+
+export function interveneInCrisisWithCargo(state, id, cargoLots, day) {
+  const normalized = normalizeCrisisState(state);
+  const arc = normalized.arcs[id];
+  const template = CRISIS_TEMPLATES[id];
+  const lots = Array.isArray(cargoLots) ? cargoLots : [];
+  if (!arc || !template)
+    return {
+      ok: false,
+      reason: "Unknown regional crisis.",
+      state: normalized,
+      cargoLots: lots,
+    };
+  if (arc.phase !== "active")
+    return {
+      ok: false,
+      reason: "This crisis cannot be supplied at present.",
+      state: normalized,
+      cargoLots: lots,
+    };
+  const status = cargoInterventionStatus(template, lots);
+  if (!status.ready)
+    return {
+      ok: false,
+      reason: "Required relief cargo is not aboard.",
+      state: normalized,
+      cargoLots: lots,
+      status,
+    };
+  const remainingNeeds = { ...template.cargoIntervention.requirements };
+  const consumedLotIds = [];
+  const remainingLots = [];
+  for (const lot of lots) {
+    if (remainingNeeds[lot?.key] > 0) {
+      remainingNeeds[lot.key] -= 1;
+      consumedLotIds.push(lot.id);
+    } else {
+      remainingLots.push(lot);
+    }
+  }
+  arc.phase = "aftermath";
+  arc.outcome = "resolved";
+  arc.endDay = Math.max(arc.activeDay, Math.floor(day));
+  return {
+    ok: true,
+    state: normalized,
+    cargoLots: remainingLots,
+    consumedLotIds,
+    status,
     arc,
     template,
   };

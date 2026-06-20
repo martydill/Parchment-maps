@@ -116,9 +116,11 @@ import {
   advanceCrises,
   applyCrisisAftermath,
   CRISIS_TEMPLATES,
+  cargoInterventionStatus,
   crisisAtPort,
   crisisEconomyModifiers,
   interveneInCrisis,
+  interveneInCrisisWithCargo,
   normalizeCrisisState,
 } from "./core/crises.js";
 import {
@@ -4344,6 +4346,31 @@ function renderContractList(root, contracts, active = false) {
     root.append(card);
   });
 }
+function describeCargoRequirements(requirements) {
+  return Object.entries(requirements || {})
+    .map(([key, units]) => `${units} ${goods[key]?.name || key}`)
+    .join(" + ");
+}
+
+function resolveCrisisIntervention(result, body, standingReward) {
+  game.regionalCrises = result.state;
+  if (Number.isFinite(result.coins)) game.coins = result.coins;
+  applyCrisisAftermath(
+    game.regionalEconomy[currentPort.name],
+    result.template,
+    "resolved",
+  );
+  changeStanding(dominantFaction(currentPort).name, standingReward);
+  addNews(result.template.title + ": intervention succeeds", body);
+  showMessage(
+    `STORY ARC RESOLVED · ${result.template.title} leaves a lasting recovery.`,
+    5,
+  );
+  renderPortSystems();
+  updateHud();
+  saveGameState();
+}
+
 function renderPortEvent() {
   const root = document.getElementById("portEvent");
   root.innerHTML = "";
@@ -4374,11 +4401,11 @@ function renderPortEvent() {
               : arc.template.ignored;
       box.innerHTML = `<b>${arc.template.title} · ${heading}</b>${body}`;
       if (arc.phase === "active") {
-        const action = document.createElement("button");
-        action.className = "parchment crisis-action";
-        action.textContent = arc.template.intervention.label;
-        action.disabled = game.coins < arc.template.intervention.cost;
-        action.onclick = () => {
+        const moneyAction = document.createElement("button");
+        moneyAction.className = "parchment crisis-action";
+        moneyAction.textContent = arc.template.intervention.label;
+        moneyAction.disabled = game.coins < arc.template.intervention.cost;
+        moneyAction.onclick = () => {
           const result = interveneInCrisis(
             game.regionalCrises,
             arc.id,
@@ -4386,26 +4413,39 @@ function renderPortEvent() {
             game.day,
           );
           if (!result.ok) return showMessage(result.reason);
-          game.regionalCrises = result.state;
-          game.coins = result.coins;
-          applyCrisisAftermath(
-            game.regionalEconomy[currentPort.name],
-            result.template,
-            "resolved",
-          );
-          changeStanding(dominantFaction(currentPort).name, 6);
-          addNews(
-            result.template.title + ": intervention succeeds",
+          resolveCrisisIntervention(
+            result,
             result.template.intervention.result,
+            6,
           );
-          showMessage(
-            `STORY ARC RESOLVED · ${result.template.title} leaves a lasting recovery.`,
-            5,
-          );
-          renderPortSystems();
-          updateHud();
         };
-        box.append(action);
+        box.append(moneyAction);
+        if (arc.template.cargoIntervention) {
+          const status = cargoInterventionStatus(arc.template, game.cargoLots);
+          const cargoAction = document.createElement("button");
+          cargoAction.className = "parchment crisis-action";
+          cargoAction.textContent = `${arc.template.cargoIntervention.label} · ${describeCargoRequirements(arc.template.cargoIntervention.requirements)}`;
+          cargoAction.disabled = !status.ready;
+          if (!status.ready)
+            cargoAction.title = `Missing ${describeCargoRequirements(status.missing)}`;
+          cargoAction.onclick = () => {
+            const result = interveneInCrisisWithCargo(
+              game.regionalCrises,
+              arc.id,
+              game.cargoLots,
+              game.day,
+            );
+            if (!result.ok) return showMessage(result.reason);
+            game.cargoLots = result.cargoLots;
+            syncCargoCounts(game, goods);
+            resolveCrisisIntervention(
+              result,
+              result.template.cargoIntervention.result,
+              8,
+            );
+          };
+          box.append(cargoAction);
+        }
       }
       root.append(box);
     }
