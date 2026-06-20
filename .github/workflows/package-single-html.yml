@@ -1,4 +1,4 @@
-name: Build release HTML
+name: Build and publish release HTML
 
 on:
   push:
@@ -7,10 +7,17 @@ on:
     tags:
       - "v*"
   pull_request:
-  release:
-    types:
-      - published
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing tag to publish as a GitHub release"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub release as a prerelease"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   package:
@@ -21,6 +28,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -52,18 +61,23 @@ jobs:
           path: dist/gilded-archipelago.html
           if-no-files-found: error
 
-      - name: Create GitHub release from tag
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+      - name: Publish GitHub release
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME" dist/gilded-archipelago.html
-          --generate-notes --verify-tag
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+        run: |
+          args=(
+            "$RELEASE_TAG"
+            dist/gilded-archipelago.html
+            --title "$RELEASE_TAG"
+            --generate-notes
+            --verify-tag
+          )
 
-      - name: Attach HTML to published release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release upload "${{ github.event.release.tag_name }}"
-          dist/gilded-archipelago.html --clobber
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${args[@]}"
