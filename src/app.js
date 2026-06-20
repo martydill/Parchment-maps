@@ -177,6 +177,8 @@ import {
   contractCargoCount as countContractCargo,
   contractOffersForPort,
   createContractOffer,
+  createSurveyContractOffer,
+  surveyContractProgress,
 } from "./core/contracts.js";
 import {
   bestTradeOpportunity as findBestTradeOpportunity,
@@ -1611,11 +1613,24 @@ function makeContractOffer(origin, index) {
   game.contractSerial = result.nextSerial;
   return result.offer;
 }
+function makeSurveyContractOffer(origin, index) {
+  const result = createSurveyContractOffer({
+    origin,
+    index,
+    day: game.day,
+    serial: game.contractSerial,
+  });
+  game.contractSerial = result.nextSerial;
+  return result.offer;
+}
 function ensureContractOffers(port) {
   const cache = contractOffersForPort({
     cache: game.contractOffers[port.name],
     day: game.day,
-    createOffer: (index) => makeContractOffer(port, index),
+    createOffer: (index) =>
+      index === 2
+        ? makeSurveyContractOffer(port, index)
+        : makeContractOffer(port, index),
   });
   game.contractOffers[port.name] = cache;
   return cache.offers;
@@ -1643,7 +1658,8 @@ function acceptContract(id) {
   contract.deadline = game.day + contract.estimatedDays + 3;
   game.activeContracts.push(contract);
   offers.splice(index, 1);
-  revealContractDestination(getPortByName(contract.destination));
+  if (contract.destination)
+    revealContractDestination(getPortByName(contract.destination));
   addNews(
     "Contract accepted",
     contract.title +
@@ -1660,11 +1676,35 @@ function acceptContract(id) {
   renderPortSystems();
   updateHud();
 }
+function completeSurveyContracts(event) {
+  const remaining = [];
+  for (const contract of game.activeContracts) {
+    const progress = surveyContractProgress(contract, event);
+    if (!progress?.complete) {
+      remaining.push(contract);
+      if (progress)
+        addNews(
+          "Survey progress",
+          `${contract.title}: ${progress.completed}/${progress.required} logged.`,
+        );
+      continue;
+    }
+    const rewards = contract.survey.rewards;
+    game.coins += rewards.coins;
+    changeStanding(contract.faction, rewards.standing);
+    game.completedContracts++;
+    addNews(
+      "Survey commission fulfilled",
+      `${contract.title} earned ${rewards.coins} crowns, +${rewards.standing} standing with ${contract.faction}${rewards.charter ? `, and ${rewards.charter}` : ""}${rewards.upgradeDiscount ? `, plus ${rewards.upgradeDiscount}` : ""}${rewards.recruit ? `, plus access to ${rewards.recruit}` : ""}.`,
+    );
+  }
+  game.activeContracts = remaining;
+}
 function resolveContractsAtPort(port) {
   const remaining = [];
   const resolved = [];
   for (const contract of game.activeContracts) {
-    if (contract.destination !== port.name) {
+    if (contract.kind === "survey" || contract.destination !== port.name) {
       remaining.push(contract);
     } else {
       resolved.push(contract);
@@ -6305,6 +6345,11 @@ function handleDiscoveryDisposition(id, disposition) {
       result.consequence.standing.faction,
       result.consequence.standing.amount,
     );
+  completeSurveyContracts({
+    type: "discovery",
+    site: result.site,
+    disposition,
+  });
   let outcome;
   if (disposition === "secret") {
     outcome = "The coordinates remain in your private log.";
@@ -6567,6 +6612,8 @@ function undertakeExpedition(site, approach) {
     }
   }
   revealExplorationSurvey(site, result.record.success);
+  if (result.record.success)
+    completeSurveyContracts({ type: "exploration", site });
   const hazardSummary = result.record.hazard?.notes?.length
     ? ` Hazard: ${result.record.hazard.notes.join(" ")}`
     : "";
