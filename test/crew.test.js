@@ -36,6 +36,7 @@ test("crew state normalizes legacy and malformed saves", () => {
     fatigue: 0,
     injuries: 20,
     loyalty: 0,
+    traits: [],
   });
   assert.equal(crew.mutinyPressure, 100);
   assert.equal(crew.lastIncidentDay, 0);
@@ -47,6 +48,7 @@ test("crew state normalizes legacy and malformed saves", () => {
     fatigue: 0,
     injuries: 0,
     loyalty: 70,
+    traits: [],
   });
   assert.equal(
     normalizeCrewState({ groups: { deck: { count: 0 } } }).groups.deck.count,
@@ -179,4 +181,34 @@ test("shore leave costs time and money while restoring readiness", () => {
   assert.equal(leave.crew.groups.deck.loyalty, 50);
   assert.equal(leave.crew.groups.deck.injuries, 0);
   assert.equal(takeShoreLeave(createCrewState(), 100).days, 1);
+});
+
+test("crew normalization preserves a bounded unique trait list", () => {
+  const crew = normalizeCrewState({
+    groups: {
+      deck: {
+        count: 8,
+        traits: [
+          "Sure-footed",
+          "Sure-footed",
+          7,
+          "Reefwise",
+          "Calm",
+          "Bold",
+          "Keen",
+          "Patient",
+          "Extra",
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(crew.groups.deck.traits, [
+    "Sure-footed",
+    "Reefwise",
+    "Calm",
+    "Bold",
+    "Keen",
+    "Patient",
+  ]);
 });
