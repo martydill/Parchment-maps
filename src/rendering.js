@@ -33,6 +33,28 @@ export function isLandPoint(x, y, worldWidth, landShapes = lands) {
   );
 }
 
+export function wrappedCircleIntersectsViewport(
+  x,
+  y,
+  radius,
+  cameraX,
+  cameraY,
+  viewportWidth,
+  viewportHeight,
+  zoom,
+  worldWidth,
+) {
+  const visibleHalfWidth = viewportWidth / (2 * zoom);
+  const visibleHalfHeight = viewportHeight / (2 * zoom);
+  const wrappedX = x + Math.round((cameraX - x) / worldWidth) * worldWidth;
+  return (
+    wrappedX + radius >= cameraX - visibleHalfWidth &&
+    wrappedX - radius <= cameraX + visibleHalfWidth &&
+    y + radius >= cameraY - visibleHalfHeight &&
+    y - radius <= cameraY + visibleHalfHeight
+  );
+}
+
 export function createRoughSeaParticles(seas, isOnLand) {
   return seas.map((sea, seaIndex) => {
     const rnd = seeded(9300 + seaIndex * 131);

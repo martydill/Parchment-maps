@@ -262,6 +262,7 @@ import {
   drawMerchantShip,
   drawShip,
   drawWeatherEffects,
+  wrappedCircleIntersectsViewport,
 } from "./rendering.js";
 
 const canvas = document.getElementById("game");
@@ -383,7 +384,9 @@ const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 1.12;
 let vw = 0,
-  vh = 0;
+  vh = 0,
+  fogWashGradient = null,
+  vignetteGradient = null;
 const camera = { x: 0, y: 0, zoom: 1 };
 let viewportZoom = 1;
 let userZoom = 1;
@@ -2731,23 +2734,28 @@ function punchCurrentVisibility(
   }
 }
 
+function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
+  return wrappedCircleIntersectsViewport(
+    x,
+    y,
+    radius,
+    camera.x,
+    camera.y,
+    vw,
+    vh,
+    z,
+    WORLD.w,
+  );
+}
+
 function drawAnimatedRoughSeas(c, time, z) {
   c.save();
   c.lineCap = "round";
   for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
     const sea = roughSeas[seaIndex];
-    const nearestX = nearestWrappedX(sea.x, camera.x);
-    const left = nearestX - sea.rx;
-    const right = nearestX + sea.rx;
-    const top = sea.y - sea.ry;
-    const bottom = sea.y + sea.ry;
-    if (
-      right < camera.x - vw / (2 * z) ||
-      left > camera.x + vw / (2 * z) ||
-      bottom < camera.y - vh / (2 * z) ||
-      top > camera.y + vh / (2 * z)
-    )
+    if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
       continue;
+    const nearestX = nearestWrappedX(sea.x, camera.x);
 
     for (const particle of roughSeaParticles[seaIndex]) {
       const phase = time * particle.speed + particle.phaseOffset;
@@ -2799,6 +2807,20 @@ function resize() {
   fogCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
+  fogWashGradient = fogCtx.createLinearGradient(0, 0, vw, vh);
+  fogWashGradient.addColorStop(0, "rgba(25,22,18,.94)");
+  fogWashGradient.addColorStop(0.55, "rgba(18,19,18,.92)");
+  fogWashGradient.addColorStop(1, "rgba(31,24,17,.95)");
+  vignetteGradient = ctx.createRadialGradient(
+    vw / 2,
+    vh / 2,
+    Math.min(vw, vh) * 0.25,
+    vw / 2,
+    vh / 2,
+    Math.max(vw, vh) * 0.72,
+  );
+  vignetteGradient.addColorStop(0, "rgba(0,0,0,0)");
+  vignetteGradient.addColorStop(1, "rgba(32,20,10,.32)");
 }
 addEventListener("resize", resize);
 resize();
@@ -3296,11 +3318,7 @@ function renderFog() {
 
   // Uncharted water is an opaque ink wash. Previously seen water remains as a
   // dim chart memory, while the current line of sight is cut out of the wash.
-  const wash = f.createLinearGradient(0, 0, vw, vh);
-  wash.addColorStop(0, "rgba(25,22,18,.94)");
-  wash.addColorStop(0.55, "rgba(18,19,18,.92)");
-  wash.addColorStop(1, "rgba(31,24,17,.95)");
-  f.fillStyle = wash;
+  f.fillStyle = fogWashGradient;
   f.fillRect(0, 0, vw, vh);
 
   // Slow translucent wisps make reduced visibility feel like ocean haze rather
@@ -3358,7 +3376,7 @@ function renderFog() {
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
 }
 
-function drawDynamicTradeWorld(c, z) {
+function drawDynamicTradeWorld(c, z, time) {
   c.save();
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {
@@ -3373,6 +3391,8 @@ function drawDynamicTradeWorld(c, z) {
     c.setLineDash([]);
   }
   for (const site of explorationSites) {
+    if (!isWorldCircleInViewport(site.x, site.y, site.radius * 3.2, z))
+      continue;
     const progress = game.exploration.sites[site.id];
     const visible = pointCurrentlyVisible(site.x, site.y);
     if (!progress && !visible && !isWorldPointExplored(site.x, site.y))
@@ -3428,6 +3448,7 @@ function drawDynamicTradeWorld(c, z) {
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
     if (!record) continue;
+    if (!isWorldCircleInViewport(site.x, site.y, 24, z)) continue;
     const x = nearestWrappedX(site.x, camera.x);
     c.save();
     c.translate(x, site.y);
@@ -3455,7 +3476,7 @@ function drawDynamicTradeWorld(c, z) {
     c.strokeStyle = "rgba(190,132,45,.92)";
     c.lineWidth = 5 / z;
     c.setLineDash([18 / z, 10 / z]);
-    c.lineDashOffset = -(performance.now() * 0.025) % (28 / z);
+    c.lineDashOffset = -(time * 0.025) % (28 / z);
     c.beginPath();
     c.moveTo(650, 485);
     c.bezierCurveTo(850, 570, 1070, 780, 1190, 1050);
@@ -3472,7 +3493,8 @@ function drawDynamicTradeWorld(c, z) {
     const p = getPortByName(contract.destination);
     if (!p) continue;
     const x = nearestWrappedX(p.x, camera.x);
-    const pulse = 25 + Math.sin(performance.now() / 220) * 5;
+    if (!isWorldCircleInViewport(p.x, p.y, 34, z)) continue;
+    const pulse = 25 + Math.sin(time / 220) * 5;
     c.strokeStyle = "rgba(215,159,55,.95)";
     c.lineWidth = 4 / z;
     c.beginPath();
@@ -3482,19 +3504,21 @@ function drawDynamicTradeWorld(c, z) {
   for (const event of game.scheduledEvents) {
     if (!event.known || event.started) continue;
     const t = eventTemplates[event.templateId],
-      p = getPortByName(t.port),
-      x = nearestWrappedX(p.x, camera.x);
+      p = getPortByName(t.port);
+    if (!isWorldCircleInViewport(p.x, p.y, 37, z)) continue;
+    const x = nearestWrappedX(p.x, camera.x);
     c.strokeStyle = "rgba(139,78,45,.9)";
     c.lineWidth = 3 / z;
     c.setLineDash([7 / z, 7 / z]);
     c.beginPath();
-    c.arc(x, p.y, 34 + Math.sin(performance.now() / 300) * 3, 0, Math.PI * 2);
+    c.arc(x, p.y, 34 + Math.sin(time / 300) * 3, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
   }
   for (const merchant of merchantShips) {
     if (!merchantVisible(merchant)) continue;
     const x = nearestWrappedX(merchant.x, camera.x);
+    if (!isWorldCircleInViewport(merchant.x, merchant.y, 60, z)) continue;
     drawMerchantShip(c, merchant, z, x);
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
@@ -3510,14 +3534,15 @@ function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, vw, vh);
   const z = camera.zoom;
+  const time = performance.now();
   ctx.save();
   ctx.translate(vw / 2, vh / 2);
   ctx.scale(z, z);
   ctx.translate(-camera.x, -camera.y);
   for (const offset of worldCopiesNear(camera.x))
     ctx.drawImage(mapLayer, offset, 0);
-  drawAnimatedRoughSeas(ctx, performance.now(), z);
-  drawDynamicTradeWorld(ctx, z);
+  drawAnimatedRoughSeas(ctx, time, z);
+  drawDynamicTradeWorld(ctx, z, time);
   // wake
   if (ship.trail.length > 1) {
     ctx.strokeStyle = "rgba(245,236,201,.55)";
@@ -3534,7 +3559,7 @@ function render() {
   const windLeft = camera.x - vw / (2 * z) - 60,
     windSpan = vw / z + 120;
   for (let i = 0; i < 14; i++) {
-    const x = windLeft + ((i * 173 + performance.now() * 0.025) % windSpan),
+    const x = windLeft + ((i * 173 + time * 0.025) % windSpan),
       y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -3567,13 +3592,7 @@ function render() {
     ctx.strokeStyle = "rgba(173,54,39,.85)";
     ctx.lineWidth = 3 / z;
     ctx.beginPath();
-    ctx.arc(
-      px,
-      nearPort.y,
-      42 + Math.sin(performance.now() / 220) * 4,
-      0,
-      Math.PI * 2,
-    );
+    ctx.arc(px, nearPort.y, 42 + Math.sin(time / 220) * 4, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();
@@ -3598,22 +3617,12 @@ function render() {
       windStrength: game.windStrength,
       vw,
       vh,
-      time: performance.now(),
+      time,
     });
   }
 
   // vignette
-  const vig = ctx.createRadialGradient(
-    vw / 2,
-    vh / 2,
-    Math.min(vw, vh) * 0.25,
-    vw / 2,
-    vh / 2,
-    Math.max(vw, vh) * 0.72,
-  );
-  vig.addColorStop(0, "rgba(0,0,0,0)");
-  vig.addColorStop(1, "rgba(32,20,10,.32)");
-  ctx.fillStyle = vig;
+  ctx.fillStyle = vignetteGradient;
   ctx.fillRect(0, 0, vw, vh);
 }
 
