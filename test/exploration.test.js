@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createExplorationState,
+  explorationHazardProfile,
   expeditionRequirements,
   normalizeExplorationState,
   resolveExpedition,
@@ -191,4 +192,294 @@ test("history is capped and negative save serials recover", () => {
     morale: 100,
   });
   assert.equal(state.history.length, 30);
+});
+
+test("hazard profiles are inferred from generated site hazard text", () => {
+  assert.equal(
+    explorationHazardProfile({ hazards: "Hidden reefs, sudden squalls" }),
+    "reefs",
+  );
+  assert.equal(
+    explorationHazardProfile({ hazards: "Steep jungle gullies" }),
+    "jungle",
+  );
+  assert.equal(explorationHazardProfile({ hazards: "Loose scree" }), "cliffs");
+  assert.equal(
+    explorationHazardProfile({ hazards: "Tidal mud, fogbound channels" }),
+    "fogbound",
+  );
+  assert.equal(
+    explorationHazardProfile({ hazards: "Unstable ruins" }),
+    "ruins",
+  );
+  assert.equal(
+    explorationHazardProfile({ hazards: "Dense thornwood, brackish marsh" }),
+    "jungle",
+  );
+});
+
+test("reef hazards can damage weak hulls without sounding gear", () => {
+  const state = createExplorationState();
+  const result = resolveExpedition({
+    state,
+    site: { ...site, hazards: "Hidden reefs, sudden squalls" },
+    approach: "deep",
+    day: 2,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hullCondition: 30, hasSoundingGear: false },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.record.hazard.profile, "reefs");
+  assert.ok(result.record.hazard.damage.hull > 0);
+  assert.equal(
+    result.provisionsUsed,
+    expeditionRequirements("deep").provisions,
+  );
+});
+
+test("jungle hazards drain provisions and morale", () => {
+  const result = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "jungle", hazards: "Steep jungle gullies" },
+    approach: "standard",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.record.hazard.profile, "jungle");
+  assert.equal(result.record.hazard.provisions, 2);
+  assert.ok(result.record.hazard.morale < 0);
+  assert.equal(
+    result.provisionsUsed,
+    expeditionRequirements("standard").provisions + 2,
+  );
+});
+
+test("cliff guide and ruin scholar bonuses mitigate and improve hazards", () => {
+  const cliff = resolveExpedition({
+    state: createExplorationState(),
+    site: {
+      ...site,
+      id: "cliff-guide",
+      hazards: "Loose scree, exposed cliffs",
+    },
+    approach: "deep",
+    day: 4,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hasClimberOrGuide: true },
+  });
+  assert.equal(cliff.ok, true);
+  assert.equal(cliff.record.hazard.profile, "cliffs");
+  assert.equal(cliff.record.hazard.injuries, 0);
+
+  const ruin = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "ruin-scholar", hazards: "Unstable ruins" },
+    approach: "standard",
+    day: 7,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hasScholar: true },
+  });
+  assert.equal(ruin.ok, true);
+  assert.equal(ruin.record.hazard.profile, "ruins");
+  assert.ok(ruin.record.hazard.reward > 0);
+  assert.ok(ruin.record.reward > 100);
+});
+
+test("fog and marsh hazards apply weather and discipline pressure", () => {
+  const fog = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "fog", hazards: "Tidal mud, fogbound channels" },
+    approach: "deep",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { visibilityKm: 4, weatherRoughness: 1 },
+  });
+  assert.equal(fog.ok, true);
+  assert.equal(fog.record.hazard.profile, "fogbound");
+  assert.ok(fog.record.hazard.damage.rudder > 0);
+  assert.ok(fog.record.hazard.morale < 0);
+
+  const marsh = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "marsh", hazards: "brackish marsh" },
+    approach: "deep",
+    day: 2,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(marsh.ok, true);
+  assert.equal(marsh.record.hazard.profile, "marsh");
+  assert.ok(marsh.record.hazard.morale < 0);
+});
+
+test("hazard branches cover mitigated and quiet outcomes", () => {
+  const safeReef = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "safe-reef", hazards: "Hidden reefs" },
+    approach: "recon",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hasSoundingGear: true, hullCondition: 100 },
+  });
+  assert.equal(safeReef.ok, true);
+  assert.equal(safeReef.record.hazard.damage.hull, undefined);
+  assert.match(safeReef.record.hazard.notes[0], /Sounding gear/);
+
+  const cliff = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "bad-cliff", hazards: "exposed cliffs" },
+    approach: "deep",
+    day: 1,
+    provisions: 30,
+    morale: 0,
+  });
+  assert.equal(cliff.ok, true);
+  assert.ok(cliff.record.hazard.injuries > 0);
+  assert.match(cliff.record.hazard.notes[0], /Loose scree/);
+
+  const clearFog = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "clear-fog", hazards: "fogbound channels" },
+    approach: "recon",
+    day: 3,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { visibilityKm: 24, weatherRoughness: 0 },
+  });
+  assert.equal(clearFog.ok, true);
+  assert.equal(clearFog.record.hazard.damage.rudder, undefined);
+  assert.match(clearFog.record.hazard.notes[0], /Clearer weather/);
+
+  const quietMarsh = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "quiet-marsh", hazards: "brackish marsh" },
+    approach: "recon",
+    day: 2,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hazardSpecialistBonus: 100 },
+  });
+  assert.equal(quietMarsh.ok, true);
+  assert.equal(quietMarsh.record.hazard.morale, 0);
+  assert.match(quietMarsh.record.hazard.notes[0], /discipline held/);
+
+  const general = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "general-hazard", hazards: "sudden squalls" },
+    approach: "recon",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(general.ok, true);
+  assert.equal(general.record.hazard.profile, "general");
+  assert.match(general.record.hazard.notes[0], /no lasting trouble/);
+});
+
+test("ruin hazards can cause curses and collapses instead of relics", () => {
+  const result = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "cursed-ruin", hazards: "Unstable ruins" },
+    approach: "standard",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.record.hazard.reward, 0);
+  assert.equal(result.record.hazard.injuries, 1);
+  assert.equal(result.record.hazard.morale, -2);
+  assert.match(result.record.hazard.notes[0], /curse/);
+});
+
+test("hazard mechanics cover remaining branch modifiers", () => {
+  assert.equal(explorationHazardProfile(null), "general");
+
+  const safeWithoutGear = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "nogear-safe", hazards: "Hidden reefs" },
+    approach: "recon",
+    day: 5,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hullCondition: 80 },
+  });
+  assert.equal(safeWithoutGear.record.hazard.damage.hull, undefined);
+  assert.match(safeWithoutGear.record.hazard.notes[0], /Careful leadsmen/);
+
+  const scrapedReef = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "reef-mid", hazards: "Hidden reefs" },
+    approach: "recon",
+    day: 2,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hullCondition: 50 },
+  });
+  assert.equal(scrapedReef.record.hazard.damage.hull, 3);
+
+  const relic = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "plain-ruin", hazards: "Unstable ruins" },
+    approach: "recon",
+    day: 3,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(relic.record.hazard.reward, 18);
+  assert.match(relic.record.hazard.notes[0], /small relic/);
+
+  const marshInjury = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "bad-marsh", hazards: "marsh" },
+    approach: "deep",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(marshInjury.record.hazard.injuries, 1);
+});
+
+test("hazard defaults and no-incident cliffs remain stable", () => {
+  assert.equal(explorationHazardProfile({}), "general");
+
+  const quietCliff = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "quiet-cliff", hazards: "cliffs" },
+    approach: "recon",
+    day: 3,
+    provisions: 30,
+    morale: 100,
+  });
+  assert.equal(quietCliff.record.hazard.injuries, 0);
+  assert.match(quietCliff.record.hazard.notes[0], /no lasting trouble/);
+
+  const defaultReef = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "default-reef", hazards: "Hidden reefs" },
+    approach: "recon",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { hazardSpecialistBonus: -10 },
+  });
+  assert.equal(defaultReef.record.hazard.profile, "reefs");
+
+  const midFog = resolveExpedition({
+    state: createExplorationState(),
+    site: { ...site, id: "mid-fog", hazards: "fogbound channels" },
+    approach: "recon",
+    day: 1,
+    provisions: 30,
+    morale: 100,
+    hazardContext: { visibilityKm: 12 },
+  });
+  assert.equal(midFog.record.hazard.damage.rudder, undefined);
 });

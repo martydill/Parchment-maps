@@ -207,6 +207,7 @@ import {
   SPECIALIST_ROSTER,
   specialistCombatBonus,
   specialistExplorationBonus,
+  specialistPower,
   specialistRewardMultiplier,
   specialistVoyageModifiers,
 } from "./core/specialists.js";
@@ -6493,6 +6494,26 @@ function openExploration() {
   document.getElementById("explorationPanel").style.display = "grid";
 }
 
+function explorationHazardContext() {
+  const weather = currentWeather();
+  const stats = operationalShipStats();
+  const equipped = game.shipUpgrades.equipped || {};
+  const naturalist = specialistPower(game.specialists, "naturalist") * 10;
+  return {
+    hasSoundingGear:
+      equipped.navigation === "brass-sextant" ||
+      equipped.navigation === "tall-mast" ||
+      game.shipUpgrades.activeClass === "barque" ||
+      calculateShipIdentity(game.shipUpgrades).id === "explorer",
+    hullCondition: game.operations.components.hull,
+    visibilityKm: currentVisibilityKm(),
+    weatherRoughness: weatherRoughness(weather, stats.stormResistance),
+    hasClimberOrGuide: specialistPower(game.specialists, "navigator") >= 0.85,
+    hasScholar: specialistPower(game.specialists, "naturalist") >= 0.85,
+    hazardSpecialistBonus: naturalist,
+  };
+}
+
 function undertakeExpedition(site, approach) {
   const result = resolveExpedition({
     state: game.exploration,
@@ -6502,12 +6523,19 @@ function undertakeExpedition(site, approach) {
     provisions: game.operations.provisions,
     morale: game.operations.morale,
     specialistBonus: specialistExplorationBonus(game.specialists),
+    hazardContext: explorationHazardContext(),
   });
   if (!result.ok) {
     showMessage(result.reason);
     return;
   }
-  game.operations.provisions -= result.provisionsUsed;
+  game.operations.provisions = Math.max(
+    0,
+    game.operations.provisions - result.provisionsUsed,
+  );
+  const hazardDamage = result.record.hazard?.damage || {};
+  const damageResult = applyComponentDamage(game.operations, hazardDamage);
+  game.operations = damageResult.operations;
   advanceDays(result.days);
   game.operations.morale = clamp(
     game.operations.morale + result.moraleChange,
@@ -6539,9 +6567,20 @@ function undertakeExpedition(site, approach) {
     }
   }
   revealExplorationSurvey(site, result.record.success);
+  const hazardSummary = result.record.hazard?.notes?.length
+    ? ` Hazard: ${result.record.hazard.notes.join(" ")}`
+    : "";
+  const damageSummary = Object.entries(damageResult.applied)
+    .filter(([, amount]) => amount > 0)
+    .map(
+      ([component, amount]) =>
+        `${amount} ${SHIP_COMPONENTS[component].label.toLowerCase()}`,
+    )
+    .join(", ");
+  const damageText = damageSummary ? ` Ship damage: ${damageSummary}.` : "";
   const outcome = result.record.success
-    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered${recovery}.`
-    : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.`;
+    ? `${site.name} was surveyed${result.record.exceptional ? " with exceptional results" : ""}. The landmass is now inked on your chart, and ${result.record.reward} crowns of specimens and salvage were recovered${recovery}.${hazardSummary}${damageText}`
+    : `The expedition returned without completing its objective, but the landing area was added to your chart. ${result.record.injuries} crew members were injured.${hazardSummary}${damageText}`;
   addNews("Shore expedition: " + site.name, outcome);
   showMessage(
     result.record.success
