@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createRoughSeaParticles, isLandPoint } from "../src/rendering.js";
+import {
+  createRoughSeaParticles,
+  isLandPoint,
+  wrappedCircleIntersectsViewport,
+} from "../src/rendering.js";
 
 const seas = [
   { x: 100, y: 200, rx: 80, ry: 40, strength: 1, angle: 0.3 },
@@ -83,4 +87,23 @@ test("map land checks include land polygons crossing the world seam", () => {
   assert.equal(isLandPoint(6, 20, 100, landShapes), true);
   assert.equal(isLandPoint(94, 60, 100, landShapes), true);
   assert.equal(isLandPoint(50, 60, 100, landShapes), false);
+});
+
+test("wrapped viewport checks cull off-screen objects while respecting seams", () => {
+  assert.equal(
+    wrappedCircleIntersectsViewport(980, 50, 15, -10, 50, 200, 120, 1, 1000),
+    true,
+  );
+  assert.equal(
+    wrappedCircleIntersectsViewport(260, 50, 15, 0, 50, 200, 120, 1, 1000),
+    false,
+  );
+  assert.equal(
+    wrappedCircleIntersectsViewport(95, 118, 20, 100, 50, 200, 120, 1, 1000),
+    true,
+  );
+  assert.equal(
+    wrappedCircleIntersectsViewport(95, 145, 20, 100, 50, 200, 120, 1, 1000),
+    false,
+  );
 });
