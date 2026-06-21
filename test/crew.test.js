@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyCrewTrait,
   applyCrewVoyage,
   createCrewState,
   crewMutinyPressure,
+  crewTraitLabel,
   crewVoyageModifiers,
   crewWeeklyWage,
+  CREW_TRAITS,
   normalizeCrewState,
   portRecruitmentPool,
   recruitCrew,
+  resolveCrewVoyageEvent,
   resolveCrewIncident,
   takeShoreLeave,
 } from "../src/core/crew.js";
@@ -211,4 +215,192 @@ test("crew normalization preserves a bounded unique trait list", () => {
     "Keen",
     "Patient",
   ]);
+});
+
+test("crew voyage events award officer-led traits and bounded rewards", () => {
+  const storm = resolveCrewVoyageEvent(createCrewState(), {
+    days: 4,
+    distance: 1800,
+    roughness: 0.9,
+    routePlan: "fast",
+    specialistId: "boatswain",
+    origin: "Goldhaven",
+    destination: "Rimegate",
+  });
+
+  assert.equal(storm.event.id, "boatswain-rigging");
+  assert.equal(storm.event.trait, CREW_TRAITS.artisans.juryRiggers.id);
+  assert.equal(storm.event.roleLabel, "Artisans");
+  assert.equal(storm.event.repair.rigging, 3);
+  assert.ok(storm.crew.groups.artisans.traits.includes("jury-riggers"));
+  assert.ok(storm.crew.groups.artisans.experience > 35);
+
+  const repeated = resolveCrewVoyageEvent(storm.crew, {
+    days: 4,
+    distance: 1800,
+    roughness: 0.9,
+    routePlan: "fast",
+    specialistId: "boatswain",
+  });
+  assert.notEqual(repeated.event?.trait, "jury-riggers");
+
+  const quiet = resolveCrewVoyageEvent(createCrewState(), {
+    days: 0,
+    distance: 120,
+    roughness: 0,
+  });
+  assert.equal(quiet.event, null);
+});
+
+test("crew traits can be applied directly without duplicating invalid entries", () => {
+  const applied = applyCrewTrait(
+    createCrewState(),
+    "deck",
+    CREW_TRAITS.deck.routeSavvy.id,
+    12,
+    5,
+  );
+  assert.equal(applied.gained, true);
+  assert.deepEqual(applied.crew.groups.deck.traits, ["route-savvy"]);
+  assert.equal(applied.crew.groups.deck.experience, 57);
+  assert.equal(applied.crew.groups.deck.loyalty, 75);
+
+  const duplicate = applyCrewTrait(
+    applied.crew,
+    "deck",
+    CREW_TRAITS.deck.routeSavvy.id,
+  );
+  assert.equal(duplicate.gained, false);
+  assert.deepEqual(duplicate.crew.groups.deck.traits, ["route-savvy"]);
+
+  const invalid = applyCrewTrait(createCrewState(), "cooks", "route-savvy");
+  assert.equal(invalid.gained, false);
+  const unknownTrait = applyCrewTrait(createCrewState(), "deck", "unknown");
+  assert.equal(unknownTrait.gained, false);
+  assert.equal(crewTraitLabel("unknown"), "unknown");
+});
+
+test("crew voyage events cover rationing relief, ties, and fully trained crews", () => {
+  const rationing = resolveCrewVoyageEvent(createCrewState(), {
+    days: 2,
+    distance: 500,
+    roughness: 0.1,
+    shortage: 2,
+    routePlan: "rationing",
+    specialistId: "purser",
+  });
+  assert.equal(rationing.event.id, "purser-ledger");
+  assert.equal(rationing.event.provisions, 1);
+  assert.equal(rationing.event.trait, CREW_TRAITS.stewards.rationMasters.id);
+  assert.equal(rationing.crew.groups.deck.loyalty, 71);
+  assert.equal(rationing.crew.groups.stewards.loyalty, 74);
+
+  const tied = resolveCrewVoyageEvent(createCrewState(), {
+    days: 1,
+    distance: 1200,
+    roughness: 0,
+    routePlan: "battle",
+    seed: "tie-breaker",
+  });
+  assert.equal(tied.event.id, "convoy-signal-watch");
+  assert.equal(tied.event.trait, CREW_TRAITS.marines.convoySentinels.id);
+
+  let trained = createCrewState();
+  for (const [role, traits] of Object.entries(CREW_TRAITS)) {
+    trained.groups[role].traits = Object.values(traits).map(
+      (trait) => trait.id,
+    );
+  }
+  const noLesson = resolveCrewVoyageEvent(trained, {
+    days: 5,
+    distance: 2400,
+    roughness: 1,
+    shortage: 3,
+    routePlan: "fast",
+    specialistId: "boatswain",
+  });
+  assert.equal(noLesson.event, null);
+});
+
+test("crew voyage events cover remaining mentor branches", () => {
+  assert.equal(resolveCrewVoyageEvent(null, {}).event, null);
+
+  const navigator = resolveCrewVoyageEvent(createCrewState(), {
+    days: 3,
+    distance: 1200,
+    roughness: 0,
+    specialistId: "navigator",
+  });
+  assert.equal(navigator.event.id, "navigator-drills");
+
+  const market = resolveCrewVoyageEvent(createCrewState(), {
+    days: 2,
+    distance: 500,
+    roughness: 0,
+    specialistId: "factor",
+  });
+  assert.equal(market.event.id, "factor-quay-auction");
+  assert.equal(market.event.trait, CREW_TRAITS.stewards.contractBrokers.id);
+  assert.equal(market.event.provisions, 0);
+
+  const storm = resolveCrewVoyageEvent(createCrewState(), {
+    days: 3,
+    distance: 600,
+    roughness: 0.8,
+    specialistId: "surgeon",
+  });
+  assert.equal(storm.event.id, "storm-watch");
+  assert.equal(storm.event.officerLoyalty, 2);
+});
+
+test("crew voyage events apply long-voyage experience caps with default planning context", () => {
+  const long = resolveCrewVoyageEvent(createCrewState(), {
+    days: 8,
+    distance: 1300,
+    roughness: 0.6,
+  });
+  assert.equal(long.event.id, "navigator-drills");
+  assert.equal(long.crew.groups.deck.experience, 52);
+});
+
+test("gunner mentorship can drive marine progression without battle orders", () => {
+  const event = resolveCrewVoyageEvent(createCrewState(), {
+    days: 1,
+    distance: 300,
+    roughness: 0,
+    specialistId: "gunner",
+  });
+  assert.equal(event.event.id, "gunner-quarters");
+  assert.equal(event.event.trait, CREW_TRAITS.marines.boardingDrilled.id);
+});
+
+test("expanded voyage events include naturalist, smuggler, and hardware lessons", () => {
+  const naturalist = resolveCrewVoyageEvent(createCrewState(), {
+    days: 2,
+    distance: 950,
+    roughness: 0.1,
+    specialistId: "naturalist",
+  });
+  assert.equal(naturalist.event.id, "naturalist-sea-signs");
+  assert.equal(naturalist.event.trait, CREW_TRAITS.deck.currentReaders.id);
+
+  const smuggler = resolveCrewVoyageEvent(createCrewState(), {
+    days: 1,
+    distance: 800,
+    roughness: 0.2,
+    routePlan: "fast",
+    specialistId: "smuggler",
+  });
+  assert.equal(smuggler.event.id, "smuggler-manifest-lessons");
+  assert.equal(smuggler.event.trait, CREW_TRAITS.stewards.discreetFactors.id);
+
+  const artisans = resolveCrewVoyageEvent(createCrewState(), {
+    days: 5,
+    distance: 650,
+    roughness: 0.2,
+    specialistId: "boatswain",
+  });
+  assert.equal(artisans.event.id, "dockyard-hardware-drills");
+  assert.equal(artisans.event.trait, CREW_TRAITS.artisans.copperhands.id);
+  assert.deepEqual(artisans.event.repair, { fittings: 2, rudder: 1 });
 });
