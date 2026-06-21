@@ -1,5 +1,94 @@
 import { clamp } from "./math.js";
 
+export const CREW_TRAITS = Object.freeze({
+  deck: Object.freeze({
+    routeSavvy: {
+      id: "route-savvy",
+      label: "Route-savvy",
+      description:
+        "Veteran hands trim sail faster on familiar, demanding passages.",
+    },
+    stormHardened: {
+      id: "storm-hardened",
+      label: "Storm-hardened",
+      description:
+        "Green water and hard watches no longer shake the deck crew easily.",
+    },
+    currentReaders: {
+      id: "current-readers",
+      label: "Current-readers",
+      description:
+        "Lookouts read bird paths, weed lines, and swells before the chart confirms them.",
+    },
+  }),
+  marines: Object.freeze({
+    boardingDrilled: {
+      id: "boarding-drilled",
+      label: "Boarding-drilled",
+      description:
+        "The guard drills until hostile sails look like opportunities, not omens.",
+    },
+    convoySentinels: {
+      id: "convoy-sentinels",
+      label: "Convoy sentinels",
+      description:
+        "Marines learn the patient signals and restraint needed to guard merchant convoys.",
+    },
+  }),
+  artisans: Object.freeze({
+    juryRiggers: {
+      id: "jury-riggers",
+      label: "Jury-riggers",
+      description:
+        "Carpenters and sailmakers can improvise repairs before damage spreads.",
+    },
+    copperhands: {
+      id: "copperhands",
+      label: "Copperhands",
+      description:
+        "Artisans learn to patch pumps, fittings, and battered hardware with dockyard precision.",
+    },
+  }),
+  stewards: Object.freeze({
+    rationMasters: {
+      id: "ration-masters",
+      label: "Ration-masters",
+      description:
+        "Pursers stretch stores without making the mess deck feel punished.",
+    },
+    marketReaders: {
+      id: "market-readers",
+      label: "Market-readers",
+      description:
+        "Supercargo clerks spot profitable harbor rumors before rivals do.",
+    },
+    discreetFactors: {
+      id: "discreet-factors",
+      label: "Discreet factors",
+      description:
+        "Stewards keep manifests quiet, cargo stories consistent, and dock gossip useful.",
+    },
+    contractBrokers: {
+      id: "contract-brokers",
+      label: "Contract brokers",
+      description:
+        "The ship's clerks learn which clauses, seals, and introductions turn arrivals into commissions.",
+    },
+  }),
+});
+
+const CREW_TRAIT_BY_ID = Object.freeze(
+  Object.fromEntries(
+    Object.values(CREW_TRAITS)
+      .flatMap((traits) => Object.values(traits))
+      .map((trait) => [trait.id, trait]),
+  ),
+);
+
+export function crewTraitLabel(id) {
+  return CREW_TRAIT_BY_ID[id]?.label || id;
+}
+
 export const CREW_ROLES = Object.freeze({
   deck: {
     label: "Deck crew",
@@ -260,4 +349,232 @@ export function takeShoreLeave(crew, coins, days = 1) {
   }
   next.mutinyPressure = crewMutinyPressure(next);
   return { ok: true, crew: next, coins: coins - cost, cost, days };
+}
+
+export function applyCrewTrait(
+  crew,
+  role,
+  traitId,
+  experience = 0,
+  loyalty = 0,
+) {
+  const next = normalizeCrewState(crew);
+  const group = next.groups[role];
+  if (!group || !CREW_TRAIT_BY_ID[traitId]) {
+    return { crew: next, gained: false };
+  }
+  const hadTrait = group.traits.includes(traitId);
+  group.traits = [...new Set([...group.traits, traitId])].slice(0, 6);
+  group.experience = clamp(group.experience + experience, 0, 100);
+  group.loyalty = clamp(group.loyalty + loyalty, 0, 100);
+  return { crew: next, gained: !hadTrait };
+}
+
+export function resolveCrewVoyageEvent(crew, context = {}) {
+  let next = normalizeCrewState(crew);
+  const days = Math.max(0, Math.floor(Number(context.days) || 0));
+  const distance = Math.max(0, Number(context.distance) || 0);
+  const roughness = Math.max(0, Number(context.roughness) || 0);
+  const shortage = Math.max(0, Number(context.shortage) || 0);
+  const routePlan = context.routePlan || "balanced";
+  const specialistId = context.specialistId || null;
+  const eventSeed = String(
+    context.seed ||
+      `${context.origin || "sea"}:${context.destination || "port"}:${days}:${Math.round(distance)}`,
+  );
+
+  if (days < 1 && distance < 400 && roughness < 0.25 && !shortage) {
+    return { crew: next, event: null };
+  }
+
+  const candidates = [
+    {
+      id: "navigator-drills",
+      role: "deck",
+      trait: CREW_TRAITS.deck.routeSavvy.id,
+      officer: "navigator",
+      score:
+        (specialistId === "navigator" ? 5 : 0) +
+        (distance >= 1100 ? 3 : 0) +
+        (days >= 3 ? 2 : 0),
+      title: "Navigator's noon drills",
+      body: "The navigator turns every watch change into a lesson in bearings, sail trim, and remembered landmarks.",
+      morale: 1,
+      officerLoyalty: 2,
+    },
+    {
+      id: "boatswain-rigging",
+      role: "artisans",
+      trait: CREW_TRAITS.artisans.juryRiggers.id,
+      officer: "boatswain",
+      score:
+        (specialistId === "boatswain" ? 5 : 0) +
+        (roughness >= 0.45 ? 4 : 0) +
+        (routePlan === "fast" ? 2 : 0),
+      title: "Boatswain's damage party",
+      body: "The boatswain keeps spare line, wedges, and tar ready until the artisans can patch trouble before it blooms.",
+      morale: 1,
+      repair: { rigging: 3, hull: 1 },
+      officerLoyalty: 2,
+    },
+    {
+      id: "gunner-quarters",
+      role: "marines",
+      trait: CREW_TRAITS.marines.boardingDrilled.id,
+      officer: "gunner",
+      score:
+        (specialistId === "gunner" ? 5 : 0) +
+        (routePlan === "battle" ? 4 : 0) +
+        (days >= 2 ? 1 : 0),
+      title: "Gunner's prize quarters",
+      body: "The gunner drills the marines at boarding stations until the ship can answer a hostile hail without panic.",
+      morale: 2,
+      officerLoyalty: 2,
+    },
+    {
+      id: "purser-ledger",
+      role: "stewards",
+      trait: shortage
+        ? CREW_TRAITS.stewards.rationMasters.id
+        : CREW_TRAITS.stewards.marketReaders.id,
+      officer: "purser",
+      score:
+        (specialistId === "purser" || specialistId === "factor" ? 5 : 0) +
+        (shortage ? 5 : 0) +
+        (routePlan === "rationing" ? 3 : 0),
+      title: shortage ? "Purser's hard ledger" : "Stewards' harbor ledger",
+      body: shortage
+        ? "The purser rewrites the mess rota so short rations feel planned rather than desperate."
+        : "The stewards compare manifests, whispers, and prices until the next market opens before the ship docks.",
+      morale: shortage ? 3 : 1,
+      provisions: shortage ? 1 : 0,
+      officerLoyalty: 2,
+    },
+    {
+      id: "storm-watch",
+      role: "deck",
+      trait: CREW_TRAITS.deck.stormHardened.id,
+      officer: "surgeon",
+      score: (roughness >= 0.75 ? 6 : 0) + (days >= 3 ? 2 : 0),
+      title: "Storm-watch rotation",
+      body: "The surgeon and mates enforce dry blankets, short watches, and hot broth until the deck crew learns how to endure dirty weather.",
+      morale: 2,
+      officerLoyalty: specialistId === "surgeon" ? 2 : 0,
+    },
+    {
+      id: "naturalist-sea-signs",
+      role: "deck",
+      trait: CREW_TRAITS.deck.currentReaders.id,
+      officer: "naturalist",
+      score:
+        (specialistId === "naturalist" ? 5 : 0) +
+        (distance >= 900 ? 2 : 0) +
+        (roughness < 0.35 ? 2 : 0),
+      title: "Naturalist's sea signs",
+      body: "The naturalist makes the lookouts compare birds, water color, and drifting weed until the sea itself becomes a second chart.",
+      morale: 1,
+      officerLoyalty: 2,
+    },
+    {
+      id: "smuggler-manifest-lessons",
+      role: "stewards",
+      trait: CREW_TRAITS.stewards.discreetFactors.id,
+      officer: "smuggler",
+      score:
+        (specialistId === "smuggler" ? 5 : 0) +
+        (distance >= 700 ? 2 : 0) +
+        (routePlan === "fast" ? 1 : 0),
+      title: "Smuggler's manifest lessons",
+      body: "The smuggler teaches the stewards how to keep manifests plausible, quiet, and ready for unfriendly questions.",
+      morale: 1,
+      officerLoyalty: 2,
+    },
+    {
+      id: "factor-quay-auction",
+      role: "stewards",
+      trait: CREW_TRAITS.stewards.contractBrokers.id,
+      officer: "factor",
+      score:
+        (specialistId === "factor" ? 5 : 0) +
+        (days >= 2 ? 2 : 0) +
+        (routePlan === "balanced" ? 1 : 0),
+      title: "Factor's quay auction",
+      body: "The factor rehearses introductions, seals, and cargo stories with the stewards before the harbor brokers can set the terms.",
+      morale: 1,
+      officerLoyalty: 2,
+    },
+    {
+      id: "convoy-signal-watch",
+      role: "marines",
+      trait: CREW_TRAITS.marines.convoySentinels.id,
+      officer: "gunner",
+      score:
+        (routePlan === "battle" ? 4 : 0) +
+        (distance >= 1000 ? 2 : 0) +
+        (specialistId === "gunner" ? 1 : 0),
+      title: "Convoy signal watch",
+      body: "The marines practice lantern codes and warning shots until they can guard a merchant line without wasting powder.",
+      morale: 1,
+      officerLoyalty: specialistId === "gunner" ? 1 : 0,
+    },
+    {
+      id: "dockyard-hardware-drills",
+      role: "artisans",
+      trait: CREW_TRAITS.artisans.copperhands.id,
+      officer: "boatswain",
+      score:
+        (days >= 4 ? 3 : 0) +
+        (roughness < 0.5 ? 2 : 0) +
+        (specialistId === "boatswain" ? 1 : 0),
+      title: "Dockyard hardware drills",
+      body: "Between watches, the artisans practice pump, hinge, and fitting repairs with the boatswain's battered box of spare copper.",
+      morale: 1,
+      repair: { fittings: 2, rudder: 1 },
+      officerLoyalty: specialistId === "boatswain" ? 1 : 0,
+    },
+  ];
+
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return `${eventSeed}:${a.id}`.localeCompare(`${eventSeed}:${b.id}`);
+  });
+
+  const chosen = candidates.find(
+    (candidate) =>
+      candidate.score > 0 &&
+      !next.groups[candidate.role].traits.includes(candidate.trait),
+  );
+  if (!chosen) return { crew: next, event: null };
+
+  const applied = applyCrewTrait(
+    next,
+    chosen.role,
+    chosen.trait,
+    3 + Math.min(days, 4),
+    chosen.morale,
+  );
+  next = applied.crew;
+  if (chosen.provisions) {
+    for (const group of Object.values(next.groups)) {
+      group.loyalty = clamp(group.loyalty + 1, 0, 100);
+    }
+  }
+  return {
+    crew: next,
+    event: {
+      id: chosen.id,
+      title: chosen.title,
+      body: chosen.body,
+      role: chosen.role,
+      roleLabel: CREW_ROLES[chosen.role].label,
+      trait: chosen.trait,
+      traitLabel: crewTraitLabel(chosen.trait),
+      morale: chosen.morale,
+      repair: chosen.repair || {},
+      provisions: chosen.provisions || 0,
+      officer: chosen.officer,
+      officerLoyalty: chosen.officerLoyalty || 0,
+      gained: applied.gained,
+    },
+  };
 }

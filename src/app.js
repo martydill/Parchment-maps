@@ -218,6 +218,7 @@ import {
 import {
   CREW_ROLES,
   crewVoyageModifiers,
+  resolveCrewVoyageEvent,
   crewWeeklyWage,
   normalizeCrewState,
   portRecruitmentPool,
@@ -5248,6 +5249,53 @@ function renderShipyard() {
     root.append(section);
   }
 }
+function leadingVoyageMentor(specialists) {
+  const officer = normalizeSpecialistState(specialists)
+    .officers.filter((candidate) => candidate.loyalty >= 70)
+    .sort((a, b) => b.loyalty - a.loyalty || b.events - a.events)[0];
+  return officer?.id || null;
+}
+
+function applyCrewVoyageEvent(event) {
+  for (const [component, amount] of Object.entries(event.repair || {})) {
+    if (game.operations.components[component] === undefined) continue;
+    game.operations.components[component] = clampNumber(
+      game.operations.components[component] + amount,
+      0,
+      100,
+    );
+  }
+  if (event.provisions) {
+    game.operations.provisions = clampNumber(
+      game.operations.provisions + event.provisions,
+      0,
+      30,
+    );
+  }
+  game.operations.condition =
+    Object.values(game.operations.components).reduce(
+      (sum, value) => sum + value,
+      0,
+    ) / Object.values(game.operations.components).length;
+  game.operations.morale = clampNumber(
+    game.operations.morale + event.morale,
+    0,
+    100,
+  );
+  if (event.officer && event.officerLoyalty) {
+    game.specialists = adjustSpecialistLoyalty(
+      game.specialists,
+      event.officer,
+      event.officerLoyalty,
+    );
+  }
+  addNews(
+    event.title,
+    `${event.body} ${event.roleLabel} gained ${event.traitLabel}.`,
+  );
+  showMessage(`CREW PROGRESSION · ${event.traitLabel} gained.`, 4);
+}
+
 function openPort() {
   if (!nearPort) return;
   currentPort = nearPort;
@@ -5369,6 +5417,19 @@ function openPort() {
         "Voyage wear",
         `The passage consumed ${operations.provisionsUsed} provisions and caused ${operations.damage}% wear.`,
       );
+    const crewProgress = resolveCrewVoyageEvent(game.operations.crew, {
+      origin: game.departedFromPort,
+      destination: currentPort.name,
+      days,
+      distance,
+      roughness,
+      shortage: operations.shortage,
+      routePlan: routePlan.id,
+      specialistId: leadingVoyageMentor(game.specialists),
+      seed: `${game.departedFromPort}:${currentPort.name}:${game.day}:${Math.round(distance)}`,
+    });
+    game.operations.crew = crewProgress.crew;
+    if (crewProgress.event) applyCrewVoyageEvent(crewProgress.event);
     game.voyageDistance = 0;
     resetVoyageTimeState();
     game.departedFromPort = null;
