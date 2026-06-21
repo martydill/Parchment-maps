@@ -484,6 +484,36 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   c.restore();
 }
 
+function drawDirectionalFog(
+  c,
+  aheadVisibilityKm,
+  asternVisibilityKm,
+  headingAngle,
+  vw,
+  vh,
+) {
+  if (aheadVisibilityKm == null || asternVisibilityKm == null) return;
+  const aheadFog = clamp01((7.5 - aheadVisibilityKm) / 5.5);
+  const asternFog = clamp01((7.5 - asternVisibilityKm) / 5.5);
+  const contrast = Math.abs(aheadFog - asternFog);
+  if (contrast <= 0.04) return;
+  const denseAhead = aheadFog > asternFog;
+  const direction = headingAngle - Math.PI / 2 + (denseAhead ? 0 : Math.PI);
+  const cx = vw / 2;
+  const cy = vh / 2;
+  const span = Math.hypot(vw, vh);
+  const dx = Math.cos(direction) * span;
+  const dy = Math.sin(direction) * span;
+  const gradient = c.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+  gradient.addColorStop(0, "rgba(222,226,213,0)");
+  gradient.addColorStop(0.48, `rgba(222,226,213,${contrast * 0.08})`);
+  gradient.addColorStop(1, `rgba(222,226,213,${contrast * 0.36})`);
+  c.save();
+  c.fillStyle = gradient;
+  c.fillRect(0, 0, vw, vh);
+  c.restore();
+}
+
 function drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time) {
   if (rain <= 0.01) return;
   const count = Math.round(50 + rain * 280);
@@ -557,6 +587,9 @@ export function drawWeatherEffects(c, opts) {
   const time = opts.time || 0;
   const windAngle = opts.windAngle || 0;
   const windStrength = opts.windStrength || 0;
+  const aheadVisibilityKm = opts.aheadVisibilityKm;
+  const asternVisibilityKm = opts.asternVisibilityKm;
+  const headingAngle = opts.headingAngle || 0;
 
   const storm = clamp01((roughness - 0.2) / 0.28);
   let nameFog = 0;
@@ -583,6 +616,14 @@ export function drawWeatherEffects(c, opts) {
 
   drawWeatherClouds(c, cloud, storm, windAngle, windStrength, vw, vh, time);
   drawWeatherFog(c, fog, vw, vh, time);
+  drawDirectionalFog(
+    c,
+    aheadVisibilityKm,
+    asternVisibilityKm,
+    headingAngle,
+    vw,
+    vh,
+  );
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
   drawWeatherLightning(c, lightning, vw, vh, time);
 }
