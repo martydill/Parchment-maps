@@ -1,3 +1,4 @@
+import { LAND_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -58,13 +59,13 @@ test("regional transforms create materially different continent silhouettes", ()
   const matching = createMapTransform("north-star");
   const different = createMapTransform("southern-cross");
   const firstShape = source.map(([x, y]) =>
-    first.regionPoint(x, y, "Avelorn", center),
+    first.regionPoint(x, y, LAND_NAMES.orravelle, center),
   );
   const matchingShape = source.map(([x, y]) =>
-    matching.regionPoint(x, y, "Avelorn", center),
+    matching.regionPoint(x, y, LAND_NAMES.orravelle, center),
   );
   const differentShape = source.map(([x, y]) =>
-    different.regionPoint(x, y, "Avelorn", center),
+    different.regionPoint(x, y, LAND_NAMES.orravelle, center),
   );
   const totalDifference = firstShape.reduce(
     (sum, point, index) =>

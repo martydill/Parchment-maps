@@ -1,4 +1,11 @@
 import {
+  GAME_NAME,
+  PORT_NAMES,
+  LAND_NAMES,
+  SHIP_NAMES,
+  FACTION_NAMES,
+} from "./names.js";
+import {
   clamp,
   nearestWrapped,
   normalizeAngle,
@@ -388,8 +395,12 @@ function transformWorldData() {
     sea.rx = mapTransform.horizontalLength(sea.rx);
     sea.ry = mapTransform.verticalLength(sea.ry);
   }
-  const spawn = mapPoint(HOME_PORT.spawnX, HOME_PORT.spawnY, "Avelorn");
-  mapRecord(HOME_PORT, "Avelorn");
+  const spawn = mapPoint(
+    HOME_PORT.spawnX,
+    HOME_PORT.spawnY,
+    LAND_NAMES.orravelle,
+  );
+  mapRecord(HOME_PORT, LAND_NAMES.orravelle);
   HOME_PORT.spawnX = spawn.x;
   HOME_PORT.spawnY = spawn.y;
 
@@ -545,34 +556,134 @@ function cargoCapacities() {
 }
 
 const contractRoutes = {
-  Goldhaven: ["Rimegate", "Mallowfen", "Khaz Vhar"],
-  Rimegate: ["Goldhaven", "Lethariel", "Mallowfen"],
-  Lethariel: ["Rimegate", "Glasswater", "Goldhaven"],
-  Glasswater: ["Lethariel", "Kingfisher Quay", "Khaz Vhar"],
-  "Khaz Vhar": ["Goldhaven", "Kingfisher Quay", "Drakefall"],
-  Drakefall: ["Goldhaven", "Mallowfen", "Khaz Vhar"],
-  Mallowfen: ["Goldhaven", "Drakefall", "Rimegate"],
-  "Kingfisher Quay": ["Glasswater", "Khaz Vhar", "Goldhaven"],
+  [PORT_NAMES.orvessaQuay]: [
+    PORT_NAMES.narthkel,
+    PORT_NAMES.mirelune,
+    PORT_NAMES.drazhOvek,
+  ],
+  [PORT_NAMES.narthkel]: [
+    PORT_NAMES.orvessaQuay,
+    PORT_NAMES.velquorin,
+    PORT_NAMES.mirelune,
+  ],
+  [PORT_NAMES.velquorin]: [
+    PORT_NAMES.narthkel,
+    PORT_NAMES.mirravel,
+    PORT_NAMES.orvessaQuay,
+  ],
+  [PORT_NAMES.mirravel]: [
+    PORT_NAMES.velquorin,
+    PORT_NAMES.kavrenQuay,
+    PORT_NAMES.drazhOvek,
+  ],
+  [PORT_NAMES.drazhOvek]: [
+    PORT_NAMES.orvessaQuay,
+    PORT_NAMES.kavrenQuay,
+    PORT_NAMES.thrymmor,
+  ],
+  [PORT_NAMES.thrymmor]: [
+    PORT_NAMES.orvessaQuay,
+    PORT_NAMES.mirelune,
+    PORT_NAMES.drazhOvek,
+  ],
+  [PORT_NAMES.mirelune]: [
+    PORT_NAMES.orvessaQuay,
+    PORT_NAMES.thrymmor,
+    PORT_NAMES.narthkel,
+  ],
+  [PORT_NAMES.kavrenQuay]: [
+    PORT_NAMES.mirravel,
+    PORT_NAMES.drazhOvek,
+    PORT_NAMES.orvessaQuay,
+  ],
 };
 
 Object.assign(contractRoutes, {
-  Gloamharbor: ["Goldhaven", "Emberstrand", "Saint’s Anchorage"],
-  Emberstrand: ["Gloamharbor", "Sunspire", "Saint’s Anchorage"],
-  Sunspire: ["Emberstrand", "Nacre Bay", "Saint’s Anchorage"],
-  "Nacre Bay": ["Sunspire", "Asterfall", "Kestrel Haven"],
-  Asterfall: ["Nacre Bay", "Qasr Merid", "Kestrel Haven"],
-  "Qasr Merid": ["Asterfall", "Skyreach", "Tempest Hold"],
-  Skyreach: ["Qasr Merid", "Duskport", "Gloamharbor"],
-  Duskport: ["Skyreach", "Dawnwatch", "Whalegrave"],
-  Dawnwatch: ["Duskport", "Mallowfen", "Redharbor"],
-  Redharbor: ["Saint’s Anchorage", "Pearlspire", "Dawnwatch"],
-  Pearlspire: ["Redharbor", "Jadegate", "Kingfisher Quay"],
-  Jadegate: ["Pearlspire", "Cloudrest", "Kestrel Haven"],
-  Cloudrest: ["Jadegate", "Tempest Hold", "Kestrel Haven"],
-  "Tempest Hold": ["Cloudrest", "Whalegrave", "Qasr Merid"],
-  Whalegrave: ["Tempest Hold", "Duskport", "Cloudrest"],
-  "Saint’s Anchorage": ["Emberstrand", "Sunspire", "Redharbor"],
-  "Kestrel Haven": ["Nacre Bay", "Asterfall", "Jadegate"],
+  [PORT_NAMES.veyrgloam]: [
+    PORT_NAMES.orvessaQuay,
+    PORT_NAMES.cindervaleStrand,
+    PORT_NAMES.orrasanctAnchorage,
+  ],
+  [PORT_NAMES.cindervaleStrand]: [
+    PORT_NAMES.veyrgloam,
+    PORT_NAMES.heliovar,
+    PORT_NAMES.orrasanctAnchorage,
+  ],
+  [PORT_NAMES.heliovar]: [
+    PORT_NAMES.cindervaleStrand,
+    PORT_NAMES.pearlveinBay,
+    PORT_NAMES.orrasanctAnchorage,
+  ],
+  [PORT_NAMES.pearlveinBay]: [
+    PORT_NAMES.heliovar,
+    PORT_NAMES.starrynFall,
+    PORT_NAMES.kavrelHaven,
+  ],
+  [PORT_NAMES.starrynFall]: [
+    PORT_NAMES.pearlveinBay,
+    PORT_NAMES.meridQasryn,
+    PORT_NAMES.kavrelHaven,
+  ],
+  [PORT_NAMES.meridQasryn]: [
+    PORT_NAMES.starrynFall,
+    PORT_NAMES.aetherreach,
+    PORT_NAMES.stormholden,
+  ],
+  [PORT_NAMES.aetherreach]: [
+    PORT_NAMES.meridQasryn,
+    PORT_NAMES.vesperport,
+    PORT_NAMES.veyrgloam,
+  ],
+  [PORT_NAMES.vesperport]: [
+    PORT_NAMES.aetherreach,
+    PORT_NAMES.eoswatch,
+    PORT_NAMES.ossuwhale,
+  ],
+  [PORT_NAMES.eoswatch]: [
+    PORT_NAMES.vesperport,
+    PORT_NAMES.mirelune,
+    PORT_NAMES.crimsonharrow,
+  ],
+  [PORT_NAMES.crimsonharrow]: [
+    PORT_NAMES.orrasanctAnchorage,
+    PORT_NAMES.pearlspirel,
+    PORT_NAMES.eoswatch,
+  ],
+  [PORT_NAMES.pearlspirel]: [
+    PORT_NAMES.crimsonharrow,
+    PORT_NAMES.verdigate,
+    PORT_NAMES.kavrenQuay,
+  ],
+  [PORT_NAMES.verdigate]: [
+    PORT_NAMES.pearlspirel,
+    PORT_NAMES.cloudhollow,
+    PORT_NAMES.kavrelHaven,
+  ],
+  [PORT_NAMES.cloudhollow]: [
+    PORT_NAMES.verdigate,
+    PORT_NAMES.stormholden,
+    PORT_NAMES.kavrelHaven,
+  ],
+  [PORT_NAMES.stormholden]: [
+    PORT_NAMES.cloudhollow,
+    PORT_NAMES.ossuwhale,
+    PORT_NAMES.meridQasryn,
+  ],
+  [PORT_NAMES.ossuwhale]: [
+    PORT_NAMES.stormholden,
+    PORT_NAMES.vesperport,
+    PORT_NAMES.cloudhollow,
+  ],
+  [PORT_NAMES.orrasanctAnchorage]: [
+    PORT_NAMES.cindervaleStrand,
+    PORT_NAMES.heliovar,
+    PORT_NAMES.crimsonharrow,
+  ],
+  [PORT_NAMES.kavrelHaven]: [
+    PORT_NAMES.pearlveinBay,
+    PORT_NAMES.starrynFall,
+    PORT_NAMES.verdigate,
+  ],
 });
 const contractCargoNames = [
   "sealed guild ledgers",
@@ -588,27 +699,26 @@ const worldEvents = {
   ironShortage: {
     id: "goldhaven-iron-shortage",
     active: false,
-    title: "Goldhaven Iron Emergency",
-    port: "Goldhaven",
+    title: `${PORT_NAMES.orvessaQuay} Iron Emergency`,
+    port: PORT_NAMES.orvessaQuay,
     good: "iron",
     multiplier: 1.72,
     startDay: 0,
-    description:
-      "A collapse at the northern foundries has emptied the crown shipyards. Goldhaven is paying exceptional prices for dwarf-forged iron.",
+    description: `A collapse at the northern foundries has emptied the crown shipyards. ${PORT_NAMES.orvessaQuay} is paying exceptional prices for dwarf-forged iron.`,
   },
 };
 
 const eventTemplates = {
   loomStrike: {
     title: "Silver Loom Strike",
-    port: "Lethariel",
+    port: PORT_NAMES.velquorin,
     good: "silk",
     duration: 5,
     priceMultiplier: 1.48,
     productionDelta: -1.7,
     consumptionDelta: 0,
     stockDelta: -7,
-    faction: "Silver Loom Consortium",
+    faction: FACTION_NAMES.silverLoomConsortium,
     factionShift: 6,
     routeName: "The Moonroad",
     routeRisk: "Severe delays",
@@ -619,61 +729,58 @@ const eventTemplates = {
   },
   spiceAuction: {
     title: "Great Pearl Senate Spice Auction",
-    port: "Glasswater",
+    port: PORT_NAMES.mirravel,
     good: "spice",
     duration: 4,
     priceMultiplier: 0.72,
     productionDelta: 1.4,
     consumptionDelta: 0,
     stockDelta: 15,
-    faction: "Pearl Senate",
+    faction: FACTION_NAMES.pearlSenate,
     factionShift: 5,
     routeName: "The Whispering Cut",
     routeRisk: "Crowded but safe",
     forecast:
       "Warehouse clerks report that three spice fleets will arrive together under Senate protection.",
-    description:
-      "Three moonspice fleets have reached Glasswater at once. Warehouses are overflowing and export prices have fallen.",
+    description: `Three moonspice fleets have reached ${PORT_NAMES.mirravel} at once. Warehouses are overflowing and export prices have fallen.`,
   },
   marchMobilization: {
-    title: "Rimegate Mobilization",
-    port: "Rimegate",
+    title: `${PORT_NAMES.narthkel} Mobilization`,
+    port: PORT_NAMES.narthkel,
     good: "iron",
     duration: 6,
     priceMultiplier: 1.36,
     productionDelta: 0,
     consumptionDelta: 1.5,
     stockDelta: -8,
-    faction: "Black Hammer Compact",
+    faction: FACTION_NAMES.blackHammerCompact,
     factionShift: 7,
     routeName: "The Northern Packet",
     routeRisk: "Naval inspections",
     forecast:
       "The Seven Captains are buying weapons through intermediaries and calling veteran crews back to service.",
-    description:
-      "Rimegate has begun a naval mobilization. Armorers consume iron rapidly and every Northern Packet faces inspection.",
+    description: `${PORT_NAMES.narthkel} has begun a naval mobilization. Armorers consume iron rapidly and every Northern Packet faces inspection.`,
   },
   tunnelCollapse: {
-    title: "Khaz Vhar Deep-Tunnel Collapse",
-    port: "Khaz Vhar",
+    title: `${PORT_NAMES.drazhOvek} Deep-Tunnel Collapse`,
+    port: PORT_NAMES.drazhOvek,
     good: "iron",
     duration: 6,
     priceMultiplier: 1.55,
     productionDelta: -1.9,
     consumptionDelta: 0,
     stockDelta: -11,
-    faction: "Deep Delvers’ Union",
+    faction: FACTION_NAMES.deepDelversUnion,
     factionShift: 8,
     routeName: "The Amber Run",
     routeRisk: "Unreliable supply",
     forecast:
       "Delvers whisper of groaning supports beneath the western galleries. Mine output may soon be interrupted.",
-    description:
-      "A deep gallery has collapsed beneath Khaz Vhar. Iron output is sharply reduced while the Delvers demand safety concessions.",
+    description: `A deep gallery has collapsed beneath ${PORT_NAMES.drazhOvek}. Iron output is sharply reduced while the Delvers demand safety concessions.`,
   },
   courtSeason: {
     title: "Kingfisher Court Season",
-    port: "Kingfisher Quay",
+    port: PORT_NAMES.kavrenQuay,
     good: "silk",
     duration: 5,
     priceMultiplier: 1.38,
@@ -690,8 +797,8 @@ const eventTemplates = {
       "The ducal court season has opened. Fashion houses are consuming silk at extravagant rates and luxury berths are crowded.",
   },
   fenEmbargo: {
-    title: "Mallowfen Customs Embargo",
-    port: "Mallowfen",
+    title: `${PORT_NAMES.mirelune} Customs Embargo`,
+    port: PORT_NAMES.mirelune,
     good: "spice",
     duration: 5,
     priceMultiplier: 1.42,
@@ -704,15 +811,14 @@ const eventTemplates = {
     routeRisk: "Customs seizures",
     forecast:
       "Reedboat elders are meeting behind closed doors over foreign warehouse leases and untaxed spice cargo.",
-    description:
-      "Mallowfen has imposed emergency customs restrictions. Moonspice is scarce and captains risk cargo seizures.",
+    description: `${PORT_NAMES.mirelune} has imposed emergency customs restrictions. Moonspice is scarce and captains risk cargo seizures.`,
   },
 };
 
 const merchantRoutePaths = [
   {
-    a: "Goldhaven",
-    b: "Rimegate",
+    a: PORT_NAMES.orvessaQuay,
+    b: PORT_NAMES.narthkel,
     points: [
       [650, 485],
       [760, 430],
@@ -721,8 +827,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Rimegate",
-    b: "Lethariel",
+    a: PORT_NAMES.narthkel,
+    b: PORT_NAMES.velquorin,
     points: [
       [1000, 360],
       [1180, 405],
@@ -731,8 +837,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Lethariel",
-    b: "Glasswater",
+    a: PORT_NAMES.velquorin,
+    b: PORT_NAMES.mirravel,
     points: [
       [1545, 470],
       [1710, 535],
@@ -741,8 +847,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Glasswater",
-    b: "Kingfisher Quay",
+    a: PORT_NAMES.mirravel,
+    b: PORT_NAMES.kavrenQuay,
     points: [
       [2000, 765],
       [2070, 875],
@@ -751,8 +857,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Kingfisher Quay",
-    b: "Khaz Vhar",
+    a: PORT_NAMES.kavrenQuay,
+    b: PORT_NAMES.drazhOvek,
     points: [
       [1950, 1105],
       [1800, 1175],
@@ -761,8 +867,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Khaz Vhar",
-    b: "Goldhaven",
+    a: PORT_NAMES.drazhOvek,
+    b: PORT_NAMES.orvessaQuay,
     points: [
       [1450, 1185],
       [1230, 1060],
@@ -772,8 +878,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Goldhaven",
-    b: "Mallowfen",
+    a: PORT_NAMES.orvessaQuay,
+    b: PORT_NAMES.mirelune,
     points: [
       [650, 485],
       [545, 650],
@@ -782,8 +888,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Mallowfen",
-    b: "Drakefall",
+    a: PORT_NAMES.mirelune,
+    b: PORT_NAMES.thrymmor,
     points: [
       [360, 1140],
       [505, 1220],
@@ -792,8 +898,8 @@ const merchantRoutePaths = [
     ],
   },
   {
-    a: "Drakefall",
-    b: "Khaz Vhar",
+    a: PORT_NAMES.thrymmor,
+    b: PORT_NAMES.drazhOvek,
     points: [
       [830, 1135],
       [1015, 1225],
@@ -805,8 +911,8 @@ const merchantRoutePaths = [
 
 merchantRoutePaths.push(
   {
-    a: "Goldhaven",
-    b: "Gloamharbor",
+    a: PORT_NAMES.orvessaQuay,
+    b: PORT_NAMES.veyrgloam,
     points: [
       [650, 485],
       [1200, 530],
@@ -815,8 +921,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Gloamharbor",
-    b: "Emberstrand",
+    a: PORT_NAMES.veyrgloam,
+    b: PORT_NAMES.cindervaleStrand,
     points: [
       [2380, 650],
       [2620, 720],
@@ -825,8 +931,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Emberstrand",
-    b: "Saint’s Anchorage",
+    a: PORT_NAMES.cindervaleStrand,
+    b: PORT_NAMES.orrasanctAnchorage,
     points: [
       [3130, 700],
       [3220, 900],
@@ -835,8 +941,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Saint’s Anchorage",
-    b: "Redharbor",
+    a: PORT_NAMES.orrasanctAnchorage,
+    b: PORT_NAMES.crimsonharrow,
     points: [
       [3050, 1210],
       [2840, 1380],
@@ -845,8 +951,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Saint’s Anchorage",
-    b: "Sunspire",
+    a: PORT_NAMES.orrasanctAnchorage,
+    b: PORT_NAMES.heliovar,
     points: [
       [3050, 1210],
       [3260, 1120],
@@ -855,8 +961,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Sunspire",
-    b: "Nacre Bay",
+    a: PORT_NAMES.heliovar,
+    b: PORT_NAMES.pearlveinBay,
     points: [
       [3660, 930],
       [3890, 850],
@@ -865,8 +971,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Nacre Bay",
-    b: "Asterfall",
+    a: PORT_NAMES.pearlveinBay,
+    b: PORT_NAMES.starrynFall,
     points: [
       [4380, 720],
       [4500, 690],
@@ -875,8 +981,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Nacre Bay",
-    b: "Kestrel Haven",
+    a: PORT_NAMES.pearlveinBay,
+    b: PORT_NAMES.kavrelHaven,
     points: [
       [4380, 720],
       [4480, 900],
@@ -885,8 +991,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Kestrel Haven",
-    b: "Asterfall",
+    a: PORT_NAMES.kavrelHaven,
+    b: PORT_NAMES.starrynFall,
     points: [
       [4700, 1220],
       [4800, 1040],
@@ -895,8 +1001,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Kestrel Haven",
-    b: "Jadegate",
+    a: PORT_NAMES.kavrelHaven,
+    b: PORT_NAMES.verdigate,
     points: [
       [4700, 1220],
       [4470, 1390],
@@ -905,8 +1011,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Asterfall",
-    b: "Qasr Merid",
+    a: PORT_NAMES.starrynFall,
+    b: PORT_NAMES.meridQasryn,
     points: [
       [4800, 700],
       [5050, 650],
@@ -915,8 +1021,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Qasr Merid",
-    b: "Skyreach",
+    a: PORT_NAMES.meridQasryn,
+    b: PORT_NAMES.aetherreach,
     points: [
       [5530, 700],
       [5790, 650],
@@ -925,8 +1031,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Skyreach",
-    b: "Duskport",
+    a: PORT_NAMES.aetherreach,
+    b: PORT_NAMES.vesperport,
     points: [
       [6240, 760],
       [6320, 1000],
@@ -935,8 +1041,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Duskport",
-    b: "Dawnwatch",
+    a: PORT_NAMES.vesperport,
+    b: PORT_NAMES.eoswatch,
     points: [
       [6280, 1600],
       [6360, 1650],
@@ -945,8 +1051,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Dawnwatch",
-    b: "Mallowfen",
+    a: PORT_NAMES.eoswatch,
+    b: PORT_NAMES.mirelune,
     points: [
       [80, 1730],
       [150, 1510],
@@ -955,8 +1061,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Redharbor",
-    b: "Pearlspire",
+    a: PORT_NAMES.crimsonharrow,
+    b: PORT_NAMES.pearlspirel,
     points: [
       [2470, 1760],
       [2750, 1680],
@@ -965,8 +1071,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Pearlspire",
-    b: "Jadegate",
+    a: PORT_NAMES.pearlspirel,
+    b: PORT_NAMES.verdigate,
     points: [
       [3410, 1660],
       [3520, 1700],
@@ -975,8 +1081,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Jadegate",
-    b: "Cloudrest",
+    a: PORT_NAMES.verdigate,
+    b: PORT_NAMES.cloudhollow,
     points: [
       [3760, 1780],
       [4020, 1680],
@@ -985,8 +1091,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Cloudrest",
-    b: "Tempest Hold",
+    a: PORT_NAMES.cloudhollow,
+    b: PORT_NAMES.stormholden,
     points: [
       [4640, 1510],
       [4780, 1530],
@@ -995,8 +1101,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Tempest Hold",
-    b: "Whalegrave",
+    a: PORT_NAMES.stormholden,
+    b: PORT_NAMES.ossuwhale,
     points: [
       [5020, 1640],
       [5300, 1740],
@@ -1005,8 +1111,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Whalegrave",
-    b: "Duskport",
+    a: PORT_NAMES.ossuwhale,
+    b: PORT_NAMES.vesperport,
     points: [
       [5920, 1940],
       [6060, 1850],
@@ -1015,8 +1121,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Qasr Merid",
-    b: "Tempest Hold",
+    a: PORT_NAMES.meridQasryn,
+    b: PORT_NAMES.stormholden,
     points: [
       [5530, 700],
       [5460, 980],
@@ -1025,8 +1131,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Glasswater",
-    b: "Saint’s Anchorage",
+    a: PORT_NAMES.mirravel,
+    b: PORT_NAMES.orrasanctAnchorage,
     points: [
       [2000, 765],
       [2350, 900],
@@ -1035,8 +1141,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Kingfisher Quay",
-    b: "Pearlspire",
+    a: PORT_NAMES.kavrenQuay,
+    b: PORT_NAMES.pearlspirel,
     points: [
       [1950, 1105],
       [2300, 1300],
@@ -1045,8 +1151,8 @@ merchantRoutePaths.push(
     ],
   },
   {
-    a: "Kestrel Haven",
-    b: "Cloudrest",
+    a: PORT_NAMES.kavrelHaven,
+    b: PORT_NAMES.cloudhollow,
     points: [
       [4700, 1220],
       [4680, 1330],
@@ -1076,9 +1182,9 @@ const {
 } = createMapRendering({ WORLD, game, merchantRoutePaths });
 
 const merchantNames = [
-  "Amber Heron",
-  "Silver Wake",
-  "Crown Petrel",
+  SHIP_NAMES.amberHeron,
+  SHIP_NAMES.silverWake,
+  SHIP_NAMES.crownPetrel,
   "Moss Lantern",
   "Iron Minnow",
   "Velvet Gull",
@@ -1132,7 +1238,7 @@ function changeStanding(faction, amount) {
   return adjustStanding(game, faction, amount, clamp);
 }
 function guildStanding() {
-  return game.factionStanding["Guild of Gilded Oars"] || 0;
+  return game.factionStanding[FACTION_NAMES.syrrelwakeOarwrightPact] || 0;
 }
 function dominantFaction(port) {
   return port.factions.slice().sort((a, b) => b.influence - a.influence)[0];
@@ -1289,12 +1395,12 @@ function initializeEconomy() {
     productionChains,
   );
   // Deliberately strong regional identities make trade intelligence useful.
-  game.economy["Rimegate"].iron.stock = 48;
-  game.economy["Khaz Vhar"].iron.stock = 52;
-  game.economy["Lethariel"].silk.stock = 49;
-  game.economy["Glasswater"].spice.stock = 47;
-  game.economy["Goldhaven"].iron.stock = 15;
-  game.economy["Kingfisher Quay"].silk.stock = 9;
+  game.economy[PORT_NAMES.narthkel].iron.stock = 48;
+  game.economy[PORT_NAMES.drazhOvek].iron.stock = 52;
+  game.economy[PORT_NAMES.velquorin].silk.stock = 49;
+  game.economy[PORT_NAMES.mirravel].spice.stock = 47;
+  game.economy[PORT_NAMES.orvessaQuay].iron.stock = 15;
+  game.economy[PORT_NAMES.kavrenQuay].silk.stock = 9;
 }
 function prosperityInfrastructure(port) {
   if (port.prosperity.includes("Very high") || port.prosperity === "Booming")
@@ -1375,9 +1481,17 @@ function eventPriceMultiplier(port, key) {
   return multiplier;
 }
 function lawPriceMultiplier(port, key) {
-  if (game.laws.amberConvoy && key === "iron" && port.name === "Goldhaven")
+  if (
+    game.laws.amberConvoy &&
+    key === "iron" &&
+    port.name === PORT_NAMES.orvessaQuay
+  )
     return 0.82;
-  if (game.laws.amberConvoy && key === "iron" && port.name === "Khaz Vhar")
+  if (
+    game.laws.amberConvoy &&
+    key === "iron" &&
+    port.name === PORT_NAMES.drazhOvek
+  )
     return 1.06;
   return 1;
 }
@@ -1405,8 +1519,8 @@ function runEconomyDay() {
     );
   }
   if (game.laws.amberConvoy) {
-    const source = economyState(getPortByName("Khaz Vhar"), "iron");
-    const dest = economyState(getPortByName("Goldhaven"), "iron");
+    const source = economyState(getPortByName(PORT_NAMES.drazhOvek), "iron");
+    const dest = economyState(getPortByName(PORT_NAMES.orvessaQuay), "iron");
     const moved = Math.min(2.6, Math.max(0, source.stock - 10));
     source.stock -= moved;
     dest.stock = clampNumber(dest.stock + moved, 0, 70);
@@ -1444,10 +1558,10 @@ function maybeStartShortage() {
     addNews(
       e.title,
       e.description +
-        " The Guild of Gilded Oars is seeking captains who can reopen the Amber Run.",
+        ` The ${FACTION_NAMES.syrrelwakeOarwrightPact} is seeking captains who can reopen the Amber Run.`,
     );
     showMessage(
-      "PORT NEWS: Goldhaven is suffering an iron shortage. The crown shipyards are paying a premium.",
+      `PORT NEWS: ${PORT_NAMES.orvessaQuay} is suffering an iron shortage. The crown shipyards are paying a premium.`,
       4.5,
     );
   }
@@ -1754,12 +1868,12 @@ function resolveContractsAtPort(port) {
     if (outcome.completed) {
       game.completedContracts++;
       if (
-        contract.origin === "Goldhaven" &&
-        contract.faction !== "Guild of Gilded Oars"
+        contract.origin === PORT_NAMES.orvessaQuay &&
+        contract.faction !== FACTION_NAMES.syrrelwakeOarwrightPact
       ) {
-        changeStanding("Guild of Gilded Oars", 4);
-        influenceGains["Guild of Gilded Oars"] =
-          (influenceGains["Guild of Gilded Oars"] || 0) + 4;
+        changeStanding(FACTION_NAMES.syrrelwakeOarwrightPact, 4);
+        influenceGains[FACTION_NAMES.syrrelwakeOarwrightPact] =
+          (influenceGains[FACTION_NAMES.syrrelwakeOarwrightPact] || 0) + 4;
       }
       addNews(
         "Contract fulfilled",
@@ -1860,9 +1974,9 @@ function hostileRiskBetween(originName, destinationName) {
   return 0.2;
 }
 function currentLawText(port) {
-  if (port.name === "Goldhaven")
+  if (port.name === PORT_NAMES.orvessaQuay)
     return game.laws.amberConvoy
-      ? "Royal Amber Convoy Charter — protected iron convoys now run between Goldhaven and Khaz Vhar."
+      ? `Royal Amber Convoy Charter — protected iron convoys now run between ${PORT_NAMES.orvessaQuay} and ${PORT_NAMES.drazhOvek}.`
       : "Private Shipping Ordinance — the Amber Run lacks a permanent escort and crown shipyards depend on irregular iron imports.";
   const ruler = dominantFaction(port);
   return (
@@ -1875,7 +1989,7 @@ function currentLawText(port) {
 function canPassConvoyLaw() {
   return (
     currentPort &&
-    currentPort.name === "Goldhaven" &&
+    currentPort.name === PORT_NAMES.orvessaQuay &&
     game.completedContracts >= 3 &&
     game.milestone.shortageExploited &&
     guildStanding() >= 20 &&
@@ -1887,15 +2001,15 @@ function passConvoyLaw() {
     return showMessage(
       "You have not yet secured enough contracts, proof of trade, and Guild influence.",
     );
-  changeStanding("Guild of Gilded Oars", -20);
+  changeStanding(FACTION_NAMES.syrrelwakeOarwrightPact, -20);
   game.laws.amberConvoy = true;
   game.milestone.lawChanged = true;
   worldEvents.ironShortage.active = false;
-  const gold = economyState(getPortByName("Goldhaven"), "iron");
+  const gold = economyState(getPortByName(PORT_NAMES.orvessaQuay), "iron");
   gold.stock = clampNumber(gold.stock + 16, 0, 70);
   addNews(
     "Royal Amber Convoy Chartered",
-    "Your petition passed. Crown escorts now carry iron from Khaz Vhar, lowering Goldhaven prices and reducing risk on the Amber Run.",
+    `Your petition passed. Crown escorts now carry iron from ${PORT_NAMES.drazhOvek}, lowering ${PORT_NAMES.orvessaQuay} prices and reducing risk on the Amber Run.`,
   );
   showMessage(
     "LAW CHANGED · The Royal Amber Convoy is now active. Regional iron trade has shifted.",
@@ -2934,6 +3048,21 @@ const intro = document.getElementById("intro");
 const beginButton = document.getElementById("beginButton");
 const newMapButton = document.getElementById("newMapButton");
 document.getElementById("introWorldSeed").textContent = mapSeed;
+
+function applyNarrativeNames() {
+  document.title = `${GAME_NAME} — Encircling World V9`;
+  document.getElementById("homePortLabel").textContent = PORT_NAMES.orvessaQuay;
+  document.getElementById("introGameTitle").textContent = GAME_NAME;
+  document.getElementById("introHomeRealm").textContent =
+    `the Crown of ${LAND_NAMES.orravelle}`;
+  document.getElementById("introHomePort").textContent = PORT_NAMES.orvessaQuay;
+  document.getElementById("introHomeLand").textContent = LAND_NAMES.orravelle;
+  document.getElementById("introGuildName").textContent =
+    FACTION_NAMES.syrrelwakeOarwrightPact;
+  beginButton.querySelector(".start-new-label").textContent =
+    `Begin at ${PORT_NAMES.orvessaQuay}`;
+}
+applyNarrativeNames();
 let restoredVoyageAwaitingStart = false;
 
 function revealStartedGame({
@@ -2974,15 +3103,14 @@ function beginGame() {
   gameStarted = true;
   addNews(
     "The first commission",
-    "The Guild of Gilded Oars has posted three introductory commissions at Goldhaven. Fulfill them to build influence.",
+    `The ${FACTION_NAMES.syrrelwakeOarwrightPact} has posted three introductory commissions at ${PORT_NAMES.orvessaQuay}. Fulfill them to build influence.`,
   );
   addNews(
     "Sails on the horizon",
     "Independent merchants now carry real cargo between the archipelago’s ports. Their arrivals will change local stock and prices.",
   );
   revealStartedGame({
-    message:
-      "Welcome home. Dock at Goldhaven for contracts and intelligence, or watch the sea for merchant traffic.",
+    message: `Welcome home. Dock at ${PORT_NAMES.orvessaQuay} for contracts and intelligence, or watch the sea for merchant traffic.`,
     save: true,
   });
 }
@@ -4172,12 +4300,12 @@ function renderMilestone(root) {
     },
     {
       done: game.milestone.shortageExploited,
-      title: "Exploit Goldhaven’s iron shortage",
+      title: `Exploit ${PORT_NAMES.orvessaQuay}’s iron shortage`,
       detail: game.milestone.shortageExploited
         ? Math.round(game.milestone.shortageProfit) +
           " crowns of shortage profit"
         : worldEvents.ironShortage.active
-          ? "Buy cheap iron in Rimegate or Khaz Vhar, then sell it in Goldhaven · " +
+          ? `Buy cheap iron in ${PORT_NAMES.narthkel} or ${PORT_NAMES.drazhOvek}, then sell it in ${PORT_NAMES.orvessaQuay} · ` +
             Math.round(game.milestone.shortageProfit) +
             "/50 profit"
           : "Complete two contracts to trigger a regional market event",
@@ -4187,14 +4315,15 @@ function renderMilestone(root) {
       title: "Build Guild influence",
       detail: game.laws.amberConvoy
         ? "Influence spent to pass the charter"
-        : guildStanding() + "/20 with the Guild of Gilded Oars",
+        : guildStanding() +
+          `/20 with the ${FACTION_NAMES.syrrelwakeOarwrightPact}`,
     },
     {
       done: game.milestone.lawChanged,
       title: "Change regional trade law",
       detail: game.milestone.lawChanged
         ? "Royal Amber Convoy is active"
-        : "Petition available in Goldhaven when prior steps are complete",
+        : `Petition available in ${PORT_NAMES.orvessaQuay} when prior steps are complete`,
     },
   ];
   steps.forEach((step, i) => {
@@ -4503,12 +4632,12 @@ function renderPortEvent() {
   } else if (
     game.laws.amberConvoy &&
     currentPort &&
-    (currentPort.name === "Goldhaven" || currentPort.name === "Khaz Vhar")
+    (currentPort.name === PORT_NAMES.orvessaQuay ||
+      currentPort.name === PORT_NAMES.drazhOvek)
   ) {
     const box = document.createElement("div");
     box.className = "event-banner";
-    box.innerHTML =
-      "<b>Protected Amber Run</b>Crown escorts are moving iron between Khaz Vhar and Goldhaven each day. Route risk and Goldhaven prices have fallen.";
+    box.innerHTML = `<b>Protected Amber Run</b>Crown escorts are moving iron between ${PORT_NAMES.drazhOvek} and ${PORT_NAMES.orvessaQuay} each day. Route risk and ${PORT_NAMES.orvessaQuay} prices have fallen.`;
     root.append(box);
   }
 }
@@ -4533,7 +4662,7 @@ function renderPolitics() {
   const law = document.getElementById("localLaw");
   law.innerHTML =
     '<div class="law-head"><b>Current law</b><span class="contract-tag">' +
-    (currentPort.name === "Goldhaven"
+    (currentPort.name === PORT_NAMES.orvessaQuay
       ? game.laws.amberConvoy
         ? "Chartered"
         : "Unprotected"
@@ -4542,7 +4671,7 @@ function renderPolitics() {
     currentLawText(currentPort) +
     "</div>";
   const button = document.getElementById("politicsAction");
-  if (currentPort.name === "Goldhaven" && !game.laws.amberConvoy) {
+  if (currentPort.name === PORT_NAMES.orvessaQuay && !game.laws.amberConvoy) {
     button.style.display = "block";
     button.textContent = "Charter the Royal Amber Convoy · 20 influence";
     button.disabled = !canPassConvoyLaw();
@@ -5912,7 +6041,7 @@ function renderMarket() {
           game.milestone.shortageExploited = true;
           addNews(
             "A timely market coup",
-            "Your iron sales into Goldhaven’s emergency earned enough profit to prove the value of a protected route.",
+            `Your iron sales into ${PORT_NAMES.orvessaQuay}’s emergency earned enough profit to prove the value of a protected route.`,
           );
           showMessage(
             "SHORTAGE EXPLOITED · Your iron sales have strengthened the Guild’s petition.",

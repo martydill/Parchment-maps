@@ -1,3 +1,10 @@
+import {
+  PORT_NAMES,
+  LAND_NAMES,
+  FACTION_NAMES,
+  PERSON_NAMES,
+  ROUTE_NAMES,
+} from "./names.js";
 // Static world, economy catalog, and map annotation data.
 // Keep browser state and rendering behavior in app.js; this module is data-only.
 
@@ -6,7 +13,7 @@ import { pointInPolygon, polygonCentroid } from "./core/geometry.js";
 import { RESOURCE_DISCOVERY_TYPES } from "./core/discoveries.js";
 
 export const HOME_PORT = {
-  name: "Goldhaven",
+  name: PORT_NAMES.orvessaQuay,
   x: 650,
   y: 485,
   spawnX: 705,
@@ -88,7 +95,7 @@ export const goods = {
     terms: ["amber", "storm amber", "fossil resin"],
   },
   wine: {
-    name: "Sunspire Wine",
+    name: `${PORT_NAMES.heliovar} Wine`,
     base: 27,
     fragility: 0.25,
     terms: ["wine", "vineyard", "vintage"],
@@ -117,8 +124,8 @@ export const goods = {
     terms: ["tool", "machinery", "instruments"],
   },
 };
-goods.silk.premiumPorts = ["Lethariel", "Kingfisher Quay"];
-goods.silk.faction = "Silver Loom Consortium";
+goods.silk.premiumPorts = [PORT_NAMES.velquorin, PORT_NAMES.kavrenQuay];
+goods.silk.faction = FACTION_NAMES.silverLoomConsortium;
 goods.fittings.fragility = 0.2;
 goods.spice.fragility = 0.15;
 goods.medicine.fragility = 0.35;
@@ -136,11 +143,11 @@ export const discoverySites = [
     benefit:
       "A public chart will shorten the northern packet and attract timber traffic.",
     saleValue: 95,
-    faction: "Free Keel Brotherhood",
+    faction: FACTION_NAMES.freeKeelBrotherhood,
     standingValue: 8,
     route: {
-      origin: "Goldhaven",
-      destination: "Rimegate",
+      origin: PORT_NAMES.orvessaQuay,
+      destination: PORT_NAMES.narthkel,
       good: "timber",
       units: 1.1,
       delay: 4,
@@ -157,13 +164,13 @@ export const discoverySites = [
     icon: "◆",
     description:
       "Blue-grey ore glitters in a wave-cut cliff, rich enough to feed a small foundry.",
-    benefit: "Disclosure will establish a new iron supply into Khaz Vhar.",
+    benefit: `Disclosure will establish a new iron supply into ${PORT_NAMES.drazhOvek}.`,
     saleValue: 140,
-    faction: "Deep Delvers’ Union",
+    faction: FACTION_NAMES.deepDelversUnion,
     standingValue: 10,
     route: {
-      origin: "Goldhaven",
-      destination: "Khaz Vhar",
+      origin: PORT_NAMES.orvessaQuay,
+      destination: PORT_NAMES.drazhOvek,
       good: "ore",
       units: 1.8,
       delay: 6,
@@ -180,13 +187,13 @@ export const discoverySites = [
     icon: "✦",
     description:
       "A tidal stair descends to a brass orrery whose surviving plates correct old longitude errors.",
-    benefit: "Scholars can turn its bearings into a safer Glasswater passage.",
+    benefit: `Scholars can turn its bearings into a safer ${PORT_NAMES.mirravel} passage.`,
     saleValue: 125,
-    faction: "Lantern League",
+    faction: FACTION_NAMES.lanternLeague,
     standingValue: 9,
     route: {
-      origin: "Lethariel",
-      destination: "Glasswater",
+      origin: PORT_NAMES.velquorin,
+      destination: PORT_NAMES.mirravel,
       good: "silk",
       units: 1.2,
       delay: 5,
@@ -202,14 +209,13 @@ export const discoverySites = [
     icon: "☠",
     description:
       "False mangroves screen a lamp-lit inlet, hidden storehouses, and a quay with no customs seal.",
-    benefit:
-      "Revealing it redirects illicit spice into Glasswater's public market.",
+    benefit: `Revealing it redirects illicit spice into ${PORT_NAMES.mirravel}'s public market.`,
     saleValue: 110,
-    faction: "Mirror Knives",
+    faction: FACTION_NAMES.mirrorKnives,
     standingValue: 9,
     route: {
-      origin: "Lethariel",
-      destination: "Glasswater",
+      origin: PORT_NAMES.velquorin,
+      destination: PORT_NAMES.mirravel,
       good: "spice",
       units: 1.4,
       delay: 3,
@@ -228,11 +234,11 @@ export const discoverySites = [
     benefit:
       "Merchants will adopt the cut and increase traffic between northern ports.",
     saleValue: 160,
-    faction: "Guild of Gilded Oars",
+    faction: FACTION_NAMES.syrrelwakeOarwrightPact,
     standingValue: 12,
     route: {
-      origin: "Rimegate",
-      destination: "Lethariel",
+      origin: PORT_NAMES.narthkel,
+      destination: PORT_NAMES.velquorin,
       good: "iron",
       units: 1.7,
       delay: 4,
@@ -248,14 +254,14 @@ export const discoverySites = [
     icon: "◀",
     description:
       "A cold current turns white with migrating silverfin for only a few days each cycle.",
-    benefit: "In season, public knowledge adds provisions to Goldhaven.",
+    benefit: `In season, public knowledge adds provisions to ${PORT_NAMES.orvessaQuay}.`,
     saleValue: 75,
-    faction: "Tideborn Commons",
+    faction: FACTION_NAMES.tidebornCommons,
     standingValue: 7,
     season: { cycle: 12, start: 3, end: 7 },
     route: {
-      origin: "Rimegate",
-      destination: "Goldhaven",
+      origin: PORT_NAMES.narthkel,
+      destination: PORT_NAMES.orvessaQuay,
       good: "provisions",
       units: 1.5,
       delay: 2,
@@ -273,11 +279,11 @@ export const discoverySites = [
       "A royal carrack lies upright in clear water, its fittings visible between split decks.",
     benefit: "Salvagers can recover fittings and seed a regular repair trade.",
     saleValue: 180,
-    faction: "Pearl Senate",
+    faction: FACTION_NAMES.pearlSenate,
     standingValue: 10,
     route: {
-      origin: "Glasswater",
-      destination: "Khaz Vhar",
+      origin: PORT_NAMES.mirravel,
+      destination: PORT_NAMES.drazhOvek,
       good: "fittings",
       units: 1,
       delay: 5,
@@ -293,14 +299,13 @@ export const discoverySites = [
     icon: "⌂",
     description:
       "Pilots, pearl fishers, and their families have built a permanent quay on an unnamed island.",
-    benefit:
-      "Recognition will turn the settlement into a feeder port for Glasswater.",
+    benefit: `Recognition will turn the settlement into a feeder port for ${PORT_NAMES.mirravel}.`,
     saleValue: 150,
-    faction: "Divers’ Communion",
+    faction: FACTION_NAMES.diversCommunion,
     standingValue: 12,
     route: {
-      origin: "Goldhaven",
-      destination: "Glasswater",
+      origin: PORT_NAMES.orvessaQuay,
+      destination: PORT_NAMES.mirravel,
       good: "grain",
       units: 1.6,
       delay: 7,
@@ -320,7 +325,7 @@ const expeditionDiscoverySites = [
     reward: 45,
     discoveryId: "moon-iron",
     hazards: "Loose basalt, exposed anchorage",
-    land: "Varkesh",
+    land: LAND_NAMES.drazhmark,
   },
   {
     id: "observatory-tideway",
@@ -333,7 +338,7 @@ const expeditionDiscoverySites = [
     reward: 60,
     discoveryId: "drowned-observatory",
     hazards: "Rising tide, unstable chambers",
-    land: "Isles of Glass",
+    land: LAND_NAMES.mirravelIsles,
   },
 ];
 
@@ -451,43 +456,43 @@ const discoveryFeatures = [
   },
 ];
 const discoveryPorts = [
-  "Goldhaven",
-  "Rimegate",
-  "Lethariel",
-  "Glasswater",
-  "Khaz Vhar",
-  "Drakefall",
-  "Mallowfen",
-  "Kingfisher Quay",
-  "Gloamharbor",
-  "Emberstrand",
-  "Sunspire",
-  "Nacre Bay",
-  "Asterfall",
-  "Qasr Merid",
-  "Skyreach",
-  "Duskport",
-  "Dawnwatch",
-  "Redharbor",
-  "Pearlspire",
-  "Jadegate",
-  "Cloudrest",
-  "Tempest Hold",
-  "Whalegrave",
-  "Saint’s Anchorage",
-  "Kestrel Haven",
+  PORT_NAMES.orvessaQuay,
+  PORT_NAMES.narthkel,
+  PORT_NAMES.velquorin,
+  PORT_NAMES.mirravel,
+  PORT_NAMES.drazhOvek,
+  PORT_NAMES.thrymmor,
+  PORT_NAMES.mirelune,
+  PORT_NAMES.kavrenQuay,
+  PORT_NAMES.veyrgloam,
+  PORT_NAMES.cindervaleStrand,
+  PORT_NAMES.heliovar,
+  PORT_NAMES.pearlveinBay,
+  PORT_NAMES.starrynFall,
+  PORT_NAMES.meridQasryn,
+  PORT_NAMES.aetherreach,
+  PORT_NAMES.vesperport,
+  PORT_NAMES.eoswatch,
+  PORT_NAMES.crimsonharrow,
+  PORT_NAMES.pearlspirel,
+  PORT_NAMES.verdigate,
+  PORT_NAMES.cloudhollow,
+  PORT_NAMES.stormholden,
+  PORT_NAMES.ossuwhale,
+  PORT_NAMES.orrasanctAnchorage,
+  PORT_NAMES.kavrelHaven,
 ];
 const discoveryGoods = Object.keys(goods);
 const discoveryFactions = [
-  "Free Keel Brotherhood",
-  "Deep Delvers’ Union",
-  "Lantern League",
-  "Mirror Knives",
-  "Guild of Gilded Oars",
-  "Tideborn Commons",
-  "Pearl Senate",
-  "Divers’ Communion",
-  "Silver Loom Consortium",
+  FACTION_NAMES.freeKeelBrotherhood,
+  FACTION_NAMES.deepDelversUnion,
+  FACTION_NAMES.lanternLeague,
+  FACTION_NAMES.mirrorKnives,
+  FACTION_NAMES.syrrelwakeOarwrightPact,
+  FACTION_NAMES.tidebornCommons,
+  FACTION_NAMES.pearlSenate,
+  FACTION_NAMES.diversCommunion,
+  FACTION_NAMES.silverLoomConsortium,
   "Reedboat Families",
 ];
 
@@ -544,7 +549,8 @@ for (
       : {}),
     route: {
       origin,
-      destination: destination === origin ? "Goldhaven" : destination,
+      destination:
+        destination === origin ? PORT_NAMES.orvessaQuay : destination,
       good: discoveryGoods[(index * 3) % discoveryGoods.length],
       units: 0.8 + (index % 6) * 0.2,
       delay: 2 + (index % 6),
@@ -676,7 +682,7 @@ export const weatherPatterns = [
 ];
 export const lands = [
   {
-    name: "Avelorn",
+    name: LAND_NAMES.orravelle,
     color: "#80784c",
     poly: [
       [180, 260],
@@ -693,7 +699,7 @@ export const lands = [
     ],
   },
   {
-    name: "The Ashen Reach",
+    name: LAND_NAMES.veyrAshreach,
     color: "#77704a",
     poly: [
       [880, 90],
@@ -706,7 +712,7 @@ export const lands = [
     ],
   },
   {
-    name: "Eldergreen",
+    name: LAND_NAMES.elderwythe,
     color: "#7c7950",
     poly: [
       [1480, 150],
@@ -720,7 +726,7 @@ export const lands = [
     ],
   },
   {
-    name: "Isles of Glass",
+    name: LAND_NAMES.mirravelIsles,
     color: "#8b8157",
     poly: [
       [1985, 655],
@@ -732,7 +738,7 @@ export const lands = [
     ],
   },
   {
-    name: "Varkesh",
+    name: LAND_NAMES.drazhmark,
     color: "#766d45",
     poly: [
       [1360, 850],
@@ -746,7 +752,7 @@ export const lands = [
     ],
   },
   {
-    name: "The Dragonspine",
+    name: LAND_NAMES.thrymmSpires,
     color: "#80754b",
     poly: [
       [555, 820],
@@ -760,7 +766,7 @@ export const lands = [
     ],
   },
   {
-    name: "Mistmere",
+    name: LAND_NAMES.lunemire,
     color: "#8c8257",
     poly: [
       [120, 900],
@@ -773,7 +779,7 @@ export const lands = [
     ],
   },
   {
-    name: "Needle Isle",
+    name: LAND_NAMES.sivvynIsle,
     color: "#8d8256",
     poly: [
       [1100, 650],
@@ -785,7 +791,7 @@ export const lands = [
     ],
   },
   {
-    name: "Crownsward",
+    name: LAND_NAMES.kavrensward,
     color: "#83784c",
     poly: [
       [1880, 1120],
@@ -799,12 +805,12 @@ export const lands = [
   },
 ];
 
-// The original Gilded Archipelago is only one region of a much larger world.
+// The original named archipelago is only one region of a much larger world.
 // These additional continents, island chains, and meridian keys extend the
 // chart while keeping every coastline hand-authored and navigable.
 lands.push(
   {
-    name: "Thornwake",
+    name: LAND_NAMES.thornvayle,
     color: "#7d7549",
     poly: [
       [2320, 340],
@@ -819,7 +825,7 @@ lands.push(
     ],
   },
   {
-    name: "Serpent Coast",
+    name: LAND_NAMES.sythrenCoast,
     color: "#85804f",
     poly: [
       [3410, 250],
@@ -833,7 +839,7 @@ lands.push(
     ],
   },
   {
-    name: "The Ivory Steppe",
+    name: LAND_NAMES.orynthSteppe,
     color: "#918258",
     poly: [
       [4680, 270],
@@ -847,7 +853,7 @@ lands.push(
     ],
   },
   {
-    name: "Dawnmarch",
+    name: LAND_NAMES.aurelmarch,
     color: "#82784c",
     poly: [
       [5780, 320],
@@ -860,7 +866,7 @@ lands.push(
     ],
   },
   {
-    name: "Dawnward Keys",
+    name: LAND_NAMES.eoslynKeys,
     color: "#8b8054",
     poly: [
       [15, 1450],
@@ -872,7 +878,7 @@ lands.push(
     ],
   },
   {
-    name: "Duskward Keys",
+    name: LAND_NAMES.vesprynKeys,
     color: "#7c7147",
     poly: [
       [5980, 1450],
@@ -884,7 +890,7 @@ lands.push(
     ],
   },
   {
-    name: "Southmarch",
+    name: LAND_NAMES.solvyrMarch,
     color: "#806f43",
     poly: [
       [2430, 1410],
@@ -898,7 +904,7 @@ lands.push(
     ],
   },
   {
-    name: "The Jade Dominion",
+    name: LAND_NAMES.verdantate,
     color: "#788052",
     poly: [
       [3720, 1380],
@@ -912,7 +918,7 @@ lands.push(
     ],
   },
   {
-    name: "Tempest Crown",
+    name: LAND_NAMES.stormvaneCrown,
     color: "#726c48",
     poly: [
       [4980, 1430],
@@ -925,7 +931,7 @@ lands.push(
     ],
   },
   {
-    name: "Whalegrave",
+    name: PORT_NAMES.ossuwhale,
     color: "#82764c",
     poly: [
       [5630, 1840],
@@ -937,7 +943,7 @@ lands.push(
     ],
   },
   {
-    name: "Isle of Saints",
+    name: LAND_NAMES.orrawardIsle,
     color: "#91855d",
     poly: [
       [2910, 995],
@@ -949,7 +955,7 @@ lands.push(
     ],
   },
   {
-    name: "Kestrel Chain",
+    name: LAND_NAMES.kavrelChain,
     color: "#897f56",
     poly: [
       [4510, 990],
@@ -961,7 +967,7 @@ lands.push(
     ],
   },
   {
-    name: "Frostcrown",
+    name: LAND_NAMES.rimevault,
     color: "#777754",
     poly: [
       [3210, 95],
@@ -974,7 +980,7 @@ lands.push(
     ],
   },
   {
-    name: "The Sapphire Atolls",
+    name: LAND_NAMES.lazulynAtolls,
     color: "#90875e",
     poly: [
       [5210, 1020],
@@ -986,7 +992,7 @@ lands.push(
     ],
   },
   {
-    name: "Midden Isle",
+    name: LAND_NAMES.mirdIsle,
     color: "#80784e",
     poly: [
       [3830, 1030],
@@ -998,7 +1004,7 @@ lands.push(
     ],
   },
   {
-    name: "Saint Orra",
+    name: LAND_NAMES.orraVey,
     color: "#8a8058",
     poly: [
       [2470, 1010],
@@ -1010,7 +1016,7 @@ lands.push(
     ],
   },
   {
-    name: "The Lantern Isles",
+    name: LAND_NAMES.lumevarIsles,
     color: "#8c8256",
     poly: [
       [5540, 1030],
@@ -1199,14 +1205,14 @@ export const explorationSites = [
 
 export const ports = [
   {
-    name: "Goldhaven",
+    name: PORT_NAMES.orvessaQuay,
     x: HOME_PORT.x,
     y: HOME_PORT.y,
-    land: "Avelorn",
+    land: LAND_NAMES.orravelle,
     home: true,
-    realm: "The Crown of Avelorn",
+    realm: `The ${LAND_NAMES.orravelle} Crown`,
     population: 86400,
-    government: "Royal charter city governed by Lord Admiral Cassian Vale",
+    government: `Royal charter city governed by Lord Admiral ${PERSON_NAMES.orrenVaelix}`,
     prosperity: "Very high",
     security: "Heavy crown patrols",
     flavor:
@@ -1228,17 +1234,17 @@ export const ports = [
         note: "Controls the navy, customs houses, and appointment of senior magistrates.",
       },
       {
-        name: "Guild of Gilded Oars",
+        name: FACTION_NAMES.syrrelwakeOarwrightPact,
         influence: 28,
         note: "Merchant dynasties seeking lower tariffs and more overseas concessions.",
       },
       {
-        name: "Lantern League",
+        name: FACTION_NAMES.lanternLeague,
         influence: 19,
         note: "Reformers backed by scholars, printers, and minor nobles.",
       },
       {
-        name: "Tideborn Commons",
+        name: FACTION_NAMES.tidebornCommons,
         influence: 14,
         note: "Dockworkers and sailors demanding bread-price controls and safer quays.",
       },
@@ -1246,21 +1252,21 @@ export const ports = [
     routes: [
       {
         name: "The Amber Run",
-        to: "Khaz Vhar",
+        to: PORT_NAMES.drazhOvek,
         cargo: "wine, credit, iron and obsidian",
         risk: "Moderate",
         days: "7–10 days",
       },
       {
         name: "The Western Crown Route",
-        to: "Mallowfen and Drakefall",
+        to: `${PORT_NAMES.mirelune} and ${PORT_NAMES.thrymmor}`,
         cargo: "grain, timber and medicinal herbs",
         risk: "Low",
         days: "4–7 days",
       },
       {
         name: "The Northern Packet",
-        to: "Rimegate",
+        to: PORT_NAMES.narthkel,
         cargo: "official dispatches, iron and luxuries",
         risk: "High in winter",
         days: "5–8 days",
@@ -1268,10 +1274,10 @@ export const ports = [
     ],
   },
   {
-    name: "Rimegate",
+    name: PORT_NAMES.narthkel,
     x: 1000,
     y: 360,
-    land: "The Ashen Reach",
+    land: LAND_NAMES.veyrAshreach,
     realm: "The Ashen Marches",
     population: 33100,
     government: "Fortress-port ruled by the Council of Seven Captains",
@@ -1296,7 +1302,7 @@ export const ports = [
         note: "Old naval houses that divide the harbor forts and levy anchorage fees.",
       },
       {
-        name: "Black Hammer Compact",
+        name: FACTION_NAMES.blackHammerCompact,
         influence: 27,
         note: "Mine owners and armorers pressing for war contracts.",
       },
@@ -1306,7 +1312,7 @@ export const ports = [
         note: "Temple network that runs granaries and winter relief.",
       },
       {
-        name: "Free Keel Brotherhood",
+        name: FACTION_NAMES.freeKeelBrotherhood,
         influence: 11,
         note: "Independent captains who resist compulsory naval service.",
       },
@@ -1314,14 +1320,14 @@ export const ports = [
     routes: [
       {
         name: "The Northern Packet",
-        to: "Goldhaven",
+        to: PORT_NAMES.orvessaQuay,
         cargo: "iron, weapons and crown dispatches",
         risk: "High in winter",
         days: "5–8 days",
       },
       {
         name: "The Moonroad",
-        to: "Lethariel",
+        to: PORT_NAMES.velquorin,
         cargo: "iron tools, silk and lamp oil",
         risk: "Moderate",
         days: "4–6 days",
@@ -1336,10 +1342,10 @@ export const ports = [
     ],
   },
   {
-    name: "Lethariel",
+    name: PORT_NAMES.velquorin,
     x: 1545,
     y: 470,
-    land: "Eldergreen",
+    land: LAND_NAMES.elderwythe,
     realm: "The Verdant Principality",
     population: 57800,
     government: "Hereditary moon-court advised by the Grove Conclave",
@@ -1369,7 +1375,7 @@ export const ports = [
         note: "Druids and forest wardens who restrict logging and foreign settlement.",
       },
       {
-        name: "Silver Loom Consortium",
+        name: FACTION_NAMES.silverLoomConsortium,
         influence: 22,
         note: "Silk magnates favoring open trade and stronger convoy protection.",
       },
@@ -1382,21 +1388,21 @@ export const ports = [
     routes: [
       {
         name: "The Moonroad",
-        to: "Rimegate and Glasswater",
+        to: `${PORT_NAMES.narthkel} and ${PORT_NAMES.mirravel}`,
         cargo: "silk, iron tools and pearl goods",
         risk: "Moderate",
         days: "4–7 days",
       },
       {
         name: "Greenwake Coastal Run",
-        to: "Goldhaven",
+        to: PORT_NAMES.orvessaQuay,
         cargo: "dyes, medicines and grain",
         risk: "Low",
         days: "5–6 days",
       },
       {
         name: "The Whispering Cut",
-        to: "Glasswater",
+        to: PORT_NAMES.mirravel,
         cargo: "silk and rare resins",
         risk: "Pirates",
         days: "3–5 days",
@@ -1404,11 +1410,11 @@ export const ports = [
     ],
   },
   {
-    name: "Glasswater",
+    name: PORT_NAMES.mirravel,
     x: 2000,
     y: 765,
-    land: "Isles of Glass",
-    realm: "The Free Isles of Glass",
+    land: LAND_NAMES.mirravelIsles,
+    realm: `The Free ${LAND_NAMES.mirravelIsles}`,
     population: 24600,
     government: "Elected pearl senate dominated by ship-owning families",
     prosperity: "Booming",
@@ -1426,7 +1432,7 @@ export const ports = [
     imports: ["Timber", "Iron", "Grain", "Silk"],
     factions: [
       {
-        name: "Pearl Senate",
+        name: FACTION_NAMES.pearlSenate,
         influence: 35,
         note: "Ship-owning clans who auction diving rights and harbor monopolies.",
       },
@@ -1436,12 +1442,12 @@ export const ports = [
         note: "Foreign-backed warehouses pressing for lower transit duties.",
       },
       {
-        name: "Divers’ Communion",
+        name: FACTION_NAMES.diversCommunion,
         influence: 21,
         note: "Mutual-aid lodges demanding safer contracts and debt limits.",
       },
       {
-        name: "Mirror Knives",
+        name: FACTION_NAMES.mirrorKnives,
         influence: 15,
         note: "Smugglers and privateers with friends inside the customs service.",
       },
@@ -1449,21 +1455,21 @@ export const ports = [
     routes: [
       {
         name: "The Moonroad",
-        to: "Lethariel",
+        to: PORT_NAMES.velquorin,
         cargo: "spice, pearls and silk",
         risk: "Moderate",
         days: "3–5 days",
       },
       {
         name: "Kingfisher Passage",
-        to: "Kingfisher Quay",
+        to: PORT_NAMES.kavrenQuay,
         cargo: "glass, pearls and court luxuries",
         risk: "Low",
         days: "4–6 days",
       },
       {
         name: "Whispering Sand Route",
-        to: "Khaz Vhar",
+        to: PORT_NAMES.drazhOvek,
         cargo: "spice, obsidian and iron",
         risk: "Shoals",
         days: "5–8 days",
@@ -1471,10 +1477,10 @@ export const ports = [
     ],
   },
   {
-    name: "Khaz Vhar",
+    name: PORT_NAMES.drazhOvek,
     x: 1450,
     y: 1185,
-    land: "Varkesh",
+    land: LAND_NAMES.drazhmark,
     realm: "The Basalt Dominion",
     population: 71800,
     government: "Oligarchic furnace council under the First Forge",
@@ -1498,7 +1504,7 @@ export const ports = [
         note: "Forge-lords who set production quotas and control the city guard.",
       },
       {
-        name: "Deep Delvers’ Union",
+        name: FACTION_NAMES.deepDelversUnion,
         influence: 24,
         note: "Mine syndicates demanding safer shafts and a share of export duties.",
       },
@@ -1510,27 +1516,27 @@ export const ports = [
       {
         name: "Ashen Banner",
         influence: 15,
-        note: "Expansionists who want Varkesh to seize the southern sea lanes.",
+        note: `Expansionists who want ${LAND_NAMES.drazhmark} to seize the southern sea lanes.`,
       },
     ],
     routes: [
       {
         name: "The Amber Run",
-        to: "Goldhaven",
+        to: PORT_NAMES.orvessaQuay,
         cargo: "iron, obsidian, wine and credit",
         risk: "Moderate",
         days: "7–10 days",
       },
       {
         name: "Kingfisher Passage",
-        to: "Kingfisher Quay",
+        to: PORT_NAMES.kavrenQuay,
         cargo: "ironwork and royal luxuries",
         risk: "Low",
         days: "5–7 days",
       },
       {
         name: "Grey Drift Convoy",
-        to: "Glasswater",
+        to: PORT_NAMES.mirravel,
         cargo: "obsidian and moonspice",
         risk: "Shoals and storms",
         days: "5–8 days",
@@ -1538,11 +1544,11 @@ export const ports = [
     ],
   },
   {
-    name: "Drakefall",
+    name: PORT_NAMES.thrymmor,
     x: 830,
     y: 1135,
-    land: "The Dragonspine",
-    realm: "The Drakefall Freehold",
+    land: LAND_NAMES.thrymmSpires,
+    realm: `The ${PORT_NAMES.thrymmor} Freehold`,
     population: 19200,
     government: "Loose captains’ assembly protected by mountain clans",
     prosperity: "Uneven",
@@ -1584,21 +1590,21 @@ export const ports = [
     routes: [
       {
         name: "Western Crown Route",
-        to: "Goldhaven and Mallowfen",
+        to: `${PORT_NAMES.orvessaQuay} and ${PORT_NAMES.mirelune}`,
         cargo: "copper, herbs and grain",
         risk: "Moderate",
         days: "3–6 days",
       },
       {
         name: "Widow Bank Run",
-        to: "Khaz Vhar",
+        to: PORT_NAMES.drazhOvek,
         cargo: "sulfur, iron and machinery",
         risk: "High",
         days: "4–7 days",
       },
       {
         name: "Smuggler’s Wake",
-        to: "Glasswater",
+        to: PORT_NAMES.mirravel,
         cargo: "salvage and untaxed spice",
         risk: "Patrols",
         days: "6–9 days",
@@ -1606,11 +1612,11 @@ export const ports = [
     ],
   },
   {
-    name: "Mallowfen",
+    name: PORT_NAMES.mirelune,
     x: 360,
     y: 1140,
-    land: "Mistmere",
-    realm: "The Mistmere Compact",
+    land: LAND_NAMES.lunemire,
+    realm: `The ${LAND_NAMES.lunemire} Compact`,
     population: 14100,
     government: "Marsh elders and licensed smuggler-families",
     prosperity: "Modest",
@@ -1646,21 +1652,21 @@ export const ports = [
     routes: [
       {
         name: "Western Crown Route",
-        to: "Goldhaven and Drakefall",
+        to: `${PORT_NAMES.orvessaQuay} and ${PORT_NAMES.thrymmor}`,
         cargo: "medicine, grain and iron tools",
         risk: "Low",
         days: "3–6 days",
       },
       {
         name: "Calmwater Reach",
-        to: "Rimegate",
+        to: PORT_NAMES.narthkel,
         cargo: "peat, herbs and iron",
         risk: "Fog",
         days: "6–9 days",
       },
       {
         name: "Reedboat Channels",
-        to: "Interior Mistmere",
+        to: `Interior ${LAND_NAMES.lunemire}`,
         cargo: "fish, fungi and contraband",
         risk: "Local hazards",
         days: "1–4 days",
@@ -1668,11 +1674,11 @@ export const ports = [
     ],
   },
   {
-    name: "Kingfisher Quay",
+    name: PORT_NAMES.kavrenQuay,
     x: 1950,
     y: 1105,
-    land: "Crownsward",
-    realm: "The Duchy of Crownsward",
+    land: LAND_NAMES.kavrensward,
+    realm: `The Duchy of ${LAND_NAMES.kavrensward}`,
     population: 62400,
     government: "Ducal court with an influential chamber of creditors",
     prosperity: "Very high",
@@ -1713,14 +1719,14 @@ export const ports = [
     routes: [
       {
         name: "Kingfisher Passage",
-        to: "Glasswater and Khaz Vhar",
+        to: `${PORT_NAMES.mirravel} and ${PORT_NAMES.drazhOvek}`,
         cargo: "silk, pearls, ironwork and ceramics",
         risk: "Low",
         days: "4–7 days",
       },
       {
         name: "Court Packet",
-        to: "Goldhaven",
+        to: PORT_NAMES.orvessaQuay,
         cargo: "royal passengers, credit and luxury goods",
         risk: "Low",
         days: "6–8 days",
@@ -1777,11 +1783,11 @@ function routeInfo(name, to, cargo, risk = "Moderate", days = "6–10 days") {
 }
 ports.push(
   expandedPort({
-    name: "Gloamharbor",
+    name: PORT_NAMES.veyrgloam,
     x: 2380,
     y: 650,
-    land: "Thornwake",
-    realm: "The Thornwake Compact",
+    land: LAND_NAMES.thornvayle,
+    realm: `The ${LAND_NAMES.thornvayle} Compact`,
     population: 47300,
     government: "A nocturnal council of lighthouse lords and bonded navigators",
     prosperity: "High",
@@ -1805,27 +1811,31 @@ ports.push(
       "Night Market",
     ],
     routes: [
-      routeInfo("Gloam Passage", "Goldhaven", "timber, salt and charts"),
       routeInfo(
-        "Thornwake Circuit",
-        "Emberstrand",
+        "Gloam Passage",
+        PORT_NAMES.orvessaQuay,
+        "timber, salt and charts",
+      ),
+      routeInfo(
+        ROUTE_NAMES.thornvayleCircuit,
+        PORT_NAMES.cindervaleStrand,
         "pitch, iron and provisions",
         "Low",
         "2–4 days",
       ),
       routeInfo(
         "Saintswater Line",
-        "Saint’s Anchorage",
+        PORT_NAMES.orrasanctAnchorage,
         "pilgrims, vellum and lamp oil",
       ),
     ],
   }),
   expandedPort({
-    name: "Emberstrand",
+    name: PORT_NAMES.cindervaleStrand,
     x: 3130,
     y: 700,
-    land: "Thornwake",
-    realm: "The Thornwake Compact",
+    land: LAND_NAMES.thornvayle,
+    realm: `The ${LAND_NAMES.thornvayle} Compact`,
     population: 61800,
     government: "An elected forge-speaker balanced by seven coastal clans",
     prosperity: "Booming",
@@ -1849,20 +1859,20 @@ ports.push(
     ],
     routes: [
       routeInfo(
-        "Thornwake Circuit",
-        "Gloamharbor",
+        ROUTE_NAMES.thornvayleCircuit,
+        PORT_NAMES.veyrgloam,
         "copper, pitch and cedar",
         "Low",
         "2–4 days",
       ),
       routeInfo(
         "Saintswater Line",
-        "Saint’s Anchorage",
+        PORT_NAMES.orrasanctAnchorage,
         "weapons, pilgrims and lamp oil",
       ),
       routeInfo(
         "Sunward Reach",
-        "Sunspire",
+        PORT_NAMES.heliovar,
         "copper, spice and ceremonial glass",
         "Pirates",
         "7–11 days",
@@ -1870,10 +1880,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Sunspire",
+    name: PORT_NAMES.heliovar,
     x: 3660,
     y: 930,
-    land: "Serpent Coast",
+    land: LAND_NAMES.sythrenCoast,
     realm: "The Solar Satrapies",
     population: 112400,
     government: "Temple bureaucracy under the hereditary Voice of Noon",
@@ -1900,30 +1910,30 @@ ports.push(
     routes: [
       routeInfo(
         "Sunward Reach",
-        "Emberstrand",
+        PORT_NAMES.cindervaleStrand,
         "spice, copper and glass",
         "Pirates",
         "7–11 days",
       ),
       routeInfo(
         "Coil Road",
-        "Nacre Bay",
+        PORT_NAMES.pearlveinBay,
         "fruit, spice and pearls",
         "Low",
         "3–5 days",
       ),
       routeInfo(
         "Saintswater Line",
-        "Saint’s Anchorage",
+        PORT_NAMES.orrasanctAnchorage,
         "pilgrims, incense and manuscripts",
       ),
     ],
   }),
   expandedPort({
-    name: "Nacre Bay",
+    name: PORT_NAMES.pearlveinBay,
     x: 4380,
     y: 720,
-    land: "Serpent Coast",
+    land: LAND_NAMES.sythrenCoast,
     realm: "The Nacre League",
     population: 75600,
     government: "A league senate elected by pearl houses and canal districts",
@@ -1950,15 +1960,19 @@ ports.push(
     routes: [
       routeInfo(
         "Coil Road",
-        "Sunspire",
+        PORT_NAMES.heliovar,
         "pearls, fruit and spice",
         "Low",
         "3–5 days",
       ),
-      routeInfo("White Current", "Asterfall", "pearls, horses and salt"),
+      routeInfo(
+        "White Current",
+        PORT_NAMES.starrynFall,
+        "pearls, horses and salt",
+      ),
       routeInfo(
         "Kestrel Passage",
-        "Kestrel Haven",
+        PORT_NAMES.kavrelHaven,
         "dyes, silk and navigation instruments",
         "Shoals",
         "4–7 days",
@@ -1966,10 +1980,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Asterfall",
+    name: PORT_NAMES.starrynFall,
     x: 4800,
     y: 700,
-    land: "The Ivory Steppe",
+    land: LAND_NAMES.orynthSteppe,
     realm: "The Aster Khanate",
     population: 52100,
     government: "A harbor khan chosen from the five horse-banner families",
@@ -1988,17 +2002,21 @@ ports.push(
       "Reed Oracles",
     ],
     routes: [
-      routeInfo("White Current", "Nacre Bay", "horses, pearls and salt"),
+      routeInfo(
+        "White Current",
+        PORT_NAMES.pearlveinBay,
+        "horses, pearls and salt",
+      ),
       routeInfo(
         "Ivory Roadstead",
-        "Qasr Merid",
+        PORT_NAMES.meridQasryn,
         "horses, felt and amber",
         "Low",
         "4–6 days",
       ),
       routeInfo(
         "Kestrel Passage",
-        "Kestrel Haven",
+        PORT_NAMES.kavrelHaven,
         "amber, silk and instruments",
         "Shoals",
         "4–7 days",
@@ -2006,10 +2024,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Qasr Merid",
+    name: PORT_NAMES.meridQasryn,
     x: 5530,
     y: 700,
-    land: "The Ivory Steppe",
+    land: LAND_NAMES.orynthSteppe,
     realm: "The Meridian Sultanate",
     population: 90300,
     government:
@@ -2037,21 +2055,21 @@ ports.push(
     routes: [
       routeInfo(
         "Ivory Roadstead",
-        "Asterfall",
+        PORT_NAMES.starrynFall,
         "silk, horses and star tables",
         "Low",
         "4–6 days",
       ),
       routeInfo(
         "First Meridian Route",
-        "Skyreach",
+        PORT_NAMES.aetherreach,
         "instruments, dates and letters",
         "Open ocean",
         "6–9 days",
       ),
       routeInfo(
         "Monsoon Ladder",
-        "Tempest Hold",
+        PORT_NAMES.stormholden,
         "silk, brass and storm glass",
         "Seasonal storms",
         "8–12 days",
@@ -2059,17 +2077,16 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Skyreach",
+    name: PORT_NAMES.aetherreach,
     x: 6240,
     y: 760,
-    land: "Dawnmarch",
-    realm: "The Dawnmarch Principalities",
+    land: LAND_NAMES.aurelmarch,
+    realm: `The ${LAND_NAMES.aurelmarch} Principalities`,
     population: 68400,
     government: "A cliffside prince advised by aeromancers and sea captains",
     prosperity: "High",
     security: "Cliff batteries",
-    flavor:
-      "The easternmost towers catch sunrise hours before the courts of Avelorn.",
+    flavor: `The easternmost towers catch sunrise hours before the courts of ${LAND_NAMES.orravelle}.`,
     bias: { spice: 1.08, iron: 1.06, silk: 0.9 },
     resources: [
       "Cloud silk",
@@ -2089,21 +2106,21 @@ ports.push(
     routes: [
       routeInfo(
         "First Meridian Route",
-        "Qasr Merid",
+        PORT_NAMES.meridQasryn,
         "tea, silk and instruments",
         "Open ocean",
         "6–9 days",
       ),
       routeInfo(
         "Dawn Coast Run",
-        "Duskport",
+        PORT_NAMES.vesperport,
         "tea, sulfur and provisions",
         "Strong currents",
         "5–8 days",
       ),
       routeInfo(
         "Northern Circlet",
-        "Gloamharbor",
+        PORT_NAMES.veyrgloam,
         "charts, tea and glass",
         "Long passage",
         "12–16 days",
@@ -2111,10 +2128,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Duskport",
+    name: PORT_NAMES.vesperport,
     x: 6280,
     y: 1600,
-    land: "Duskward Keys",
+    land: LAND_NAMES.vesprynKeys,
     realm: "The Meridian Free Keys",
     population: 28100,
     government: "A rotating captains’ moot held at the western sunset bell",
@@ -2141,21 +2158,21 @@ ports.push(
     routes: [
       routeInfo(
         "Encircling Passage",
-        "Dawnwatch",
+        PORT_NAMES.eoswatch,
         "fish, rope and global mail",
         "Variable currents",
         "2–5 days",
       ),
       routeInfo(
         "Dawn Coast Run",
-        "Skyreach",
+        PORT_NAMES.aetherreach,
         "tea, sulfur and provisions",
         "Strong currents",
         "5–8 days",
       ),
       routeInfo(
         "Whalebone Track",
-        "Whalegrave",
+        PORT_NAMES.ossuwhale,
         "oil, rope and iron",
         "Sea beasts",
         "5–9 days",
@@ -2163,10 +2180,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Dawnwatch",
+    name: PORT_NAMES.eoswatch,
     x: 80,
     y: 1730,
-    land: "Dawnward Keys",
+    land: LAND_NAMES.eoslynKeys,
     realm: "The Meridian Free Keys",
     population: 26400,
     government: "A harbor assembly convened at the eastern sunrise bell",
@@ -2193,21 +2210,21 @@ ports.push(
     routes: [
       routeInfo(
         "Encircling Passage",
-        "Duskport",
+        PORT_NAMES.vesperport,
         "mail, rope and fish",
         "Variable currents",
         "2–5 days",
       ),
       routeInfo(
         "Westward Home Run",
-        "Mallowfen",
+        PORT_NAMES.mirelune,
         "medicine, fish and letters",
         "Fog banks",
         "8–12 days",
       ),
       routeInfo(
         "Southern Circlet",
-        "Redharbor",
+        PORT_NAMES.crimsonharrow,
         "grain, clocks and salt",
         "Open ocean",
         "10–14 days",
@@ -2215,10 +2232,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Redharbor",
+    name: PORT_NAMES.crimsonharrow,
     x: 2470,
     y: 1760,
-    land: "Southmarch",
+    land: LAND_NAMES.solvyrMarch,
     realm: "The Crimson Republic",
     population: 79800,
     government: "A martial republic led by elected banner consuls",
@@ -2245,19 +2262,19 @@ ports.push(
     routes: [
       routeInfo(
         "Crimson Coast",
-        "Pearlspire",
+        PORT_NAMES.pearlspirel,
         "grain, weapons and pearls",
         "Low",
         "4–6 days",
       ),
       routeInfo(
         "Saintswater Line",
-        "Saint’s Anchorage",
+        PORT_NAMES.orrasanctAnchorage,
         "grain, pilgrims and ironwood",
       ),
       routeInfo(
         "Southern Circlet",
-        "Dawnwatch",
+        PORT_NAMES.eoswatch,
         "grain, clocks and salt",
         "Open ocean",
         "10–14 days",
@@ -2265,10 +2282,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Pearlspire",
+    name: PORT_NAMES.pearlspirel,
     x: 3410,
     y: 1660,
-    land: "Southmarch",
+    land: LAND_NAMES.solvyrMarch,
     realm: "The Southern Principalities",
     population: 44600,
     government: "A hereditary pearl-prince constrained by a merchants’ chamber",
@@ -2294,21 +2311,21 @@ ports.push(
     routes: [
       routeInfo(
         "Crimson Coast",
-        "Redharbor",
+        PORT_NAMES.crimsonharrow,
         "rice, weapons and pearls",
         "Low",
         "4–6 days",
       ),
       routeInfo(
         "Jadewater Route",
-        "Jadegate",
+        PORT_NAMES.verdigate,
         "lacquer, tea and ceramics",
         "Monsoon squalls",
         "5–8 days",
       ),
       routeInfo(
         "Southern Crown Route",
-        "Kingfisher Quay",
+        PORT_NAMES.kavrenQuay,
         "pearls, fashions and wine",
         "Long passage",
         "9–13 days",
@@ -2316,11 +2333,11 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Jadegate",
+    name: PORT_NAMES.verdigate,
     x: 3760,
     y: 1780,
-    land: "The Jade Dominion",
-    realm: "The Jade Dominion",
+    land: LAND_NAMES.verdantate,
+    realm: LAND_NAMES.verdantate,
     population: 138000,
     government: "Imperial prefecture supervised by examination mandarins",
     prosperity: "Very high",
@@ -2340,21 +2357,21 @@ ports.push(
     routes: [
       routeInfo(
         "Jadewater Route",
-        "Pearlspire",
+        PORT_NAMES.pearlspirel,
         "tea, lacquer and ceramics",
         "Monsoon squalls",
         "5–8 days",
       ),
       routeInfo(
         "Cloud Canal",
-        "Cloudrest",
+        PORT_NAMES.cloudhollow,
         "tea, paper and silk",
         "Low",
         "3–5 days",
       ),
       routeInfo(
         "Kestrel Passage",
-        "Kestrel Haven",
+        PORT_NAMES.kavrelHaven,
         "silk, instruments and amber",
         "Shoals",
         "5–8 days",
@@ -2362,10 +2379,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Cloudrest",
+    name: PORT_NAMES.cloudhollow,
     x: 4640,
     y: 1510,
-    land: "The Jade Dominion",
+    land: LAND_NAMES.verdantate,
     realm: "The Cloud Mandate",
     population: 59200,
     government:
@@ -2393,21 +2410,21 @@ ports.push(
     routes: [
       routeInfo(
         "Cloud Canal",
-        "Jadegate",
+        PORT_NAMES.verdigate,
         "tea, paper and silk",
         "Low",
         "3–5 days",
       ),
       routeInfo(
         "Monsoon Ladder",
-        "Tempest Hold",
+        PORT_NAMES.stormholden,
         "tea, medicine and storm glass",
         "Seasonal storms",
         "5–9 days",
       ),
       routeInfo(
         "Kestrel Passage",
-        "Kestrel Haven",
+        PORT_NAMES.kavrelHaven,
         "tea, amber and instruments",
         "Shoals",
         "4–7 days",
@@ -2415,10 +2432,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Tempest Hold",
+    name: PORT_NAMES.stormholden,
     x: 5020,
     y: 1640,
-    land: "Tempest Crown",
+    land: LAND_NAMES.stormvaneCrown,
     realm: "The Stormbound Holds",
     population: 38600,
     government: "A fortress league ruled by storm captains",
@@ -2444,21 +2461,21 @@ ports.push(
     routes: [
       routeInfo(
         "Monsoon Ladder",
-        "Cloudrest",
+        PORT_NAMES.cloudhollow,
         "tea, medicine and storm glass",
         "Seasonal storms",
         "5–9 days",
       ),
       routeInfo(
         "Whalebone Track",
-        "Whalegrave",
+        PORT_NAMES.ossuwhale,
         "oil, basalt and iron",
         "Sea beasts",
         "3–6 days",
       ),
       routeInfo(
         "Meridian Monsoon",
-        "Qasr Merid",
+        PORT_NAMES.meridQasryn,
         "silk, brass and storm glass",
         "Severe storms",
         "8–12 days",
@@ -2466,10 +2483,10 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Whalegrave",
+    name: PORT_NAMES.ossuwhale,
     x: 5920,
     y: 1940,
-    land: "Whalegrave",
+    land: PORT_NAMES.ossuwhale,
     realm: "The Ossuary Isles",
     population: 17400,
     government: "A conclave of whaling families and bone priests",
@@ -2496,21 +2513,21 @@ ports.push(
     routes: [
       routeInfo(
         "Whalebone Track",
-        "Tempest Hold",
+        PORT_NAMES.stormholden,
         "oil, basalt and iron",
         "Sea beasts",
         "3–6 days",
       ),
       routeInfo(
         "Sunset Track",
-        "Duskport",
+        PORT_NAMES.vesperport,
         "oil, rope and fish",
         "Sea beasts",
         "5–9 days",
       ),
       routeInfo(
         "Southern Monsoon",
-        "Cloudrest",
+        PORT_NAMES.cloudhollow,
         "oil, tea and medicine",
         "Storms",
         "7–11 days",
@@ -2518,11 +2535,11 @@ ports.push(
     ],
   }),
   expandedPort({
-    name: "Saint’s Anchorage",
+    name: PORT_NAMES.orrasanctAnchorage,
     x: 3050,
     y: 1210,
-    land: "Isle of Saints",
-    realm: "The Concordat of Saint Orra",
+    land: LAND_NAMES.orrawardIsle,
+    realm: `The Concordat of ${LAND_NAMES.orraVey}`,
     population: 22100,
     government: "A neutral abbey-port administered by twelve hospitallers",
     prosperity: "Steady",
@@ -2548,26 +2565,26 @@ ports.push(
     routes: [
       routeInfo(
         "Saintswater Line",
-        "Emberstrand",
+        PORT_NAMES.cindervaleStrand,
         "pilgrims, weapons and lamp oil",
       ),
       routeInfo(
         "Crimson Pilgrim Route",
-        "Redharbor",
+        PORT_NAMES.crimsonharrow,
         "grain, medicine and ironwood",
       ),
       routeInfo(
         "Sun Pilgrim Route",
-        "Sunspire",
+        PORT_NAMES.heliovar,
         "incense, manuscripts and pilgrims",
       ),
     ],
   }),
   expandedPort({
-    name: "Kestrel Haven",
+    name: PORT_NAMES.kavrelHaven,
     x: 4700,
     y: 1220,
-    land: "Kestrel Chain",
+    land: LAND_NAMES.kavrelChain,
     realm: "The Kestrel League",
     population: 31800,
     government: "A federation of courier islands and surveyor guilds",
@@ -2594,21 +2611,21 @@ ports.push(
     routes: [
       routeInfo(
         "Kestrel Passage",
-        "Nacre Bay",
+        PORT_NAMES.pearlveinBay,
         "dyes, charts and pearls",
         "Shoals",
         "4–7 days",
       ),
       routeInfo(
         "Jade Kestrel Route",
-        "Jadegate",
+        PORT_NAMES.verdigate,
         "silk, tea and instruments",
         "Shoals",
         "5–8 days",
       ),
       routeInfo(
         "Aster Flight",
-        "Asterfall",
+        PORT_NAMES.starrynFall,
         "amber, horses and charts",
         "Open water",
         "4–7 days",

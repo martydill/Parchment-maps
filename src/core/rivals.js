@@ -1,30 +1,36 @@
+import {
+  SHIP_NAMES,
+  FACTION_NAMES,
+  PERSON_NAMES,
+  HOUSE_NAMES,
+} from "../names.js";
 import { clamp } from "./math.js";
 
 export const RIVAL_CAPTAINS = Object.freeze([
   {
     id: "vale",
-    captain: "Captain Ilyra Vale",
-    house: "Vale Maritime Exchange",
-    vessel: "Amber Heron",
-    faction: "Guild of Gilded Oars",
+    captain: PERSON_NAMES.ilyraVale,
+    house: HOUSE_NAMES.valeMaritimeExchange,
+    vessel: SHIP_NAMES.amberHeron,
+    faction: FACTION_NAMES.syrrelwakeOarwrightPact,
     style: "Shortage runner",
     description: "Moves quickly when a port is desperate and prices are high.",
   },
   {
     id: "voss",
-    captain: "Captain Torren Voss",
-    house: "Voss Northern Factors",
-    vessel: "Silver Wake",
-    faction: "Rimegate Admiralty",
+    captain: PERSON_NAMES.torrenVoss,
+    house: HOUSE_NAMES.vossNorthernFactors,
+    vessel: SHIP_NAMES.silverWake,
+    faction: FACTION_NAMES.narthkelAdmiralty,
     style: "Route specialist",
     description: "Builds dependable northern routes and remembers every favor.",
   },
   {
     id: "cassian",
-    captain: "Lady Mirelle Cassian",
-    house: "Cassian Crown Company",
-    vessel: "Crown Petrel",
-    faction: "Pearl Senate",
+    captain: PERSON_NAMES.mirelleVaelix,
+    house: HOUSE_NAMES.vaelixCrownCompany,
+    vessel: SHIP_NAMES.crownPetrel,
+    faction: FACTION_NAMES.pearlSenate,
     style: "Political trader",
     description:
       "Uses influence and advance intelligence to secure choice cargo.",
@@ -44,7 +50,7 @@ export const RIVAL_CAPTAINS = Object.freeze([
     captain: "Master Orik Brass",
     house: "Brass & Anvil Shipping",
     vessel: "Iron Minnow",
-    faction: "Deep Delvers’ Union",
+    faction: FACTION_NAMES.deepDelversUnion,
     style: "Industrial carrier",
     description:
       "Feeds workshops with bulk inputs and competes fiercely on price.",
@@ -64,7 +70,7 @@ export const RIVAL_CAPTAINS = Object.freeze([
     captain: "Captain Nadi Nacre",
     house: "Nacre Coast Combine",
     vessel: "Pearl Cormorant",
-    faction: "Pearl Senate",
+    faction: FACTION_NAMES.pearlSenate,
     style: "Luxury factor",
     description:
       "Chases rare, high-quality cargo and prestigious destinations.",

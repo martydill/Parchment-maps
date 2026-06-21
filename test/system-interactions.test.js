@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -30,7 +31,7 @@ const tradeGoods = {
 test("contract completion feeds faction standing, obligations, and rival conflicts", () => {
   const game = createGameState();
   const contract = {
-    faction: "Guild of Gilded Oars",
+    faction: FACTION_NAMES.syrrelwakeOarwrightPact,
     reward: 100,
     influence: 30,
     deadline: 6,
@@ -65,7 +66,7 @@ test("contract completion feeds faction standing, obligations, and rival conflic
       game.activeContracts,
       contract.faction,
     ),
-    "Your Guild of Gilded Oars charter bars service to Free Keel Brotherhood.",
+    `Your ${FACTION_NAMES.syrrelwakeOarwrightPact} charter bars service to Free Keel Brotherhood.`,
   );
 });
 
@@ -76,23 +77,29 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(
     grantCargo(game, "spice", 2, tradeGoods, capacities, {
-      origin: "Goldhaven",
+      origin: PORT_NAMES.orvessaQuay,
     }).granted,
     2,
   );
   assert.equal(
-    grantCargo(game, "silk", 1, tradeGoods, capacities, { origin: "Lethariel" })
-      .granted,
+    grantCargo(game, "silk", 1, tradeGoods, capacities, {
+      origin: PORT_NAMES.velquorin,
+    }).granted,
     1,
   );
   assert.equal(cargoCount(game), 3);
 
-  const leased = leaseWarehouse(game.warehouses, "Goldhaven", game.coins, 10);
+  const leased = leaseWarehouse(
+    game.warehouses,
+    PORT_NAMES.orvessaQuay,
+    game.coins,
+    10,
+  );
   game.coins = leased.coins;
   const storedLotId = game.cargoLots[0].id;
   const stored = depositCargo(
     game.warehouses,
-    "Goldhaven",
+    PORT_NAMES.orvessaQuay,
     game.cargoLots,
     storedLotId,
   );
@@ -101,11 +108,11 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(cargoCount(game), 2);
   assert.equal(game.cargo.spice, 1);
-  assert.equal(game.warehouses.Goldhaven.lots.length, 1);
+  assert.equal(game.warehouses[PORT_NAMES.orvessaQuay].lots.length, 1);
 
   const withdrawn = withdrawCargo(
     game.warehouses,
-    "Goldhaven",
+    PORT_NAMES.orvessaQuay,
     game.cargoLots,
     storedLotId,
     game.holdMax - cargoCount(game),
@@ -115,6 +122,6 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(cargoCount(game), 3);
   assert.equal(game.cargo.spice, 2);
-  assert.equal(game.warehouses.Goldhaven.lots.length, 0);
+  assert.equal(game.warehouses[PORT_NAMES.orvessaQuay].lots.length, 0);
   assert.equal(game.coins, 90);
 });

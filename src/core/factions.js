@@ -1,56 +1,48 @@
+import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 import { clamp } from "./math.js";
 
 const RIVAL_PAIRS = Object.freeze([
-  ["Deep Delvers’ Union", "Black Hammer Compact"],
-  ["Guild of Gilded Oars", "Free Keel Brotherhood"],
-  ["Pearl Senate", "Tideborn Commons"],
-  ["Silver Loom Consortium", "Reedboat Families"],
-  ["Lantern League", "Mirror Knives"],
-  ["Divers’ Communion", "Velvet Circle"],
+  [FACTION_NAMES.deepDelversUnion, FACTION_NAMES.blackHammerCompact],
+  [FACTION_NAMES.syrrelwakeOarwrightPact, FACTION_NAMES.freeKeelBrotherhood],
+  [FACTION_NAMES.pearlSenate, FACTION_NAMES.tidebornCommons],
+  [FACTION_NAMES.silverLoomConsortium, "Reedboat Families"],
+  [FACTION_NAMES.lanternLeague, FACTION_NAMES.mirrorKnives],
+  [FACTION_NAMES.diversCommunion, "Velvet Circle"],
 ]);
 
 const FACTION_LORE = Object.freeze({
-  "Deep Delvers’ Union": Object.freeze({
+  [FACTION_NAMES.deepDelversUnion]: Object.freeze({
     backstory:
       "The Union began as a secret compact among shaft crews who tied black cord around their wrists so rescuers could identify them after a collapse. It now binds miners, surveyors, haulers, and the widows who administer its relief halls.",
-    history:
-      "After the Nine-Day Cave-In, the delvers stopped every lift in Khaz Vhar until the forge-lords accepted elected safety wardens. Export duties later funded rescue stations, but repeated attempts to divert that money have kept the Union in conflict with mine owners and the Black Hammer Compact.",
+    history: `After the Nine-Day Cave-In, the delvers stopped every lift in ${PORT_NAMES.drazhOvek} until the forge-lords accepted elected safety wardens. Export duties later funded rescue stations, but repeated attempts to divert that money have kept the Union in conflict with mine owners and the ${FACTION_NAMES.blackHammerCompact}.`,
     motivations:
       "It seeks enforceable safety rules, worker control of new mineral finds, and a permanent share of ore revenues for injured crews and mining settlements. Its leaders will support expansion only when those who descend into the earth share in the reward.",
   }),
-  "Black Hammer Compact": Object.freeze({
-    backstory:
-      "The Compact is an alliance of northern mine proprietors, master armorers, and furnace creditors whose stamped black-hammer mark guarantees metal from pit to finished blade. Its members see disciplined ownership as the foundation of Rimegate’s survival.",
-    history:
-      "It rose during the Lean Winters by keeping the fortress forges burning when public stores failed. War contracts made its founders wealthy, and their purchase of exhausted mines brought them into direct competition with the organizing delvers of Khaz Vhar.",
+  [FACTION_NAMES.blackHammerCompact]: Object.freeze({
+    backstory: `The Compact is an alliance of northern mine proprietors, master armorers, and furnace creditors whose stamped black-hammer mark guarantees metal from pit to finished blade. Its members see disciplined ownership as the foundation of ${PORT_NAMES.narthkel}’s survival.`,
+    history: `It rose during the Lean Winters by keeping the fortress forges burning when public stores failed. War contracts made its founders wealthy, and their purchase of exhausted mines brought them into direct competition with the organizing delvers of ${PORT_NAMES.drazhOvek}.`,
     motivations:
       "The Compact wants unrestricted access to ore, predictable labor, stronger naval procurement, and fortified trade routes. It opposes any union or council able to halt production, especially the Deep Delvers’ Union.",
   }),
-  "Guild of Gilded Oars": Object.freeze({
-    backstory:
-      "The Guild descends from six merchant households that financed Goldhaven’s first blue-water convoy. A gilded oar above a countinghouse door promises credit, escorts, and influence in nearly every major customs hall.",
+  [FACTION_NAMES.syrrelwakeOarwrightPact]: Object.freeze({
+    backstory: `The Guild descends from six merchant households that financed ${PORT_NAMES.orvessaQuay}’s first blue-water convoy. A gilded oar above a countinghouse door promises credit, escorts, and influence in nearly every major customs hall.`,
     history:
       "Guild loans rebuilt the royal fleet after the War of Broken Masts, earning its dynasties hereditary concessions and tariff exemptions. As independent captains multiplied, the Guild converted old privileges into a web of bonded warehouses and exclusive route charters.",
     motivations:
       "It wants stable law, lower duties, protected sea lanes, and first claim on profitable discoveries. The Guild treats commerce as public order and regards the Free Keel Brotherhood’s unlicensed competition as piracy dressed in romantic language.",
   }),
-  "Free Keel Brotherhood": Object.freeze({
+  [FACTION_NAMES.freeKeelBrotherhood]: Object.freeze({
     backstory:
       "The Brotherhood is less a formal guild than a covenant exchanged between captains who own, crew, or owe no permanent allegiance over their vessels. Its taverns provide arbitration, emergency loans, and berths for sailors fleeing abusive contracts.",
-    history:
-      "It formed when twelve packet captains refused Rimegate’s compulsory naval levy and escaped through an uncharted winter channel. Their success inspired free captains across the archipelago to share routes and resist merchant monopolies.",
-    motivations:
-      "The Brotherhood fights for open harbors, portable crew shares, freedom from forced service, and public access to navigational discoveries. It distrusts every exclusive charter, particularly those enforced by the Guild of Gilded Oars.",
+    history: `It formed when twelve packet captains refused ${PORT_NAMES.narthkel}’s compulsory naval levy and escaped through an uncharted winter channel. Their success inspired free captains across the archipelago to share routes and resist merchant monopolies.`,
+    motivations: `The Brotherhood fights for open harbors, portable crew shares, freedom from forced service, and public access to navigational discoveries. It distrusts every exclusive charter, particularly those enforced by the ${FACTION_NAMES.syrrelwakeOarwrightPact}.`,
   }),
-  "Pearl Senate": Object.freeze({
-    backstory:
-      "The Senate grew from the ship-owning clans that financed Glasswater’s first permanent diving platforms. Seats are elected, but expensive eligibility rules ensure that pearl fleets and old canal houses dominate debate.",
-    history:
-      "Following the Drowning of Old Glasswater, the clans paid for sea walls and received authority to auction beds, berths, and salvage rights. Success made the isles rich while concentrating debt and the safest waters in senatorial hands.",
-    motivations:
-      "It seeks to preserve auction revenues, family fleets, and Glasswater’s independence from foreign crowns. Senators favor growth but resist debt limits and communal claims advanced by the Tideborn Commons.",
+  [FACTION_NAMES.pearlSenate]: Object.freeze({
+    backstory: `The Senate grew from the ship-owning clans that financed ${PORT_NAMES.mirravel}’s first permanent diving platforms. Seats are elected, but expensive eligibility rules ensure that pearl fleets and old canal houses dominate debate.`,
+    history: `Following the Drowning of Old ${PORT_NAMES.mirravel}, the clans paid for sea walls and received authority to auction beds, berths, and salvage rights. Success made the isles rich while concentrating debt and the safest waters in senatorial hands.`,
+    motivations: `It seeks to preserve auction revenues, family fleets, and ${PORT_NAMES.mirravel}’s independence from foreign crowns. Senators favor growth but resist debt limits and communal claims advanced by the ${FACTION_NAMES.tidebornCommons}.`,
   }),
-  "Tideborn Commons": Object.freeze({
+  [FACTION_NAMES.tidebornCommons]: Object.freeze({
     backstory:
       "The Commons unites dock wards, fishing crews, chandlers, and families whose homes stand below the spring-tide line. Its assemblies meet on public quays so no landlord or shipowner can close the doors.",
     history:
@@ -58,9 +50,8 @@ const FACTION_LORE = Object.freeze({
     motivations:
       "It demands affordable food, safe quays, common fishing grounds, and a voice for working districts in trade policy. It opposes the Pearl Senate whenever private auctions place survival resources beyond ordinary crews.",
   }),
-  "Silver Loom Consortium": Object.freeze({
-    backstory:
-      "The Consortium joins Lethariel’s cocoon growers, dyers, loom houses, and overseas silk factors. Its silver thread seal certifies both the origin of Starweave and the long chain of credit behind every bolt.",
+  [FACTION_NAMES.silverLoomConsortium]: Object.freeze({
+    backstory: `The Consortium joins ${PORT_NAMES.velquorin}’s cocoon growers, dyers, loom houses, and overseas silk factors. Its silver thread seal certifies both the origin of Starweave and the long chain of credit behind every bolt.`,
     history:
       "Once subordinate to hereditary court guilds, the loom houses gained leverage by supplying sails and bandages during the Moonroad War. They then opened foreign depots, displacing independent reed-cloth traders and provoking generations of resentment.",
     motivations:
@@ -74,15 +65,13 @@ const FACTION_LORE = Object.freeze({
     motivations:
       "They defend customary waterways, family workshops, debt-free exchange, and the right to sell cloth without distant guild approval. Their struggle with the Consortium is about cultural survival as much as market access.",
   }),
-  "Lantern League": Object.freeze({
+  [FACTION_NAMES.lanternLeague]: Object.freeze({
     backstory:
       "The League began with scholars and harbor clerks who met beneath one hooded lantern to compare censored charts and tax ledgers. Printers, minor nobles, teachers, and reform-minded officers have since turned it into a public movement.",
-    history:
-      "Its exposure of the False Beacon Scandal forced Goldhaven to publish harbor accounts and standardize pilots’ examinations. Later investigations into vanished cargoes made the League the enduring enemy of smugglers protected by official patronage.",
-    motivations:
-      "It pursues transparent government, public charts, educated navigation, and laws applied equally to crown agents and private merchants. The League considers the Mirror Knives proof that secrecy inevitably corrupts institutions.",
+    history: `Its exposure of the False Beacon Scandal forced ${PORT_NAMES.orvessaQuay} to publish harbor accounts and standardize pilots’ examinations. Later investigations into vanished cargoes made the League the enduring enemy of smugglers protected by official patronage.`,
+    motivations: `It pursues transparent government, public charts, educated navigation, and laws applied equally to crown agents and private merchants. The League considers the ${FACTION_NAMES.mirrorKnives} proof that secrecy inevitably corrupts institutions.`,
   }),
-  "Mirror Knives": Object.freeze({
+  [FACTION_NAMES.mirrorKnives]: Object.freeze({
     backstory:
       "The Knives are a loose confederacy of smugglers, privateers, fences, and compromised customs officers. Members carry slivers of mirrored glass rather than badges, recognizing one another through debts and carefully traded secrets.",
     history:
@@ -90,11 +79,10 @@ const FACTION_LORE = Object.freeze({
     motivations:
       "The Knives seek profitable ambiguity: selective enforcement, hidden anchorages, deniable violence, and officials who can be bought. They resist the Lantern League because published records and honest inspections would dismantle their greatest asset—uncertainty.",
   }),
-  "Divers’ Communion": Object.freeze({
+  [FACTION_NAMES.diversCommunion]: Object.freeze({
     backstory:
       "The Communion is a network of diving crews, healers, rope tenders, and bereaved households organized around shared air bells and mutual-aid chests. Its rituals honor those whose bodies the sea never returned.",
-    history:
-      "After pearl masters abandoned dozens of trapped divers during the Red Bloom, surviving crews pooled their earnings to pay debts and rescue families. Their lodges spread through Glasswater and won limits on the cruelest diving contracts.",
+    history: `After pearl masters abandoned dozens of trapped divers during the Red Bloom, surviving crews pooled their earnings to pay debts and rescue families. Their lodges spread through ${PORT_NAMES.mirravel} and won limits on the cruelest diving contracts.`,
     motivations:
       "It seeks safe equipment, transparent weights, debt ceilings, survivor pensions, and communal rights to newly found beds and wrecks. The Communion opposes the Velvet Circle’s appetite for luxury when fashion hides the human cost of pearls.",
   }),

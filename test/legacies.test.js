@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -51,16 +52,16 @@ test("trade magnate checklist combines warehouses, industries, and reserves", ()
   const game = merchantPrince("tradeMagnate");
   game.coins = 900;
   game.warehouses = {
-    Goldhaven: { leased: true },
-    Rimegate: { leased: true },
+    [PORT_NAMES.orvessaQuay]: { leased: true },
+    [PORT_NAMES.narthkel]: { leased: true },
     Maritole: { leased: true },
     Pearl: { leased: true },
   };
   game.regionalEconomy = {
-    Goldhaven: {
+    [PORT_NAMES.orvessaQuay]: {
       industries: { iron: { investment: 3 }, silk: { investment: 2 } },
     },
-    Rimegate: { industries: { timber: { investment: 3 } } },
+    [PORT_NAMES.narthkel]: { industries: { timber: { investment: 3 } } },
   };
 
   assert.equal(legacyReadyForCapstone(game), true);
@@ -72,8 +73,8 @@ test("trade magnate checklist combines warehouses, industries, and reserves", ()
 
 test("each legacy path exposes measurable checklist requirements", () => {
   const faction = merchantPrince("factionKingmaker");
-  faction.factionCharter = "Guild of Gilded Oars";
-  faction.factionStanding["Guild of Gilded Oars"] = 70;
+  faction.factionCharter = FACTION_NAMES.syrrelwakeOarwrightPact;
+  faction.factionStanding[FACTION_NAMES.syrrelwakeOarwrightPact] = 70;
   assert.equal(legacyReadyForCapstone(faction), true);
 
   const explorer = merchantPrince("masterExplorer");

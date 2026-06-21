@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -15,30 +16,30 @@ import {
 } from "../src/core/jurisdictions.js";
 
 test("jurisdictions assign distinct laws and crises or factions change them", () => {
-  assert.equal(jurisdictionLaw("Goldhaven", "spice"), "taxed");
-  assert.equal(jurisdictionLaw("Rimegate", "grain"), "rationed");
-  assert.equal(jurisdictionLaw("Lethariel", "coal"), "prohibited");
+  assert.equal(jurisdictionLaw(PORT_NAMES.orvessaQuay, "spice"), "taxed");
+  assert.equal(jurisdictionLaw(PORT_NAMES.narthkel, "grain"), "rationed");
+  assert.equal(jurisdictionLaw(PORT_NAMES.velquorin, "coal"), "prohibited");
   assert.equal(jurisdictionLaw("Unknown", "grain"), "legal");
   assert.equal(
-    jurisdictionLaw("Goldhaven", "medicine", {
+    jurisdictionLaw(PORT_NAMES.orvessaQuay, "medicine", {
       crises: [{ phase: "active" }],
     }),
     "rationed",
   );
   assert.equal(
-    jurisdictionLaw("Khaz Vhar", "iron", {
+    jurisdictionLaw(PORT_NAMES.drazhOvek, "iron", {
       dominantFaction: "Tideborn Commons",
     }),
     "taxed",
   );
   assert.equal(
-    jurisdictionLaw("Goldhaven", "amber", {
+    jurisdictionLaw(PORT_NAMES.orvessaQuay, "amber", {
       dominantFaction: "The Ivory Crown",
     }),
     "prohibited",
   );
   assert.equal(
-    jurisdictionLaw("Goldhaven", "grain", {
+    jurisdictionLaw(PORT_NAMES.orvessaQuay, "grain", {
       crises: [{ phase: "warning" }],
       dominantFaction: "Guild",
     }),
@@ -51,18 +52,20 @@ test("legal state normalization preserves valid legacy data and repairs bad data
   assert.deepEqual(normalizeLegalState(null), createLegalState());
   const lastInspection = { day: 4 };
   const normalized = normalizeLegalState({
-    permits: { "Goldhaven:amber": 20 },
+    permits: { [`${PORT_NAMES.orvessaQuay}:amber`]: 20 },
     cultivatedOfficials: null,
-    offenses: { Goldhaven: 2 },
+    offenses: { [PORT_NAMES.orvessaQuay]: 2 },
     portBans: "bad",
     recentBehavior: 99,
     forgedManifest: 1,
     remoteAnchorage: true,
     lastInspection,
   });
-  assert.deepEqual(normalized.permits, { "Goldhaven:amber": 20 });
+  assert.deepEqual(normalized.permits, {
+    [`${PORT_NAMES.orvessaQuay}:amber`]: 20,
+  });
   assert.deepEqual(normalized.cultivatedOfficials, {});
-  assert.deepEqual(normalized.offenses, { Goldhaven: 2 });
+  assert.deepEqual(normalized.offenses, { [PORT_NAMES.orvessaQuay]: 2 });
   assert.deepEqual(normalized.portBans, {});
   assert.equal(normalized.recentBehavior, 20);
   assert.equal(normalized.forgedManifest, true);
@@ -76,24 +79,24 @@ test("legal state normalization preserves valid legacy data and repairs bad data
 
 test("permits and official relationships cost money and unlock legal trade", () => {
   const state = createLegalState();
-  assert.deepEqual(buyPermit(state, "Rimegate", "iron", 5, 20), {
+  assert.deepEqual(buyPermit(state, PORT_NAMES.narthkel, "iron", 5, 20), {
     ok: false,
     reason: "Not enough crowns.",
   });
-  const permit = buyPermit(state, "Rimegate", "iron", 5, 50);
+  const permit = buyPermit(state, PORT_NAMES.narthkel, "iron", 5, 50);
   assert.deepEqual(permit, { ok: true, coins: 15, expiresDay: 35 });
-  assert.equal(hasPermit(state, "Rimegate", "iron", 35), true);
-  assert.equal(hasPermit(state, "Rimegate", "iron", 36), false);
+  assert.equal(hasPermit(state, PORT_NAMES.narthkel, "iron", 35), true);
+  assert.equal(hasPermit(state, PORT_NAMES.narthkel, "iron", 36), false);
 
-  assert.deepEqual(cultivateOfficial(state, "Rimegate", 20), {
+  assert.deepEqual(cultivateOfficial(state, PORT_NAMES.narthkel, 20), {
     ok: false,
     reason: "Not enough crowns.",
   });
-  assert.deepEqual(cultivateOfficial(state, "Rimegate", 70), {
+  assert.deepEqual(cultivateOfficial(state, PORT_NAMES.narthkel, 70), {
     ok: true,
     coins: 15,
   });
-  assert.deepEqual(cultivateOfficial(state, "Rimegate", 70), {
+  assert.deepEqual(cultivateOfficial(state, PORT_NAMES.narthkel, 70), {
     ok: false,
     reason: "You already have a cultivated official here.",
   });
@@ -104,7 +107,7 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
   assert.equal(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "spice",
       status: "legal",
       day: 2,
@@ -114,7 +117,7 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
   assert.match(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "coal",
       status: "prohibited",
       day: 2,
@@ -124,18 +127,18 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
   assert.match(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "amber",
       status: "licensed",
       day: 2,
     }).reason,
     /permit/,
   );
-  state.permits["Goldhaven:amber"] = 3;
+  state.permits[`${PORT_NAMES.orvessaQuay}:amber`] = 3;
   assert.equal(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "amber",
       status: "licensed",
       day: 2,
@@ -145,7 +148,7 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
   assert.match(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "grain",
       status: "rationed",
       day: 2,
@@ -153,11 +156,11 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
     }).reason,
     /ration/,
   );
-  state.portBans.Goldhaven = 8;
+  state.portBans[PORT_NAMES.orvessaQuay] = 8;
   assert.match(
     canTrade({
       state,
-      portName: "Goldhaven",
+      portName: PORT_NAMES.orvessaQuay,
       good: "spice",
       status: "legal",
       day: 2,
@@ -168,13 +171,13 @@ test("registered trade enforces bans, prohibitions, licenses, and rations", () =
 
 test("scrutiny rewards reputation and honest declarations while reacting to concealment", () => {
   const honest = customsScrutiny({
-    portName: "Goldhaven",
+    portName: PORT_NAMES.orvessaQuay,
     reputation: 50,
     declaredUnits: 4,
     actualUnits: 4,
   });
   const suspicious = customsScrutiny({
-    portName: "Goldhaven",
+    portName: PORT_NAMES.orvessaQuay,
     reputation: -50,
     declaredUnits: 0,
     actualUnits: 5,
@@ -194,7 +197,7 @@ test("scrutiny rewards reputation and honest declarations while reacting to conc
   );
   assert.equal(
     customsScrutiny({
-      portName: "Khaz Vhar",
+      portName: PORT_NAMES.drazhOvek,
       reputation: -1000,
       actualUnits: 100,
     }),
@@ -206,7 +209,7 @@ test("customs clears honest legal trade and records the inspection", () => {
   const state = createLegalState();
   const result = resolveCustoms({
     state,
-    portName: "Goldhaven",
+    portName: PORT_NAMES.orvessaQuay,
     lots: [{ id: "grain", key: "grain", compartment: "main" }],
     day: 3,
     reputation: 100,
@@ -220,12 +223,12 @@ test("customs clears honest legal trade and records the inspection", () => {
   assert.equal(result.remoteFee, 0);
   assert.equal(state.forgedManifest, false);
   assert.equal(state.remoteAnchorage, false);
-  assert.equal(state.lastInspection.portName, "Goldhaven");
+  assert.equal(state.lastInspection.portName, PORT_NAMES.orvessaQuay);
 
   const behaviorBeforeInspection = state.recentBehavior;
   const inspectedButCompliant = resolveCustoms({
     state,
-    portName: "Khaz Vhar",
+    portName: PORT_NAMES.drazhOvek,
     lots: [{ id: "unlisted", key: "unlisted", compartment: "main" }],
     day: 4,
     reputation: -100,
@@ -238,7 +241,7 @@ test("customs clears honest legal trade and records the inspection", () => {
 
   const notInspected = resolveCustoms({
     state,
-    portName: "Glasswater",
+    portName: PORT_NAMES.mirravel,
     lots: [{ id: "coal", key: "coal", compartment: "main" }],
     day: 5,
     reputation: 100,
@@ -262,7 +265,7 @@ test("customs detects prohibited and excess rationed cargo with escalating conse
     state.remoteAnchorage = offense === 1;
     const result = resolveCustoms({
       state,
-      portName: "Khaz Vhar",
+      portName: PORT_NAMES.drazhOvek,
       lots,
       day: offense,
       reputation: -100,
@@ -276,11 +279,11 @@ test("customs detects prohibited and excess rationed cargo with escalating conse
     assert.ok(result.standingChange < 0);
     if (offense === 1) assert.equal(result.remoteFee, 8);
   }
-  assert.equal(state.offenses["Khaz Vhar"], 3);
-  assert.equal(state.portBans["Khaz Vhar"], 23);
+  assert.equal(state.offenses[PORT_NAMES.drazhOvek], 3);
+  assert.equal(state.portBans[PORT_NAMES.drazhOvek], 23);
   const banned = resolveCustoms({
     state,
-    portName: "Khaz Vhar",
+    portName: PORT_NAMES.drazhOvek,
     lots: [],
     day: 4,
   });
@@ -290,10 +293,10 @@ test("customs detects prohibited and excess rationed cargo with escalating conse
 
 test("concealed cargo can survive inspection and licenses prevent violations", () => {
   const state = createLegalState();
-  state.permits["Goldhaven:amber"] = 20;
+  state.permits[`${PORT_NAMES.orvessaQuay}:amber`] = 20;
   const result = resolveCustoms({
     state,
-    portName: "Goldhaven",
+    portName: PORT_NAMES.orvessaQuay,
     lots: [
       { id: "amber", key: "amber", compartment: "main" },
       { id: "coal", key: "coal", compartment: "concealed" },

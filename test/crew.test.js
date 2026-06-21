@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -150,8 +151,8 @@ test("arrears escalate through refusal, theft, desertion, and mutiny", () => {
 });
 
 test("ports offer deterministic recruits and recruitment enforces limits", () => {
-  const pool = portRecruitmentPool("Goldhaven", 86400);
-  assert.deepEqual(pool, portRecruitmentPool("Goldhaven", 86400));
+  const pool = portRecruitmentPool(PORT_NAMES.orvessaQuay, 86400);
+  assert.deepEqual(pool, portRecruitmentPool(PORT_NAMES.orvessaQuay, 86400));
   assert.equal(pool.length, 4);
   const offer = pool[0];
   const hired = recruitCrew(createCrewState(), offer, offer.cost);
@@ -224,8 +225,8 @@ test("crew voyage events award officer-led traits and bounded rewards", () => {
     roughness: 0.9,
     routePlan: "fast",
     specialistId: "boatswain",
-    origin: "Goldhaven",
-    destination: "Rimegate",
+    origin: PORT_NAMES.orvessaQuay,
+    destination: PORT_NAMES.narthkel,
   });
 
   assert.equal(storm.event.id, "boatswain-rigging");

@@ -1,3 +1,4 @@
+import { FACTION_NAMES } from "../names.js";
 const APPROACHES = Object.freeze({
   recon: {
     label: "Reconnoiter",
@@ -199,12 +200,12 @@ function resolveHazardEffects({
 /* node:coverage enable */
 /* node:coverage disable */
 const AFTERMATH_FACTIONS = Object.freeze([
-  "Guild of Gilded Oars",
-  "Free Keel Brotherhood",
-  "Lantern League",
+  FACTION_NAMES.syrrelwakeOarwrightPact,
+  FACTION_NAMES.freeKeelBrotherhood,
+  FACTION_NAMES.lanternLeague,
   "Velvet Circle",
-  "Deep Delvers’ Union",
-  "Pearl Senate",
+  FACTION_NAMES.deepDelversUnion,
+  FACTION_NAMES.pearlSenate,
 ]);
 
 const CREW_TRAITS = Object.freeze([

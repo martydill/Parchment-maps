@@ -1,3 +1,4 @@
+import { SHIP_NAMES } from "../names.js";
 export const BASE_SHIP_STATS = Object.freeze({
   holdMax: 18,
   maxSpeed: 175,
@@ -16,7 +17,7 @@ export const SHIP_CLASSES = Object.freeze({
   cutter: shipClass(
     "cutter",
     "Merchant cutter",
-    "The Wren",
+    SHIP_NAMES.starter,
     0,
     "A balanced coastal trader: inexpensive, responsive, and adaptable.",
     {},

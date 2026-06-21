@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <meta name="theme-color" content="#201b15" />
-    <title>The Gilded Archipelago — Encircling World V9</title>
+    <title>Merchant Sailing Game</title>
     <script>
       (() => {
         try {
@@ -126,11 +126,11 @@
     <div id="hud">
       <div class="topbar">
         <div class="badge">
-          <b id="shipName">The Wren</b> ·
-          <span class="small">Home: Goldhaven</span><br /><span id="speedText"
-            >0 knots</span
-          >
-          · <span id="windText">Wind E · 14 knots</span><br /><span
+          <b id="shipName">Merchant Vessel</b> ·
+          <span class="small"
+            >Home: <span id="homePortLabel">Home Port</span></span
+          ><br /><span id="speedText">0 knots</span> ·
+          <span id="windText">Wind E · 14 knots</span><br /><span
             class="small"
             id="visibilityText"
             >Clear · 12 km sight</span
@@ -147,7 +147,7 @@
       <div id="message"></div>
       <button id="courseCard" type="button">
         <span class="course-kicker">Captain’s course</span>
-        <b id="courseTitle">Dock at Goldhaven</b>
+        <b id="courseTitle">Dock at home port</b>
         <span id="courseDetail">Take your first Guild commission.</span>
         <span id="courseAction">Show me where →</span>
       </button>
@@ -218,15 +218,16 @@
 
     <div id="intro">
       <div class="scroll">
-        <h1>The Gilded Archipelago</h1>
+        <h1 id="introGameTitle">Merchant Sailing Game</h1>
         <div class="ornament">✦ ☙ ⚓ ❧ ✦</div>
         <p>
           You inherit a narrow-hulled merchant vessel, a weathered chart, and a
-          debt owed to the Crown of Avelorn.
+          debt owed to <span id="introHomeRealm">your home realm</span>.
         </p>
         <p>
-          Your voyage begins at <b>Goldhaven</b>, your home port on the coast of
-          Avelorn.
+          Your voyage begins at <b id="introHomePort">your home port</b>, your
+          home port on the coast of
+          <span id="introHomeLand">your home land</span>.
         </p>
         <p class="world-seed-label">
           Active generated world: <b id="introWorldSeed"></b>
@@ -253,9 +254,9 @@
         </p>
         <p>
           <b>Your first merchant-prince milestone:</b> complete three contracts,
-          profit from a regional shortage, build influence with the Guild of
-          Gilded Oars, and use that influence to charter a protected trade
-          route.
+          profit from a regional shortage, build influence with
+          <span id="introGuildName">the merchant pact</span>, and use that
+          influence to charter a protected trade route.
         </p>
         <p>
           <b>Fair-market update:</b> every port now posts separate buy and sell
@@ -275,7 +276,7 @@
         </p>
         <div class="intro-actions">
           <button class="parchment" id="beginButton" type="button">
-            <span class="start-new-label">Begin at Goldhaven</span>
+            <span class="start-new-label">Begin at home port</span>
             <span class="start-continue-label">Continue voyage</span>
           </button>
           <button class="parchment secondary" id="newMapButton" type="button">

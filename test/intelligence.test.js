@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -56,8 +57,8 @@ test("bestTradeOpportunity compares executable prices across distinct ports", ()
 
 test("intelligence report helpers describe every report type", () => {
   assert.equal(
-    intelEffectText({ type: "forecast", affectedPort: "Goldhaven" }),
-    "Goldhaven has been marked on your chart, and the confidential forecast now appears in that town’s political record.",
+    intelEffectText({ type: "forecast", affectedPort: PORT_NAMES.orvessaQuay }),
+    `${PORT_NAMES.orvessaQuay} has been marked on your chart, and the confidential forecast now appears in that town’s political record.`,
   );
   assert.match(
     intelEffectText({
@@ -74,8 +75,11 @@ test("intelligence report helpers describe every report type", () => {
   );
 
   assert.equal(
-    intelActionLabel({ type: "forecast", affectedPort: "Goldhaven" }),
-    "Inspect Goldhaven",
+    intelActionLabel({
+      type: "forecast",
+      affectedPort: PORT_NAMES.orvessaQuay,
+    }),
+    `Inspect ${PORT_NAMES.orvessaQuay}`,
   );
   assert.equal(
     intelActionLabel({ type: "market", sellPort: "Far" }),

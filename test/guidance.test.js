@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -22,18 +23,20 @@ function game(overrides = {}) {
 test("currentObjective guides the first commission from docking through delivery", () => {
   assert.equal(currentObjective({ game: game() }).id, "return-home");
   assert.equal(
-    currentObjective({ game: game(), nearPortName: "Goldhaven" }).action,
+    currentObjective({ game: game(), nearPortName: PORT_NAMES.orvessaQuay })
+      .action,
     "dock",
   );
   assert.equal(
-    currentObjective({ game: game(), currentPortName: "Goldhaven" }).action,
+    currentObjective({ game: game(), currentPortName: PORT_NAMES.orvessaQuay })
+      .action,
     "trade",
   );
 
   const contracted = game({
     activeContracts: [
       {
-        destination: "Rimegate",
+        destination: PORT_NAMES.narthkel,
         cargoName: "guild ledgers",
         reward: 90,
         deadline: 5,
@@ -43,12 +46,13 @@ test("currentObjective guides the first commission from docking through delivery
   assert.equal(
     currentObjective({
       game: contracted,
-      currentPortName: "Goldhaven",
+      currentPortName: PORT_NAMES.orvessaQuay,
     }).action,
     "map",
   );
   assert.equal(
-    currentObjective({ game: contracted, nearPortName: "Rimegate" }).action,
+    currentObjective({ game: contracted, nearPortName: PORT_NAMES.narthkel })
+      .action,
     "dock",
   );
   assert.equal(currentObjective({ game: contracted }).id, "sail-contract");
@@ -59,7 +63,7 @@ test("currentObjective warns under-provisioned captains and advances milestones"
     operations: { provisions: 2 },
     activeContracts: [
       {
-        destination: "Rimegate",
+        destination: PORT_NAMES.narthkel,
         cargoName: "guild ledgers",
         reward: 90,
         deadline: 2,
@@ -68,7 +72,7 @@ test("currentObjective warns under-provisioned captains and advances milestones"
   });
   const preparation = currentObjective({
     game: contracted,
-    currentPortName: "Goldhaven",
+    currentPortName: PORT_NAMES.orvessaQuay,
   });
   assert.equal(preparation.action, "vessel");
   assert.equal(preparation.urgency, "danger");
@@ -88,7 +92,7 @@ test("currentObjective warns under-provisioned captains and advances milestones"
         },
       }),
     }).destination,
-    "Goldhaven",
+    PORT_NAMES.orvessaQuay,
   );
   assert.equal(
     currentObjective({
@@ -112,9 +116,9 @@ test("currentObjective warns under-provisioned captains and advances milestones"
           shortageExploited: true,
           lawChanged: false,
         },
-        factionStanding: { "Guild of Gilded Oars": 20 },
+        factionStanding: { [FACTION_NAMES.syrrelwakeOarwrightPact]: 20 },
       }),
-      currentPortName: "Goldhaven",
+      currentPortName: PORT_NAMES.orvessaQuay,
     }).action,
     "politics",
   );
@@ -206,7 +210,7 @@ test("currentObjective handles deadlines, multiple commissions, and missing lega
         },
         factionStanding: undefined,
       },
-      currentPortName: "Goldhaven",
+      currentPortName: PORT_NAMES.orvessaQuay,
     }).action,
     "map",
   );
@@ -221,9 +225,9 @@ test("currentObjective handles deadlines, multiple commissions, and missing lega
           shortageExploited: true,
           lawChanged: false,
         },
-        factionStanding: { "Guild of Gilded Oars": 20 },
+        factionStanding: { [FACTION_NAMES.syrrelwakeOarwrightPact]: 20 },
       },
-      currentPortName: "Rimegate",
+      currentPortName: PORT_NAMES.narthkel,
     }).action,
     "map",
   );
