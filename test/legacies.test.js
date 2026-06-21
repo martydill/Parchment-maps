@@ -51,16 +51,16 @@ test("trade magnate checklist combines warehouses, industries, and reserves", ()
   const game = merchantPrince("tradeMagnate");
   game.coins = 900;
   game.warehouses = {
-    Goldhaven: { leased: true },
-    Rimegate: { leased: true },
+    "Orvessa Quay": { leased: true },
+    Narthkel: { leased: true },
     Maritole: { leased: true },
     Pearl: { leased: true },
   };
   game.regionalEconomy = {
-    Goldhaven: {
+    "Orvessa Quay": {
       industries: { iron: { investment: 3 }, silk: { investment: 2 } },
     },
-    Rimegate: { industries: { timber: { investment: 3 } } },
+    Narthkel: { industries: { timber: { investment: 3 } } },
   };
 
   assert.equal(legacyReadyForCapstone(game), true);
@@ -72,8 +72,8 @@ test("trade magnate checklist combines warehouses, industries, and reserves", ()
 
 test("each legacy path exposes measurable checklist requirements", () => {
   const faction = merchantPrince("factionKingmaker");
-  faction.factionCharter = "Guild of Gilded Oars";
-  faction.factionStanding["Guild of Gilded Oars"] = 70;
+  faction.factionCharter = "Syrrelwake Oarwright Pact";
+  faction.factionStanding["Syrrelwake Oarwright Pact"] = 70;
   assert.equal(legacyReadyForCapstone(faction), true);
 
   const explorer = merchantPrince("masterExplorer");

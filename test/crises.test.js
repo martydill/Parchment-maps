@@ -131,17 +131,17 @@ test("cargo interventions reject inactive, unknown, and unsupplied crises", () =
 
 test("crisis modifiers distinguish warning, emergency, and both aftermaths", () => {
   let state = advanceCrises(createCrisisState(), 12).state;
-  assert.deepEqual(crisisEconomyModifiers(state, "Lethariel", "silk"), {
+  assert.deepEqual(crisisEconomyModifiers(state, "Velquorin", "silk"), {
     price: 1,
     production: 0,
     consumption: 0,
   });
   state = advanceCrises(state, 15).state;
   assert.equal(
-    crisisEconomyModifiers(state, "Lethariel", "silk").price,
+    crisisEconomyModifiers(state, "Velquorin", "silk").price,
     CRISIS_TEMPLATES.loomUnrest.activeModifiers.price,
   );
-  assert.deepEqual(crisisEconomyModifiers(state, "Lethariel", "iron"), {
+  assert.deepEqual(crisisEconomyModifiers(state, "Velquorin", "iron"), {
     price: 1,
     production: 0,
     consumption: 0,
@@ -149,16 +149,16 @@ test("crisis modifiers distinguish warning, emergency, and both aftermaths", () 
 
   const resolved = interveneInCrisis(state, "loomUnrest", 100, 16).state;
   assert.equal(
-    crisisEconomyModifiers(resolved, "Lethariel", "silk").production,
+    crisisEconomyModifiers(resolved, "Velquorin", "silk").production,
     0.35,
   );
   const ignored = advanceCrises(state, 22).state;
   assert.equal(
-    crisisEconomyModifiers(ignored, "Lethariel", "silk").production,
+    crisisEconomyModifiers(ignored, "Velquorin", "silk").production,
     -0.3,
   );
-  assert.equal(crisisAtPort(ignored, "Lethariel").length, 1);
-  assert.equal(crisisAtPort(ignored, "Goldhaven").length, 0);
+  assert.equal(crisisAtPort(ignored, "Velquorin").length, 1);
+  assert.equal(crisisAtPort(ignored, "Orvessa Quay").length, 0);
 });
 
 test("aftermath permanently changes bounded regional conditions", () => {

@@ -65,14 +65,14 @@ test("createContractOffer builds courier work and selects local or guild sponsor
 
   const guild = offer({
     origin: {
-      name: "Goldhaven",
+      name: "Orvessa Quay",
       x: 0,
       y: 0,
       factions: [{ name: "Crown" }],
     },
     destinations: ["Far"],
   }).offer;
-  assert.equal(guild.faction, "Guild of Gilded Oars");
+  assert.equal(guild.faction, "Syrrelwake Oarwright Pact");
   assert.equal(guild.influence, 8);
   assert.equal(guild.estimatedDays, 1);
 });
@@ -166,7 +166,7 @@ test("survey contract catalogue has broad commission variety", () => {
 test("createSurveyContractOffer builds zero-hold exploration commissions", () => {
   const result = createSurveyContractOffer({
     origin: {
-      name: "Goldhaven",
+      name: "Orvessa Quay",
       factions: [{ name: "Royal Navy" }, { name: "Free Keel Brotherhood" }],
     },
     index: 0,
@@ -258,7 +258,7 @@ test("surveyContractProgress tracks multi-site exploration commissions", () => {
   );
 });
 
-test("surveyContractProgress matches Glasswater, reef, and mineral objectives", () => {
+test("surveyContractProgress matches Mirravel, reef, and mineral objectives", () => {
   const glasswater = createSurveyContractOffer({
     origin: { name: "Harbor", factions: [] },
     index: 2,
@@ -273,7 +273,7 @@ test("surveyContractProgress matches Glasswater, reef, and mineral objectives", 
       disposition: "share",
       site: {
         id: "glass",
-        route: { origin: "Lethariel", destination: "Glasswater" },
+        route: { origin: "Velquorin", destination: "Mirravel" },
       },
     }),
     { complete: true, completed: 1, required: 1 },
@@ -346,7 +346,7 @@ test("survey objective matchers cover fallback route and description branches", 
       disposition: "share",
       site: {
         id: "glass-origin",
-        route: { origin: "Glasswater", destination: "Pearlstrand" },
+        route: { origin: "Mirravel", destination: "Pearlstrand" },
       },
     }),
     { complete: true, completed: 1, required: 1 },
@@ -362,7 +362,7 @@ test("survey objective matchers cover fallback route and description branches", 
     surveyContractProgress(glassByBenefit, {
       type: "discovery",
       disposition: "share",
-      site: { id: "glass-benefit", benefit: "Safer Glasswater passage." },
+      site: { id: "glass-benefit", benefit: "Safer Mirravel passage." },
     }),
     { complete: true, completed: 1, required: 1 },
   );

@@ -7,7 +7,7 @@ import {
   recoverNavigablePosition,
 } from "../src/core/startup.js";
 
-test("the Begin button starts the supplied Goldhaven transition", () => {
+test("the Begin button starts the supplied Orvessa Quay transition", () => {
   let listener;
   let starts = 0;
   const button = {
@@ -25,7 +25,7 @@ test("the Begin button starts the supplied Goldhaven transition", () => {
   assert.equal(starts, 1);
 });
 
-test("beginning at Goldhaven resets the ship and camera at the home port", () => {
+test("beginning at Orvessa Quay resets the ship and camera at the home port", () => {
   const camera = { x: 12, y: 34 };
   const ship = {
     x: 1,
@@ -35,12 +35,12 @@ test("beginning at Goldhaven resets the ship and camera at the home port", () =>
     anchored: false,
     trail: [{ x: 1, y: 2 }],
   };
-  const goldhaven = { name: "Goldhaven", home: true };
+  const goldhaven = { name: "Orvessa Quay", home: true };
 
   const home = beginAtHomePort({
     camera,
     homePort: { spawnX: 705, spawnY: 485, departureAngle: 0 },
-    ports: [{ name: "Rimegate" }, goldhaven],
+    ports: [{ name: "Narthkel" }, goldhaven],
     ship,
   });
 
@@ -69,7 +69,7 @@ test("beginning repairs a legacy ship without a usable trail", () => {
   beginAtHomePort({
     camera: {},
     homePort: { spawnX: 705, spawnY: 485, departureAngle: 0 },
-    ports: [{ name: "Goldhaven", home: true }],
+    ports: [{ name: "Orvessa Quay", home: true }],
     ship,
   });
 

@@ -56,8 +56,8 @@ test("bestTradeOpportunity compares executable prices across distinct ports", ()
 
 test("intelligence report helpers describe every report type", () => {
   assert.equal(
-    intelEffectText({ type: "forecast", affectedPort: "Goldhaven" }),
-    "Goldhaven has been marked on your chart, and the confidential forecast now appears in that town’s political record.",
+    intelEffectText({ type: "forecast", affectedPort: "Orvessa Quay" }),
+    "Orvessa Quay has been marked on your chart, and the confidential forecast now appears in that town’s political record.",
   );
   assert.match(
     intelEffectText({
@@ -74,8 +74,8 @@ test("intelligence report helpers describe every report type", () => {
   );
 
   assert.equal(
-    intelActionLabel({ type: "forecast", affectedPort: "Goldhaven" }),
-    "Inspect Goldhaven",
+    intelActionLabel({ type: "forecast", affectedPort: "Orvessa Quay" }),
+    "Inspect Orvessa Quay",
   );
   assert.equal(
     intelActionLabel({ type: "market", sellPort: "Far" }),

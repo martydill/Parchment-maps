@@ -13,20 +13,23 @@ import {
 test("navigation state plots and clears known destinations", () => {
   const state = createNavigationState();
   assert.deepEqual(state, { destination: null });
-  assert.equal(plotCourse(state, "Rimegate", ["Goldhaven", "Rimegate"]), true);
-  assert.equal(state.destination, "Rimegate");
+  assert.equal(
+    plotCourse(state, "Narthkel", ["Orvessa Quay", "Narthkel"]),
+    true,
+  );
+  assert.equal(state.destination, "Narthkel");
   clearCourse(state);
   assert.equal(state.destination, null);
 });
 
 test("plotCourse rejects unknown destinations without changing the course", () => {
-  const state = { destination: "Goldhaven" };
-  assert.equal(plotCourse(state, "Hidden Cay", ["Goldhaven"]), false);
-  assert.equal(state.destination, "Goldhaven");
+  const state = { destination: "Orvessa Quay" };
+  assert.equal(plotCourse(state, "Hidden Cay", ["Orvessa Quay"]), false);
+  assert.equal(state.destination, "Orvessa Quay");
 });
 
 test("navigation normalization repairs legacy and invalid saves", () => {
-  const ports = ["Goldhaven", "Rimegate"];
+  const ports = ["Orvessa Quay", "Narthkel"];
   assert.deepEqual(normalizeNavigationState(undefined, ports), {
     destination: null,
   });
@@ -34,8 +37,8 @@ test("navigation normalization repairs legacy and invalid saves", () => {
     destination: null,
   });
   assert.deepEqual(
-    normalizeNavigationState({ destination: "Rimegate" }, ports),
-    { destination: "Rimegate" },
+    normalizeNavigationState({ destination: "Narthkel" }, ports),
+    { destination: "Narthkel" },
   );
   assert.deepEqual(
     normalizeNavigationState({ destination: "Unknown" }, ports),

@@ -58,13 +58,13 @@ test("regional transforms create materially different continent silhouettes", ()
   const matching = createMapTransform("north-star");
   const different = createMapTransform("southern-cross");
   const firstShape = source.map(([x, y]) =>
-    first.regionPoint(x, y, "Avelorn", center),
+    first.regionPoint(x, y, "Orravelle", center),
   );
   const matchingShape = source.map(([x, y]) =>
-    matching.regionPoint(x, y, "Avelorn", center),
+    matching.regionPoint(x, y, "Orravelle", center),
   );
   const differentShape = source.map(([x, y]) =>
-    different.regionPoint(x, y, "Avelorn", center),
+    different.regionPoint(x, y, "Orravelle", center),
   );
   const totalDifference = firstShape.reduce(
     (sum, point, index) =>

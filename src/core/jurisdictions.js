@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../names.js";
 import { clamp } from "./math.js";
 
 export const LEGAL_STATUSES = Object.freeze({
@@ -9,7 +10,7 @@ export const LEGAL_STATUSES = Object.freeze({
 });
 
 const JURISDICTIONS = Object.freeze({
-  Goldhaven: {
+  [PORT_NAMES.orvessaQuay]: {
     scrutiny: 0.62,
     laws: {
       spice: "taxed",
@@ -18,7 +19,7 @@ const JURISDICTIONS = Object.freeze({
       weapons: "prohibited",
     },
   },
-  Rimegate: {
+  [PORT_NAMES.narthkel]: {
     scrutiny: 0.72,
     laws: {
       grain: "rationed",
@@ -27,7 +28,7 @@ const JURISDICTIONS = Object.freeze({
       wine: "taxed",
     },
   },
-  Lethariel: {
+  [PORT_NAMES.velquorin]: {
     scrutiny: 0.48,
     laws: {
       timber: "licensed",
@@ -36,7 +37,7 @@ const JURISDICTIONS = Object.freeze({
       coal: "prohibited",
     },
   },
-  Glasswater: {
+  [PORT_NAMES.mirravel]: {
     scrutiny: 0.38,
     laws: {
       spice: "taxed",
@@ -45,7 +46,7 @@ const JURISDICTIONS = Object.freeze({
       weapons: "prohibited",
     },
   },
-  "Khaz Vhar": {
+  [PORT_NAMES.drazhOvek]: {
     scrutiny: 0.82,
     laws: {
       grain: "rationed",

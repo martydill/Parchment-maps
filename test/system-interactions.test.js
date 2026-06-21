@@ -30,7 +30,7 @@ const tradeGoods = {
 test("contract completion feeds faction standing, obligations, and rival conflicts", () => {
   const game = createGameState();
   const contract = {
-    faction: "Guild of Gilded Oars",
+    faction: "Syrrelwake Oarwright Pact",
     reward: 100,
     influence: 30,
     deadline: 6,
@@ -65,7 +65,7 @@ test("contract completion feeds faction standing, obligations, and rival conflic
       game.activeContracts,
       contract.faction,
     ),
-    "Your Guild of Gilded Oars charter bars service to Free Keel Brotherhood.",
+    "Your Syrrelwake Oarwright Pact charter bars service to Free Keel Brotherhood.",
   );
 });
 
@@ -76,23 +76,28 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(
     grantCargo(game, "spice", 2, tradeGoods, capacities, {
-      origin: "Goldhaven",
+      origin: "Orvessa Quay",
     }).granted,
     2,
   );
   assert.equal(
-    grantCargo(game, "silk", 1, tradeGoods, capacities, { origin: "Lethariel" })
+    grantCargo(game, "silk", 1, tradeGoods, capacities, { origin: "Velquorin" })
       .granted,
     1,
   );
   assert.equal(cargoCount(game), 3);
 
-  const leased = leaseWarehouse(game.warehouses, "Goldhaven", game.coins, 10);
+  const leased = leaseWarehouse(
+    game.warehouses,
+    "Orvessa Quay",
+    game.coins,
+    10,
+  );
   game.coins = leased.coins;
   const storedLotId = game.cargoLots[0].id;
   const stored = depositCargo(
     game.warehouses,
-    "Goldhaven",
+    "Orvessa Quay",
     game.cargoLots,
     storedLotId,
   );
@@ -101,11 +106,11 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(cargoCount(game), 2);
   assert.equal(game.cargo.spice, 1);
-  assert.equal(game.warehouses.Goldhaven.lots.length, 1);
+  assert.equal(game.warehouses["Orvessa Quay"].lots.length, 1);
 
   const withdrawn = withdrawCargo(
     game.warehouses,
-    "Goldhaven",
+    "Orvessa Quay",
     game.cargoLots,
     storedLotId,
     game.holdMax - cargoCount(game),
@@ -115,6 +120,6 @@ test("warehouse transfers stay synchronized with ship cargo counts and hold spac
 
   assert.equal(cargoCount(game), 3);
   assert.equal(game.cargo.spice, 2);
-  assert.equal(game.warehouses.Goldhaven.lots.length, 0);
+  assert.equal(game.warehouses["Orvessa Quay"].lots.length, 0);
   assert.equal(game.coins, 90);
 });

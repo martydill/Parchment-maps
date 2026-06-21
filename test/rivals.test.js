@@ -22,7 +22,13 @@ test("rival state is complete, independent, and normalizes old saves", () => {
       vale: { relationship: 500, reputation: -2, wealth: -4, deliveries: 2.8 },
     },
     claims: [
-      { rivalId: "vale", port: "Goldhaven", goodKey: "iron", day: 4, units: 0 },
+      {
+        rivalId: "vale",
+        port: "Orvessa Quay",
+        goodKey: "iron",
+        day: 4,
+        units: 0,
+      },
       { rivalId: "unknown", port: "Nowhere", goodKey: "silk" },
     ],
   });
@@ -35,7 +41,13 @@ test("rival state is complete, independent, and normalizes old saves", () => {
     lastMetDay: 0,
   });
   assert.deepEqual(normalized.claims, [
-    { rivalId: "vale", port: "Goldhaven", goodKey: "iron", day: 4, units: 1 },
+    {
+      rivalId: "vale",
+      port: "Orvessa Quay",
+      goodKey: "iron",
+      day: 4,
+      units: 1,
+    },
   ]);
   assert.equal(normalizeRivalState(null).captains.vale.reputation, 20);
   assert.equal(normalizeRivalState("invalid").captains.vale.reputation, 20);
@@ -44,16 +56,24 @@ test("rival state is complete, independent, and normalizes old saves", () => {
   assert.deepEqual(defaults.captains.vale, second.captains.vale);
   assert.deepEqual(
     normalizeRivalState({
-      claims: [{ rivalId: "vale", port: "Goldhaven", goodKey: "iron" }],
+      claims: [{ rivalId: "vale", port: "Orvessa Quay", goodKey: "iron" }],
     }).claims,
-    [{ rivalId: "vale", port: "Goldhaven", goodKey: "iron", day: 0, units: 1 }],
+    [
+      {
+        rivalId: "vale",
+        port: "Orvessa Quay",
+        goodKey: "iron",
+        day: 0,
+        units: 1,
+      },
+    ],
   );
   assert.equal(
     normalizeRivalState({
       claims: [
         null,
         { rivalId: "vale", goodKey: "iron" },
-        { rivalId: "vale", port: "Goldhaven" },
+        { rivalId: "vale", port: "Orvessa Quay" },
       ],
     }).claims.length,
     0,
@@ -72,7 +92,7 @@ test("merchant identity resolves by id or legacy vessel name", () => {
 
 test("deliveries build a house and create temporary market claims", () => {
   let state = recordRivalDelivery(createRivalState(), "vale", {
-    port: "Goldhaven",
+    port: "Orvessa Quay",
     goodKey: "iron",
     units: 7,
     day: 10,
@@ -82,14 +102,14 @@ test("deliveries build a house and create temporary market claims", () => {
   assert.equal(state.captains.vale.wealth, 145);
   assert.equal(state.captains.vale.reputation, 22);
   state = recordRivalDelivery(state, "unknown", {
-    port: "Goldhaven",
+    port: "Orvessa Quay",
     goodKey: "iron",
     units: 2,
     day: 20,
   });
   assert.equal(state.claims.length, 1);
   state = recordRivalDelivery(state, "voss", {
-    port: "Rimegate",
+    port: "Narthkel",
     goodKey: "silk",
     units: 2,
     day: 20,
@@ -100,13 +120,13 @@ test("deliveries build a house and create temporary market claims", () => {
 
 test("selling into a recent rival market claim creates competition", () => {
   const delivered = recordRivalDelivery(createRivalState(), "vale", {
-    port: "Goldhaven",
+    port: "Orvessa Quay",
     goodKey: "iron",
     units: 5,
     day: 10,
   });
   const competed = recordPlayerCompetition(delivered, {
-    port: "Goldhaven",
+    port: "Orvessa Quay",
     goodKey: "iron",
     day: 12,
   });
@@ -114,14 +134,14 @@ test("selling into a recent rival market claim creates competition", () => {
   assert.equal(competed.state.captains.vale.relationship, -3);
   assert.equal(competed.state.captains.vale.reputation, 20);
   const missed = recordPlayerCompetition(delivered, {
-    port: "Goldhaven",
+    port: "Orvessa Quay",
     goodKey: "silk",
     day: 12,
   });
   assert.equal(missed.rivalId, null);
   assert.equal(
     recordPlayerCompetition(delivered, {
-      port: "Goldhaven",
+      port: "Orvessa Quay",
       goodKey: "iron",
       day: 14,
     }).rivalId,

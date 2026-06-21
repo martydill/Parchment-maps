@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 import { estimateVoyageDays } from "./voyage-time.js";
 
 export function createContractOffer({
@@ -21,8 +22,8 @@ export function createContractOffer({
     ? "sealed diplomatic pouch"
     : cargoNames[(day * 3 + index + origin.name.length) % cargoNames.length];
   const sponsor =
-    origin.name === "Goldhaven"
-      ? "Guild of Gilded Oars"
+    origin.name === PORT_NAMES.orvessaQuay
+      ? FACTION_NAMES.syrrelwakeOarwrightPact
       : origin.factions[Math.min(1, index % origin.factions.length)].name;
 
   return {
@@ -36,7 +37,7 @@ export function createContractOffer({
       reward: Math.round(
         45 + distance * 0.07 + cargoUnits * 9 + (courier ? 20 : 0),
       ),
-      influence: origin.name === "Goldhaven" ? 8 : 5 + index,
+      influence: origin.name === PORT_NAMES.orvessaQuay ? 8 : 5 + index,
       faction: sponsor,
       estimatedDays: estimateDays
         ? estimateDays(distance, { origin, destination })
@@ -82,17 +83,17 @@ const SURVEY_THEMES = Object.freeze([
   },
   {
     key: "glasswater-passage",
-    title: "Find a safer Glasswater passage",
-    description: "Publish reliable bearings for a safer Glasswater passage.",
+    title: `Find a safer ${PORT_NAMES.mirravel} passage`,
+    description: `Publish reliable bearings for a safer ${PORT_NAMES.mirravel} passage.`,
     required: 1,
     target: "discovery",
     disposition: "share",
     match: ({ site }) =>
-      site.route?.destination === "Glasswater" ||
-      site.route?.origin === "Glasswater" ||
+      site.route?.destination === PORT_NAMES.mirravel ||
+      site.route?.origin === PORT_NAMES.mirravel ||
       String(site.benefit || "")
         .toLowerCase()
-        .includes("glasswater"),
+        .includes("mirravel"),
     rewards: { coins: 110, standing: 10, route: true },
   },
   {
@@ -120,7 +121,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "secret",
-    match: ({ site }) => site.faction === "Free Keel Brotherhood",
+    match: ({ site }) => site.faction === FACTION_NAMES.freeKeelBrotherhood,
     rewards: { coins: 95, standing: 12, charter: "Free Keel quiet anchorage" },
   },
   {
@@ -131,7 +132,7 @@ const SURVEY_THEMES = Object.freeze([
     target: "discovery",
     disposition: "share",
     match: ({ site }) =>
-      site.faction === "Deep Delvers’ Union" ||
+      site.faction === FACTION_NAMES.deepDelversUnion ||
       site.type === "Hidden resource deposit" ||
       site.route?.good === "ore",
     rewards: { coins: 125, standing: 11, recruit: "Delver prospector" },
@@ -144,7 +145,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "sell",
-    sponsor: "Pearl Senate",
+    sponsor: FACTION_NAMES.pearlSenate,
     match: ({ site }) =>
       site.type === "Salvage site" || site.route?.good === "fittings",
     rewards: { coins: 165, standing: 9, charter: "Pearl salvage writ" },
@@ -156,7 +157,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "share",
-    sponsor: "Tideborn Commons",
+    sponsor: FACTION_NAMES.tidebornCommons,
     match: ({ site }) =>
       Boolean(site.season) || site.route?.good === "provisions",
     rewards: { coins: 90, standing: 10, route: true },
@@ -168,7 +169,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 2,
     target: "discovery",
     disposition: "share",
-    sponsor: "Lantern League",
+    sponsor: FACTION_NAMES.lanternLeague,
     match: ({ site }) =>
       String(site.type || "")
         .toLowerCase()
@@ -185,7 +186,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 2,
     target: "discovery",
     disposition: "secret",
-    sponsor: "Free Keel Brotherhood",
+    sponsor: FACTION_NAMES.freeKeelBrotherhood,
     match: ({ site }) =>
       site.type === "Uncharted anchorage" ||
       String(site.name || "")
@@ -196,11 +197,10 @@ const SURVEY_THEMES = Object.freeze([
   {
     key: "western-approaches",
     title: "Survey western approaches",
-    description:
-      "Survey western approaches for packet captains leaving Goldhaven.",
+    description: `Survey western approaches for packet captains leaving ${PORT_NAMES.orvessaQuay}.`,
     required: 2,
     target: "exploration",
-    sponsor: "Guild of Gilded Oars",
+    sponsor: FACTION_NAMES.syrrelwakeOarwrightPact,
     match: ({ site }) => site.x < 1800,
     rewards: { coins: 120, standing: 7, route: true },
   },
@@ -210,7 +210,7 @@ const SURVEY_THEMES = Object.freeze([
     description: "Map eastern headlands for long-haul navigators.",
     required: 2,
     target: "exploration",
-    sponsor: "Rimegate Admiralty",
+    sponsor: FACTION_NAMES.narthkelAdmiralty,
     match: ({ site }) => site.x > 3600,
     rewards: { coins: 145, standing: 8, recruit: "Headland pilot" },
   },
@@ -237,7 +237,7 @@ const SURVEY_THEMES = Object.freeze([
     description: "Sound fogbound channels before the next convoy season.",
     required: 2,
     target: "exploration",
-    sponsor: "Rimegate Admiralty",
+    sponsor: FACTION_NAMES.narthkelAdmiralty,
     match: ({ site }) =>
       String(site.hazards || "")
         .toLowerCase()
@@ -269,7 +269,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "share",
-    sponsor: "Guild of Gilded Oars",
+    sponsor: FACTION_NAMES.syrrelwakeOarwrightPact,
     match: ({ site }) =>
       site.type === "Emerging settlement" ||
       String(site.benefit || "")
@@ -297,7 +297,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "secret",
-    sponsor: "Knives of Saint Orra",
+    sponsor: "Knives of Orra Vey",
     match: ({ site }) => site.type === "Smuggler cove",
     rewards: { coins: 170, standing: 8, charter: "Coded cove signals" },
   },
@@ -307,7 +307,7 @@ const SURVEY_THEMES = Object.freeze([
     description: "Chart cliff traverses for specialist mountain pilots.",
     required: 2,
     target: "exploration",
-    sponsor: "Deep Delvers’ Union",
+    sponsor: FACTION_NAMES.deepDelversUnion,
     match: ({ site }) =>
       String(site.hazards || "")
         .toLowerCase()

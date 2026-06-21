@@ -16,7 +16,7 @@ const baseOptions = {
   good: { key: "iron", base: 18 },
   bias: 1,
   day: 1,
-  portName: "Goldhaven",
+  portName: "Orvessa Quay",
 };
 
 test("createEconomyState builds bounded state for every port and good", () => {

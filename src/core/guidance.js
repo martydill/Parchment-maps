@@ -1,8 +1,9 @@
+import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 export function currentObjective({
   game,
   currentPortName = null,
   nearPortName = null,
-  homePortName = "Goldhaven",
+  homePortName = PORT_NAMES.orvessaQuay,
 }) {
   const active = game.activeContracts || [];
   if (active.length) {
@@ -52,8 +53,7 @@ export function currentObjective({
       return {
         id: "accept-contract",
         title: "Accept your first commission",
-        detail:
-          "Open Trade and choose a Goldhaven commission. Sealed cargo loads automatically and its destination appears on the chart.",
+        detail: `Open Trade and choose an ${PORT_NAMES.orvessaQuay} commission. Sealed cargo loads automatically and its destination appears on the chart.`,
         action: "trade",
         destination: homePortName,
         urgency: "ready",
@@ -62,7 +62,7 @@ export function currentObjective({
     if (nearPortName === homePortName) {
       return {
         id: "dock-home",
-        title: "Dock at Goldhaven",
+        title: `Dock at ${PORT_NAMES.orvessaQuay}`,
         detail:
           "The Guild contract board is waiting. Dock, open Trade, and accept a commission.",
         action: "dock",
@@ -72,7 +72,7 @@ export function currentObjective({
     }
     return {
       id: "return-home",
-      title: "Return to Goldhaven",
+      title: `Return to ${PORT_NAMES.orvessaQuay}`,
       detail:
         "Dock at your home port and open Trade to take a Guild commission.",
       action: "map",
@@ -86,16 +86,18 @@ export function currentObjective({
       id: "exploit-shortage",
       title: game.milestone.shortageProfit
         ? "Continue the iron trade"
-        : "Exploit Goldhaven’s iron shortage",
-      detail:
-        "Buy iron cheaply in Rimegate or Khaz Vhar, then sell it in Goldhaven until you earn 50 crowns of shortage profit.",
+        : `Exploit ${PORT_NAMES.orvessaQuay}’s iron shortage`,
+      detail: `Buy iron cheaply in ${PORT_NAMES.narthkel} or ${PORT_NAMES.drazhOvek}, then sell it in ${PORT_NAMES.orvessaQuay} until you earn 50 crowns of shortage profit.`,
       action: "map",
-      destination: game.milestone.shortageProfit ? "Goldhaven" : "Rimegate",
+      destination: game.milestone.shortageProfit
+        ? PORT_NAMES.orvessaQuay
+        : PORT_NAMES.narthkel,
       urgency: "normal",
     };
   }
 
-  const guildStanding = game.factionStanding?.["Guild of Gilded Oars"] || 0;
+  const guildStanding =
+    game.factionStanding?.[FACTION_NAMES.syrrelwakeOarwrightPact] || 0;
   if (!game.milestone.lawChanged) {
     return {
       id: "change-law",
@@ -105,7 +107,7 @@ export function currentObjective({
           : "Build Guild influence",
       detail:
         guildStanding >= 20
-          ? "Dock at Goldhaven and open Politics to spend 20 influence on the convoy charter."
+          ? `Dock at ${PORT_NAMES.orvessaQuay} and open Politics to spend 20 influence on the convoy charter.`
           : "Complete Guild commissions until your standing reaches 20.",
       action:
         currentPortName === homePortName && guildStanding >= 20

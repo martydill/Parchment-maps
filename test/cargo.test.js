@@ -23,22 +23,22 @@ test("cargo lots carry stable trade properties", () => {
   const lot = createCargoLot({
     key: "silk",
     cost: 20,
-    origin: "Mistmere",
+    origin: "Lunemire",
     day: 4,
     sequence: 2,
     good: { fragility: 0.2 },
   });
-  assert.equal(lot.origin, "Mistmere");
+  assert.equal(lot.origin, "Lunemire");
   assert.equal(lot.age, 0);
   assert.equal(lot.compartment, "main");
-  assert.match(lot.provenance.producer, /^Mistmere /);
+  assert.match(lot.provenance.producer, /^Lunemire /);
   assert.ok(["ordinary", "notable", "renowned"].includes(lot.provenance.grade));
   assert.ok(["poor", "common", "fine", "masterwork"].includes(lot.quality));
   assert.equal(
     createCargoLot({
       key: "silk",
       cost: 20,
-      origin: "Mistmere",
+      origin: "Lunemire",
       day: 4,
       sequence: 2,
     }).id,
@@ -192,21 +192,21 @@ test("perishable cargo ages and loses value while premium origins retain market 
     quality: "fine",
     age: 0,
     perishRate: 0.08,
-    origin: "Goldhaven",
+    origin: "Orvessa Quay",
     legalStatus: "legal",
   };
-  const fresh = cargoValueMultiplier(medicine, "Rimegate");
+  const fresh = cargoValueMultiplier(medicine, "Narthkel");
   ageCargo([medicine], 5);
   assert.equal(medicine.age, 5);
-  assert.ok(cargoValueMultiplier(medicine, "Rimegate") < fresh);
+  assert.ok(cargoValueMultiplier(medicine, "Narthkel") < fresh);
   const silk = {
     quality: "fine",
     age: 0,
-    origin: "Mistmere",
+    origin: "Lunemire",
     legalStatus: "legal",
   };
   assert.ok(
-    cargoValueMultiplier(silk, "Lethariel", { premiumPorts: ["Lethariel"] }) >
+    cargoValueMultiplier(silk, "Velquorin", { premiumPorts: ["Velquorin"] }) >
       1.4,
   );
 });
@@ -241,7 +241,7 @@ test("cargo normalization migrates quality, age, and provenance fields", () => {
     },
     "fruit",
     { base: 9, perishRate: 0.08 },
-    "Goldhaven",
+    "Orvessa Quay",
     6,
     3,
   );
@@ -249,12 +249,12 @@ test("cargo normalization migrates quality, age, and provenance fields", () => {
     id: "legacy-fruit-3",
     key: "fruit",
     cost: 12,
-    origin: "Goldhaven",
+    origin: "Orvessa Quay",
     acquiredDay: 6,
     age: 0,
     quality: "common",
     provenance: {
-      producer: "Goldhaven Harbor Factors",
+      producer: "Orvessa Quay Harbor Factors",
       grade: "ordinary",
     },
     legalStatus: "legal",
@@ -268,11 +268,11 @@ test("cargo normalization migrates quality, age, and provenance fields", () => {
     {
       id: "fine-lot",
       cost: null,
-      origin: "Rimegate",
+      origin: "Narthkel",
       acquiredDay: 3,
       age: 2,
       quality: "fine",
-      provenance: { producer: "Rimegate Forge", grade: "renowned" },
+      provenance: { producer: "Narthkel Forge", grade: "renowned" },
       legalStatus: "embargoed",
       fragility: 0.4,
       factionOwner: "Guild",
@@ -356,7 +356,7 @@ test("deterministic cargo generation covers special qualities and legal states",
     createCargoLot({
       key: "spice",
       cost: 28,
-      origin: "Glasswater",
+      origin: "Mirravel",
       day: 7,
       sequence,
       good: { faction: "Pearl Senate", perishRate: 0.04 },
@@ -378,7 +378,7 @@ test("deterministic cargo generation covers special qualities and legal states",
     createCargoLot({
       key: "ore",
       cost: 11,
-      origin: "Rimegate",
+      origin: "Narthkel",
       day: 8,
       sequence,
     }),
@@ -391,7 +391,7 @@ test("normalization preserves existing lots and fills all legacy defaults", () =
     id: "existing",
     key: "iron",
     cost: 20,
-    origin: "Khaz Vhar",
+    origin: "Drazh Ovek",
   };
   const game = {
     day: 5,
@@ -483,10 +483,10 @@ test("cargo valuation covers quality, provenance, legality, and spoilage", () =>
   const base = {
     quality: "unknown",
     age: 0,
-    origin: "Goldhaven",
+    origin: "Orvessa Quay",
     legalStatus: "legal",
   };
-  assert.equal(cargoValueMultiplier(base, "Rimegate"), 1);
+  assert.equal(cargoValueMultiplier(base, "Narthkel"), 1);
   assert.equal(
     cargoValueMultiplier(
       {
@@ -494,27 +494,27 @@ test("cargo valuation covers quality, provenance, legality, and spoilage", () =>
         quality: "fine",
         provenance: { grade: "renowned" },
       },
-      "Rimegate",
+      "Narthkel",
     ),
     1.24 * 1.18,
   );
-  assert.equal(cargoValueMultiplier(base, "Goldhaven"), 0.94);
+  assert.equal(cargoValueMultiplier(base, "Orvessa Quay"), 0.94);
   assert.equal(
-    cargoValueMultiplier({ ...base, legalStatus: "embargoed" }, "Rimegate"),
+    cargoValueMultiplier({ ...base, legalStatus: "embargoed" }, "Narthkel"),
     1.38,
   );
   assert.equal(
-    cargoValueMultiplier({ ...base, legalStatus: "counterfeit" }, "Rimegate"),
+    cargoValueMultiplier({ ...base, legalStatus: "counterfeit" }, "Narthkel"),
     0.82,
   );
   assert.equal(
-    cargoValueMultiplier(base, "Lethariel", {
-      premiumPorts: ["Lethariel"],
+    cargoValueMultiplier(base, "Velquorin", {
+      premiumPorts: ["Velquorin"],
     }),
     1.22,
   );
   assert.equal(
-    cargoValueMultiplier({ ...base, age: 100 }, "Rimegate", {
+    cargoValueMultiplier({ ...base, age: 100 }, "Narthkel", {
       perishRate: 0.1,
     }),
     0.25,
@@ -616,29 +616,29 @@ test("cargo descriptions include every optional detail and fallback label", () =
   assert.equal(
     cargoLotDescription({
       quality: "unknown",
-      origin: "Mistmere",
+      origin: "Lunemire",
       age: 4,
       fragility: 0.4,
       legalStatus: "embargoed",
       factionOwner: "Mirror Knives",
     }),
-    "Common · Shelf-stable · from Mistmere · 4d old · fragile · Embargoed · Mirror Knives cargo",
+    "Common · Shelf-stable · from Lunemire · 4d old · fragile · Embargoed · Mirror Knives cargo",
   );
   assert.match(
     cargoLotDescription({
       quality: "masterwork",
-      origin: "Lethariel",
+      origin: "Velquorin",
       age: 0,
       fragility: 0.7,
       legalStatus: "legal",
       factionOwner: null,
     }),
-    /^Masterwork · Shelf-stable · from Lethariel · very fragile$/,
+    /^Masterwork · Shelf-stable · from Velquorin · very fragile$/,
   );
   assert.match(
     cargoLotDescription({
       quality: "common",
-      origin: "Goldhaven",
+      origin: "Orvessa Quay",
       legalStatus: "legal",
       compartment: "dry",
     }),
@@ -647,17 +647,17 @@ test("cargo descriptions include every optional detail and fallback label", () =
   assert.match(
     cargoLotDescription({
       quality: "fine",
-      origin: "Goldhaven",
+      origin: "Orvessa Quay",
       age: 1,
       perishRate: 0.1,
       provenance: {
-        producer: "Goldhaven Crown Exchange",
+        producer: "Orvessa Quay Crown Exchange",
         grade: "notable",
       },
       legalStatus: "legal",
       compartment: "main",
     }),
-    /Fresh · Goldhaven Crown Exchange · Notable provenance/,
+    /Fresh · Orvessa Quay Crown Exchange · Notable provenance/,
   );
 });
 

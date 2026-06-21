@@ -18,21 +18,21 @@ test("warehouse state is created and legacy values are normalized", () => {
   assert.deepEqual(normalizeWarehouseState([]), {});
   const lot = { id: "stored" };
   const state = normalizeWarehouseState({
-    Goldhaven: { leased: true, capacity: "8", lots: [lot] },
-    Rimegate: { leased: false, capacity: 0, lots: "invalid" },
-    Mistmere: null,
+    "Orvessa Quay": { leased: true, capacity: "8", lots: [lot] },
+    Narthkel: { leased: false, capacity: 0, lots: "invalid" },
+    Lunemire: null,
   });
-  assert.deepEqual(state.Goldhaven, {
+  assert.deepEqual(state["Orvessa Quay"], {
     leased: true,
     capacity: 8,
     lots: [lot],
   });
-  assert.deepEqual(state.Rimegate, {
+  assert.deepEqual(state.Narthkel, {
     leased: false,
     capacity: 24,
     lots: [],
   });
-  assert.deepEqual(state.Mistmere, {
+  assert.deepEqual(state.Lunemire, {
     leased: false,
     capacity: 24,
     lots: [],
@@ -44,25 +44,25 @@ test("leases cost less for trusted captains and persist by port", () => {
   const state = createWarehouseState();
   assert.equal(warehouseLeaseCost(9), 60);
   assert.equal(warehouseLeaseCost(10), 30);
-  assert.deepEqual(leaseWarehouse(state, "Goldhaven", 29, 10), {
+  assert.deepEqual(leaseWarehouse(state, "Orvessa Quay", 29, 10), {
     ok: false,
     reason: "Not enough crowns.",
     coins: 29,
     cost: 30,
   });
-  const leased = leaseWarehouse(state, "Goldhaven", 80, 10);
+  const leased = leaseWarehouse(state, "Orvessa Quay", 80, 10);
   assert.equal(leased.ok, true);
   assert.equal(leased.coins, 50);
   assert.equal(leased.warehouse.capacity, 24);
-  assert.equal(warehouseAt(state, "Goldhaven"), leased.warehouse);
-  assert.deepEqual(leaseWarehouse(state, "Goldhaven", 50), {
+  assert.equal(warehouseAt(state, "Orvessa Quay"), leased.warehouse);
+  assert.deepEqual(leaseWarehouse(state, "Orvessa Quay", 50), {
     ok: false,
     reason: "You already lease a warehouse at this port.",
     coins: 50,
   });
   const reservedLot = { id: "reserved" };
-  state.Rimegate = { leased: false, capacity: 12, lots: [reservedLot] };
-  const resumed = leaseWarehouse(state, "Rimegate", 60);
+  state.Narthkel = { leased: false, capacity: 12, lots: [reservedLot] };
+  const resumed = leaseWarehouse(state, "Narthkel", 60);
   assert.equal(resumed.warehouse.lots[0], reservedLot);
 });
 
@@ -70,23 +70,26 @@ test("cargo deposits and withdrawals preserve individual lots", () => {
   const lot = { id: "lot-1", key: "silk", age: 2 };
   const shipLots = [lot];
   const state = {};
-  assert.equal(depositCargo(state, "Goldhaven", shipLots, lot.id).ok, false);
-  leaseWarehouse(state, "Goldhaven", 60);
-  assert.equal(depositCargo(state, "Goldhaven", shipLots, "missing").ok, false);
-  const deposited = depositCargo(state, "Goldhaven", shipLots, lot.id);
+  assert.equal(depositCargo(state, "Orvessa Quay", shipLots, lot.id).ok, false);
+  leaseWarehouse(state, "Orvessa Quay", 60);
+  assert.equal(
+    depositCargo(state, "Orvessa Quay", shipLots, "missing").ok,
+    false,
+  );
+  const deposited = depositCargo(state, "Orvessa Quay", shipLots, lot.id);
   assert.equal(deposited.ok, true);
   assert.deepEqual(shipLots, []);
   assert.equal(deposited.warehouse.lots[0], lot);
-  assert.equal(withdrawCargo(state, "Rimegate", shipLots, lot.id, 1).ok, false);
+  assert.equal(withdrawCargo(state, "Narthkel", shipLots, lot.id, 1).ok, false);
   assert.equal(
-    withdrawCargo(state, "Goldhaven", shipLots, lot.id, 0).reason,
+    withdrawCargo(state, "Orvessa Quay", shipLots, lot.id, 0).reason,
     "The ship's hold is full.",
   );
   assert.equal(
-    withdrawCargo(state, "Goldhaven", shipLots, "missing", 1).ok,
+    withdrawCargo(state, "Orvessa Quay", shipLots, "missing", 1).ok,
     false,
   );
-  const withdrawn = withdrawCargo(state, "Goldhaven", shipLots, lot.id, 1);
+  const withdrawn = withdrawCargo(state, "Orvessa Quay", shipLots, lot.id, 1);
   assert.equal(withdrawn.ok, true);
   assert.equal(shipLots[0], lot);
   assert.deepEqual(withdrawn.warehouse.lots, []);
@@ -94,27 +97,27 @@ test("cargo deposits and withdrawals preserve individual lots", () => {
 
 test("full warehouses reject deposits", () => {
   const state = {
-    Goldhaven: { leased: true, capacity: 1, lots: [{ id: "stored" }] },
+    "Orvessa Quay": { leased: true, capacity: 1, lots: [{ id: "stored" }] },
   };
   const shipLots = [{ id: "aboard" }];
-  const result = depositCargo(state, "Goldhaven", shipLots, "aboard");
+  const result = depositCargo(state, "Orvessa Quay", shipLots, "aboard");
   assert.equal(result.reason, "The warehouse is full.");
   assert.equal(shipLots.length, 1);
 });
 
 test("stored cargo ages slowly and malformed entries are ignored", () => {
   const state = {
-    Goldhaven: {
+    "Orvessa Quay": {
       leased: true,
       lots: [{ age: 1 }, { age: "invalid" }],
     },
-    Rimegate: { leased: false, lots: [{ age: 4 }] },
-    Mistmere: { leased: true, lots: "invalid" },
+    Narthkel: { leased: false, lots: [{ age: 4 }] },
+    Lunemire: { leased: true, lots: "invalid" },
   };
   assert.equal(ageWarehouseCargo(state, -2), state);
   ageWarehouseCargo(state);
   ageWarehouseCargo(state, 4);
-  assert.equal(state.Goldhaven.lots[0].age, 2);
-  assert.equal(state.Goldhaven.lots[1].age, 1);
-  assert.equal(state.Rimegate.lots[0].age, 4);
+  assert.equal(state["Orvessa Quay"].lots[0].age, 2);
+  assert.equal(state["Orvessa Quay"].lots[1].age, 1);
+  assert.equal(state.Narthkel.lots[0].age, 4);
 });

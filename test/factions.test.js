@@ -68,11 +68,11 @@ test("rivalries are reciprocal and positive standing shifts have consequences", 
 test("rival contracts are mutually exclusive", () => {
   const contract = { faction: "Free Keel Brotherhood" };
   assert.match(
-    contractConflict(contract, [{ faction: "Guild of Gilded Oars" }]),
+    contractConflict(contract, [{ faction: "Syrrelwake Oarwright Pact" }]),
     /will not share/,
   );
   assert.match(
-    contractConflict(contract, [], "Guild of Gilded Oars"),
+    contractConflict(contract, [], "Syrrelwake Oarwright Pact"),
     /charter bars service/,
   );
   assert.equal(contractConflict(contract, [{ faction: "Pearl Senate" }]), null);
@@ -105,11 +105,11 @@ test("a single high-standing charter closes rival doors", () => {
     false,
   );
   const freshRival = {
-    factionStanding: { "Guild of Gilded Oars": 45 },
+    factionStanding: { "Syrrelwake Oarwright Pact": 45 },
     factionCharter: null,
   };
   assert.equal(
-    chooseFactionCharter(freshRival, "Guild of Gilded Oars").changes[
+    chooseFactionCharter(freshRival, "Syrrelwake Oarwright Pact").changes[
       "Free Keel Brotherhood"
     ],
     -25,

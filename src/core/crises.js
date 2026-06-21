@@ -1,9 +1,10 @@
+import { PORT_NAMES } from "../names.js";
 import { clamp } from "./math.js";
 
 export const CRISIS_TEMPLATES = Object.freeze({
   loomUnrest: crisis({
     title: "The Starweave Compact",
-    port: "Lethariel",
+    port: PORT_NAMES.velquorin,
     good: "silk",
     startDay: 12,
     activeDays: 7,
@@ -11,8 +12,7 @@ export const CRISIS_TEMPLATES = Object.freeze({
       "Loom workers and silk factors are deadlocked over wages. Both sides are quietly gathering allies.",
     active:
       "The starweave houses have closed. Silk production is failing while demonstrations fill the quays.",
-    ignored:
-      "The strike broke without agreement. Skilled weavers are leaving Lethariel and output remains weakened.",
+    ignored: `The strike broke without agreement. Skilled weavers are leaving ${PORT_NAMES.velquorin} and output remains weakened.`,
     intervention: {
       label: "Broker a relief compact · 90 crowns",
       cost: 90,
@@ -32,8 +32,8 @@ export const CRISIS_TEMPLATES = Object.freeze({
     ignoredRegional: { unrest: 14, labor: -0.08 },
   }),
   fenFever: crisis({
-    title: "The Mallowfen Fever",
-    port: "Mallowfen",
+    title: `The ${PORT_NAMES.mirelune} Fever`,
+    port: PORT_NAMES.mirelune,
     good: "medicine",
     startDay: 25,
     activeDays: 8,
@@ -41,8 +41,7 @@ export const CRISIS_TEMPLATES = Object.freeze({
       "Reedboat healers report a spreading marsh fever and warn that local tincture stores will not last.",
     active:
       "Marsh fever has reached the crowded canals. Medicine is scarce, labor is failing, and families are fleeing.",
-    ignored:
-      "The fever burned itself out after a bitter season. Mallowfen lost workers and confidence in its harbor council.",
+    ignored: `The fever burned itself out after a bitter season. ${PORT_NAMES.mirelune} lost workers and confidence in its harbor council.`,
     intervention: {
       label: "Fund quarantine barges · 110 crowns",
       cost: 110,
@@ -52,8 +51,7 @@ export const CRISIS_TEMPLATES = Object.freeze({
     cargoIntervention: {
       label: "Land emergency medicine",
       requirements: { medicine: 2, herbs: 2 },
-      result:
-        "Your medicines and fresh herbs stocked the quarantine barges before the fever outran the healers. Mallowfen remembers the captain who brought cures, not coin.",
+      result: `Your medicines and fresh herbs stocked the quarantine barges before the fever outran the healers. ${PORT_NAMES.mirelune} remembers the captain who brought cures, not coin.`,
     },
     activeModifiers: { price: 1.65, production: -0.4, consumption: 1.6 },
     resolvedModifiers: { price: 0.9, production: 0.2, consumption: 0.15 },
@@ -63,7 +61,7 @@ export const CRISIS_TEMPLATES = Object.freeze({
   }),
   delversCollapse: crisis({
     title: "The Delvers’ Reckoning",
-    port: "Khaz Vhar",
+    port: PORT_NAMES.drazhOvek,
     good: "iron",
     startDay: 39,
     activeDays: 9,
@@ -71,8 +69,7 @@ export const CRISIS_TEMPLATES = Object.freeze({
       "Surveyors have condemned the oldest galleries, but foundry syndicates continue demanding record extraction.",
     active:
       "Three deep galleries have collapsed. Rescue crews need capital while iron production and the Amber Run seize up.",
-    ignored:
-      "The sealed galleries remain abandoned. Khaz Vhar survives, but its iron trade is permanently diminished.",
+    ignored: `The sealed galleries remain abandoned. ${PORT_NAMES.drazhOvek} survives, but its iron trade is permanently diminished.`,
     intervention: {
       label: "Finance rescue and new supports · 140 crowns",
       cost: 140,

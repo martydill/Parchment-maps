@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 import { clamp } from "./math.js";
 
 export const SPECIALIST_ROSTER = Object.freeze(
@@ -7,10 +8,10 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Navigator",
       "Eira Voss",
       "✦",
-      "Rimegate",
-      "Rimegate Admiralty",
+      PORT_NAMES.narthkel,
+      FACTION_NAMES.narthkelAdmiralty,
       "Shortens passages and improves forecasts.",
-      "Will not aid violence against Rimegate.",
+      `Will not aid violence against ${PORT_NAMES.narthkel}.`,
       "Chart the warm current beyond the northern ice.",
     ],
     [
@@ -18,11 +19,11 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Purser",
       "Silas Quill",
       "¤",
-      "Goldhaven",
-      "Guild of Gilded Oars",
+      PORT_NAMES.orvessaQuay,
+      FACTION_NAMES.syrrelwakeOarwrightPact,
       "Reduces provision use.",
       "May quietly skim the ship's accounts.",
-      "Purchase a Goldhaven counting house.",
+      `Purchase an ${PORT_NAMES.orvessaQuay} counting house.`,
     ],
     [
       "boatswain",
@@ -51,7 +52,7 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Surgeon",
       "Dr. Ilyan Sable",
       "✚",
-      "Glasswater",
+      PORT_NAMES.mirravel,
       "Communion of the Drowned Bell",
       "Mitigates voyage morale loss.",
       "Demands costly medicines.",
@@ -63,7 +64,7 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Nadiya Vale",
       "§",
       "Pearlstrand",
-      "Pearl Senate",
+      FACTION_NAMES.pearlSenate,
       "Improves contract rewards.",
       "Proud patrons expect success.",
       "Win a seat in the Pearl Senate.",
@@ -74,7 +75,7 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Kestrel Rook",
       "☾",
       "Miremouth",
-      "Knives of Saint Orra",
+      "Knives of Orra Vey",
       "Improves forged papers and concealed cargo.",
       "Old debts attract attention.",
       "Erase every copy of the Black Ledger.",

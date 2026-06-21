@@ -150,8 +150,8 @@ test("arrears escalate through refusal, theft, desertion, and mutiny", () => {
 });
 
 test("ports offer deterministic recruits and recruitment enforces limits", () => {
-  const pool = portRecruitmentPool("Goldhaven", 86400);
-  assert.deepEqual(pool, portRecruitmentPool("Goldhaven", 86400));
+  const pool = portRecruitmentPool("Orvessa Quay", 86400);
+  assert.deepEqual(pool, portRecruitmentPool("Orvessa Quay", 86400));
   assert.equal(pool.length, 4);
   const offer = pool[0];
   const hired = recruitCrew(createCrewState(), offer, offer.cost);
@@ -224,8 +224,8 @@ test("crew voyage events award officer-led traits and bounded rewards", () => {
     roughness: 0.9,
     routePlan: "fast",
     specialistId: "boatswain",
-    origin: "Goldhaven",
-    destination: "Rimegate",
+    origin: "Orvessa Quay",
+    destination: "Narthkel",
   });
 
   assert.equal(storm.event.id, "boatswain-rigging");
