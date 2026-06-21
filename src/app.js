@@ -247,6 +247,10 @@ import {
   stormCycle,
 } from "./core/maritime-hazards.js";
 import {
+  directionalVisibilityRadius,
+  localWeatherAtBearing,
+} from "./core/weather.js";
+import {
   discoverySites,
   explorationSites,
   forests,
@@ -473,11 +477,25 @@ function setWeatherForDay(_day) {
   game.weatherVisibilityKm = weather.visibilityKm;
   visibility.lastRadius = -1;
 }
-function currentVisibilityKm() {
-  return Math.min(visibility.horizonKm, game.weatherVisibilityKm);
+function currentVisibilityKm(angle = ship.angle) {
+  return localWeatherAtBearing({
+    baseWeather: getInterpolatedWeather(),
+    position: ship,
+    angle,
+    day: game.day,
+    voyageDistance: game.voyageDistance,
+    horizonKm: visibility.horizonKm,
+  }).visibilityKm;
 }
-function currentWeather() {
-  return getInterpolatedWeather();
+function currentWeather(angle = ship.angle) {
+  return localWeatherAtBearing({
+    baseWeather: getInterpolatedWeather(),
+    position: ship,
+    angle,
+    day: game.day,
+    voyageDistance: game.voyageDistance,
+    horizonKm: visibility.horizonKm,
+  });
 }
 
 function seamanshipBonus() {
@@ -2470,6 +2488,7 @@ function onLand(x, y) {
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
 function buildVisibilityPolygon(force = false) {
+  const baseWeather = getInterpolatedWeather();
   const radius = currentVisibilityKm() * visibility.worldUnitsPerKm;
   const moved = Math.hypot(
     ship.x - visibility.lastX,
@@ -2488,7 +2507,16 @@ function buildVisibilityPolygon(force = false) {
     const a = (i / visibility.rays) * Math.PI * 2;
     const dx = Math.cos(a),
       dy = Math.sin(a);
-    let hit = radius;
+    const localRadius = directionalVisibilityRadius({
+      baseWeather,
+      position: ship,
+      angle: a,
+      day: game.day,
+      voyageDistance: game.voyageDistance,
+      horizonKm: visibility.horizonKm,
+      worldUnitsPerKm: visibility.worldUnitsPerKm,
+    });
+    let hit = localRadius;
     for (const land of lands) {
       const cent = polygonCentroid(land.poly);
       const nearestOffset = Math.round((ship.x - cent.x) / WORLD.w) * WORLD.w;
@@ -2516,7 +2544,7 @@ function buildVisibilityPolygon(force = false) {
         }
       }
     }
-    hit = Math.min(radius, hit + 5);
+    hit = Math.min(localRadius, hit + 5);
     visibility.polygon.push({ x: ship.x + dx * hit, y: ship.y + dy * hit });
   }
   visibility.lastX = ship.x;
@@ -3667,6 +3695,9 @@ function render() {
       name: weather.name,
       roughness: weather.roughness,
       visibilityKm: weather.visibilityKm,
+      aheadVisibilityKm: currentWeather(ship.angle).visibilityKm,
+      asternVisibilityKm: currentWeather(ship.angle + Math.PI).visibilityKm,
+      headingAngle: ship.angle,
       windAngle: game.windAngle,
       windStrength: game.windStrength,
       vw,
