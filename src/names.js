@@ -27,6 +27,23 @@ export const LAND_NAMES = Object.freeze({
   lunemire: "Lunemire",
   sivvynIsle: "Sivvyn Isle",
   kavrensward: "Kavrensward",
+  kavrelChain: "Kavrel Chain",
+  thornvayle: "Thornvayle",
+  sythrenCoast: "Sythren Coast",
+  orynthSteppe: "The Orynth Steppe",
+  aurelmarch: "Aurelmarch",
+  eoslynKeys: "Eoslyn Keys",
+  vesprynKeys: "Vespryn Keys",
+  solvyrMarch: "Solvyr March",
+  verdantate: "The Verdantate",
+  stormvaneCrown: "Stormvane Crown",
+  ossuwhale: "Ossuwhale",
+  orrawardIsle: "Orraward Isle",
+  rimevault: "Rimevault",
+  lazulynAtolls: "The Lazulyn Atolls",
+  mirdIsle: "Mird Isle",
+  orraVey: "Orra Vey",
+  lumevarIsles: "The Lumevar Isles",
 });
 
 export const PORT_NAMES = Object.freeze({
@@ -69,10 +86,15 @@ export const FACTION_NAMES = Object.freeze({
   tidebornCommons: "Tideborn Commons",
   mirrorKnives: "Mirror Knives",
   diversCommunion: "Divers’ Communion",
+  knivesOfOrraVey: "Knives of Orra Vey",
 });
 
 export const HOUSE_NAMES = Object.freeze({
   valeMaritimeExchange: "Vale Maritime Exchange",
   vossNorthernFactors: "Voss Northern Factors",
   vaelixCrownCompany: "Vaelix Crown Company",
+});
+
+export const ROUTE_NAMES = Object.freeze({
+  thornvayleCircuit: "Thornvayle Circuit",
 });

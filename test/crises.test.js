@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -131,34 +132,40 @@ test("cargo interventions reject inactive, unknown, and unsupplied crises", () =
 
 test("crisis modifiers distinguish warning, emergency, and both aftermaths", () => {
   let state = advanceCrises(createCrisisState(), 12).state;
-  assert.deepEqual(crisisEconomyModifiers(state, "Velquorin", "silk"), {
-    price: 1,
-    production: 0,
-    consumption: 0,
-  });
+  assert.deepEqual(
+    crisisEconomyModifiers(state, PORT_NAMES.velquorin, "silk"),
+    {
+      price: 1,
+      production: 0,
+      consumption: 0,
+    },
+  );
   state = advanceCrises(state, 15).state;
   assert.equal(
-    crisisEconomyModifiers(state, "Velquorin", "silk").price,
+    crisisEconomyModifiers(state, PORT_NAMES.velquorin, "silk").price,
     CRISIS_TEMPLATES.loomUnrest.activeModifiers.price,
   );
-  assert.deepEqual(crisisEconomyModifiers(state, "Velquorin", "iron"), {
-    price: 1,
-    production: 0,
-    consumption: 0,
-  });
+  assert.deepEqual(
+    crisisEconomyModifiers(state, PORT_NAMES.velquorin, "iron"),
+    {
+      price: 1,
+      production: 0,
+      consumption: 0,
+    },
+  );
 
   const resolved = interveneInCrisis(state, "loomUnrest", 100, 16).state;
   assert.equal(
-    crisisEconomyModifiers(resolved, "Velquorin", "silk").production,
+    crisisEconomyModifiers(resolved, PORT_NAMES.velquorin, "silk").production,
     0.35,
   );
   const ignored = advanceCrises(state, 22).state;
   assert.equal(
-    crisisEconomyModifiers(ignored, "Velquorin", "silk").production,
+    crisisEconomyModifiers(ignored, PORT_NAMES.velquorin, "silk").production,
     -0.3,
   );
-  assert.equal(crisisAtPort(ignored, "Velquorin").length, 1);
-  assert.equal(crisisAtPort(ignored, "Orvessa Quay").length, 0);
+  assert.equal(crisisAtPort(ignored, PORT_NAMES.velquorin).length, 1);
+  assert.equal(crisisAtPort(ignored, PORT_NAMES.orvessaQuay).length, 0);
 });
 
 test("aftermath permanently changes bounded regional conditions", () => {

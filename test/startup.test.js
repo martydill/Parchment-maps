@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -7,7 +8,7 @@ import {
   recoverNavigablePosition,
 } from "../src/core/startup.js";
 
-test("the Begin button starts the supplied Orvessa Quay transition", () => {
+test("the Begin button starts the supplied home-port transition", () => {
   let listener;
   let starts = 0;
   const button = {
@@ -25,7 +26,7 @@ test("the Begin button starts the supplied Orvessa Quay transition", () => {
   assert.equal(starts, 1);
 });
 
-test("beginning at Orvessa Quay resets the ship and camera at the home port", () => {
+test("beginning at the home port resets the ship and camera", () => {
   const camera = { x: 12, y: 34 };
   const ship = {
     x: 1,
@@ -35,12 +36,12 @@ test("beginning at Orvessa Quay resets the ship and camera at the home port", ()
     anchored: false,
     trail: [{ x: 1, y: 2 }],
   };
-  const goldhaven = { name: "Orvessa Quay", home: true };
+  const goldhaven = { name: PORT_NAMES.orvessaQuay, home: true };
 
   const home = beginAtHomePort({
     camera,
     homePort: { spawnX: 705, spawnY: 485, departureAngle: 0 },
-    ports: [{ name: "Narthkel" }, goldhaven],
+    ports: [{ name: PORT_NAMES.narthkel }, goldhaven],
     ship,
   });
 
@@ -69,7 +70,7 @@ test("beginning repairs a legacy ship without a usable trail", () => {
   beginAtHomePort({
     camera: {},
     homePort: { spawnX: 705, spawnY: 485, departureAngle: 0 },
-    ports: [{ name: "Orvessa Quay", home: true }],
+    ports: [{ name: PORT_NAMES.orvessaQuay, home: true }],
     ship,
   });
 

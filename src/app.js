@@ -659,7 +659,7 @@ Object.assign(contractRoutes, {
     PORT_NAMES.cloudhollow,
     PORT_NAMES.kavrelHaven,
   ],
-  Cloudhollow: [
+  [PORT_NAMES.cloudhollow]: [
     PORT_NAMES.verdigate,
     PORT_NAMES.stormholden,
     PORT_NAMES.kavrelHaven,

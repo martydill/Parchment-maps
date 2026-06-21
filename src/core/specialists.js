@@ -75,7 +75,7 @@ export const SPECIALIST_ROSTER = Object.freeze(
       "Kestrel Rook",
       "☾",
       "Miremouth",
-      "Knives of Orra Vey",
+      FACTION_NAMES.knivesOfOrraVey,
       "Improves forged papers and concealed cargo.",
       "Old debts attract attention.",
       "Erase every copy of the Black Ledger.",

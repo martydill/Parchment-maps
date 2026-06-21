@@ -1,3 +1,4 @@
+import { FACTION_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -68,11 +69,13 @@ test("rivalries are reciprocal and positive standing shifts have consequences", 
 test("rival contracts are mutually exclusive", () => {
   const contract = { faction: "Free Keel Brotherhood" };
   assert.match(
-    contractConflict(contract, [{ faction: "Syrrelwake Oarwright Pact" }]),
+    contractConflict(contract, [
+      { faction: FACTION_NAMES.syrrelwakeOarwrightPact },
+    ]),
     /will not share/,
   );
   assert.match(
-    contractConflict(contract, [], "Syrrelwake Oarwright Pact"),
+    contractConflict(contract, [], FACTION_NAMES.syrrelwakeOarwrightPact),
     /charter bars service/,
   );
   assert.equal(contractConflict(contract, [{ faction: "Pearl Senate" }]), null);
@@ -105,13 +108,12 @@ test("a single high-standing charter closes rival doors", () => {
     false,
   );
   const freshRival = {
-    factionStanding: { "Syrrelwake Oarwright Pact": 45 },
+    factionStanding: { [FACTION_NAMES.syrrelwakeOarwrightPact]: 45 },
     factionCharter: null,
   };
   assert.equal(
-    chooseFactionCharter(freshRival, "Syrrelwake Oarwright Pact").changes[
-      "Free Keel Brotherhood"
-    ],
+    chooseFactionCharter(freshRival, FACTION_NAMES.syrrelwakeOarwrightPact)
+      .changes["Free Keel Brotherhood"],
     -25,
   );
 });

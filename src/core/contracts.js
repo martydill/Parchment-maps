@@ -297,7 +297,7 @@ const SURVEY_THEMES = Object.freeze([
     required: 1,
     target: "discovery",
     disposition: "secret",
-    sponsor: "Knives of Orra Vey",
+    sponsor: FACTION_NAMES.knivesOfOrraVey,
     match: ({ site }) => site.type === "Smuggler cove",
     rewards: { coins: 170, standing: 8, charter: "Coded cove signals" },
   },

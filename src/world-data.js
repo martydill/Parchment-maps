@@ -3,6 +3,7 @@ import {
   LAND_NAMES,
   FACTION_NAMES,
   PERSON_NAMES,
+  ROUTE_NAMES,
 } from "./names.js";
 // Static world, economy catalog, and map annotation data.
 // Keep browser state and rendering behavior in app.js; this module is data-only.
@@ -94,7 +95,7 @@ export const goods = {
     terms: ["amber", "storm amber", "fossil resin"],
   },
   wine: {
-    name: "Heliovar Wine",
+    name: `${PORT_NAMES.heliovar} Wine`,
     base: 27,
     fragility: 0.25,
     terms: ["wine", "vineyard", "vintage"],
@@ -324,7 +325,7 @@ const expeditionDiscoverySites = [
     reward: 45,
     discoveryId: "moon-iron",
     hazards: "Loose basalt, exposed anchorage",
-    land: "Drazhmark",
+    land: LAND_NAMES.drazhmark,
   },
   {
     id: "observatory-tideway",
@@ -698,7 +699,7 @@ export const lands = [
     ],
   },
   {
-    name: "The Veyr Ashreach",
+    name: LAND_NAMES.veyrAshreach,
     color: "#77704a",
     poly: [
       [880, 90],
@@ -711,7 +712,7 @@ export const lands = [
     ],
   },
   {
-    name: "Elderwythe",
+    name: LAND_NAMES.elderwythe,
     color: "#7c7950",
     poly: [
       [1480, 150],
@@ -737,7 +738,7 @@ export const lands = [
     ],
   },
   {
-    name: "Drazhmark",
+    name: LAND_NAMES.drazhmark,
     color: "#766d45",
     poly: [
       [1360, 850],
@@ -751,7 +752,7 @@ export const lands = [
     ],
   },
   {
-    name: "The Thrymm Spires",
+    name: LAND_NAMES.thrymmSpires,
     color: "#80754b",
     poly: [
       [555, 820],
@@ -765,7 +766,7 @@ export const lands = [
     ],
   },
   {
-    name: "Lunemire",
+    name: LAND_NAMES.lunemire,
     color: "#8c8257",
     poly: [
       [120, 900],
@@ -778,7 +779,7 @@ export const lands = [
     ],
   },
   {
-    name: "Sivvyn Isle",
+    name: LAND_NAMES.sivvynIsle,
     color: "#8d8256",
     poly: [
       [1100, 650],
@@ -809,7 +810,7 @@ export const lands = [
 // chart while keeping every coastline hand-authored and navigable.
 lands.push(
   {
-    name: "Thornvayle",
+    name: LAND_NAMES.thornvayle,
     color: "#7d7549",
     poly: [
       [2320, 340],
@@ -824,7 +825,7 @@ lands.push(
     ],
   },
   {
-    name: "Sythren Coast",
+    name: LAND_NAMES.sythrenCoast,
     color: "#85804f",
     poly: [
       [3410, 250],
@@ -838,7 +839,7 @@ lands.push(
     ],
   },
   {
-    name: "The Orynth Steppe",
+    name: LAND_NAMES.orynthSteppe,
     color: "#918258",
     poly: [
       [4680, 270],
@@ -852,7 +853,7 @@ lands.push(
     ],
   },
   {
-    name: "Aurelmarch",
+    name: LAND_NAMES.aurelmarch,
     color: "#82784c",
     poly: [
       [5780, 320],
@@ -865,7 +866,7 @@ lands.push(
     ],
   },
   {
-    name: "Eoslyn Keys",
+    name: LAND_NAMES.eoslynKeys,
     color: "#8b8054",
     poly: [
       [15, 1450],
@@ -877,7 +878,7 @@ lands.push(
     ],
   },
   {
-    name: "Vespryn Keys",
+    name: LAND_NAMES.vesprynKeys,
     color: "#7c7147",
     poly: [
       [5980, 1450],
@@ -889,7 +890,7 @@ lands.push(
     ],
   },
   {
-    name: "Solvyr March",
+    name: LAND_NAMES.solvyrMarch,
     color: "#806f43",
     poly: [
       [2430, 1410],
@@ -903,7 +904,7 @@ lands.push(
     ],
   },
   {
-    name: "The Verdantate",
+    name: LAND_NAMES.verdantate,
     color: "#788052",
     poly: [
       [3720, 1380],
@@ -917,7 +918,7 @@ lands.push(
     ],
   },
   {
-    name: "Stormvane Crown",
+    name: LAND_NAMES.stormvaneCrown,
     color: "#726c48",
     poly: [
       [4980, 1430],
@@ -942,7 +943,7 @@ lands.push(
     ],
   },
   {
-    name: "Orraward Isle",
+    name: LAND_NAMES.orrawardIsle,
     color: "#91855d",
     poly: [
       [2910, 995],
@@ -954,7 +955,7 @@ lands.push(
     ],
   },
   {
-    name: "Kavrel Chain",
+    name: LAND_NAMES.kavrelChain,
     color: "#897f56",
     poly: [
       [4510, 990],
@@ -966,7 +967,7 @@ lands.push(
     ],
   },
   {
-    name: "Rimevault",
+    name: LAND_NAMES.rimevault,
     color: "#777754",
     poly: [
       [3210, 95],
@@ -979,7 +980,7 @@ lands.push(
     ],
   },
   {
-    name: "The Lazulyn Atolls",
+    name: LAND_NAMES.lazulynAtolls,
     color: "#90875e",
     poly: [
       [5210, 1020],
@@ -991,7 +992,7 @@ lands.push(
     ],
   },
   {
-    name: "Mird Isle",
+    name: LAND_NAMES.mirdIsle,
     color: "#80784e",
     poly: [
       [3830, 1030],
@@ -1003,7 +1004,7 @@ lands.push(
     ],
   },
   {
-    name: "Orra Vey",
+    name: LAND_NAMES.orraVey,
     color: "#8a8058",
     poly: [
       [2470, 1010],
@@ -1015,7 +1016,7 @@ lands.push(
     ],
   },
   {
-    name: "The Lumevar Isles",
+    name: LAND_NAMES.lumevarIsles,
     color: "#8c8256",
     poly: [
       [5540, 1030],
@@ -1276,7 +1277,7 @@ export const ports = [
     name: PORT_NAMES.narthkel,
     x: 1000,
     y: 360,
-    land: "The Veyr Ashreach",
+    land: LAND_NAMES.veyrAshreach,
     realm: "The Ashen Marches",
     population: 33100,
     government: "Fortress-port ruled by the Council of Seven Captains",
@@ -1344,7 +1345,7 @@ export const ports = [
     name: PORT_NAMES.velquorin,
     x: 1545,
     y: 470,
-    land: "Elderwythe",
+    land: LAND_NAMES.elderwythe,
     realm: "The Verdant Principality",
     population: 57800,
     government: "Hereditary moon-court advised by the Grove Conclave",
@@ -1479,7 +1480,7 @@ export const ports = [
     name: PORT_NAMES.drazhOvek,
     x: 1450,
     y: 1185,
-    land: "Drazhmark",
+    land: LAND_NAMES.drazhmark,
     realm: "The Basalt Dominion",
     population: 71800,
     government: "Oligarchic furnace council under the First Forge",
@@ -1515,7 +1516,7 @@ export const ports = [
       {
         name: "Ashen Banner",
         influence: 15,
-        note: "Expansionists who want Drazhmark to seize the southern sea lanes.",
+        note: `Expansionists who want ${LAND_NAMES.drazhmark} to seize the southern sea lanes.`,
       },
     ],
     routes: [
@@ -1546,7 +1547,7 @@ export const ports = [
     name: PORT_NAMES.thrymmor,
     x: 830,
     y: 1135,
-    land: "The Thrymm Spires",
+    land: LAND_NAMES.thrymmSpires,
     realm: `The ${PORT_NAMES.thrymmor} Freehold`,
     population: 19200,
     government: "Loose captains’ assembly protected by mountain clans",
@@ -1614,8 +1615,8 @@ export const ports = [
     name: PORT_NAMES.mirelune,
     x: 360,
     y: 1140,
-    land: "Lunemire",
-    realm: "The Lunemire Compact",
+    land: LAND_NAMES.lunemire,
+    realm: `The ${LAND_NAMES.lunemire} Compact`,
     population: 14100,
     government: "Marsh elders and licensed smuggler-families",
     prosperity: "Modest",
@@ -1665,7 +1666,7 @@ export const ports = [
       },
       {
         name: "Reedboat Channels",
-        to: "Interior Lunemire",
+        to: `Interior ${LAND_NAMES.lunemire}`,
         cargo: "fish, fungi and contraband",
         risk: "Local hazards",
         days: "1–4 days",
@@ -1785,8 +1786,8 @@ ports.push(
     name: PORT_NAMES.veyrgloam,
     x: 2380,
     y: 650,
-    land: "Thornvayle",
-    realm: "The Thornvayle Compact",
+    land: LAND_NAMES.thornvayle,
+    realm: `The ${LAND_NAMES.thornvayle} Compact`,
     population: 47300,
     government: "A nocturnal council of lighthouse lords and bonded navigators",
     prosperity: "High",
@@ -1816,7 +1817,7 @@ ports.push(
         "timber, salt and charts",
       ),
       routeInfo(
-        "Thornvayle Circuit",
+        ROUTE_NAMES.thornvayleCircuit,
         PORT_NAMES.cindervaleStrand,
         "pitch, iron and provisions",
         "Low",
@@ -1833,8 +1834,8 @@ ports.push(
     name: PORT_NAMES.cindervaleStrand,
     x: 3130,
     y: 700,
-    land: "Thornvayle",
-    realm: "The Thornvayle Compact",
+    land: LAND_NAMES.thornvayle,
+    realm: `The ${LAND_NAMES.thornvayle} Compact`,
     population: 61800,
     government: "An elected forge-speaker balanced by seven coastal clans",
     prosperity: "Booming",
@@ -1858,7 +1859,7 @@ ports.push(
     ],
     routes: [
       routeInfo(
-        "Thornvayle Circuit",
+        ROUTE_NAMES.thornvayleCircuit,
         PORT_NAMES.veyrgloam,
         "copper, pitch and cedar",
         "Low",
@@ -1882,7 +1883,7 @@ ports.push(
     name: PORT_NAMES.heliovar,
     x: 3660,
     y: 930,
-    land: "Sythren Coast",
+    land: LAND_NAMES.sythrenCoast,
     realm: "The Solar Satrapies",
     population: 112400,
     government: "Temple bureaucracy under the hereditary Voice of Noon",
@@ -1932,7 +1933,7 @@ ports.push(
     name: PORT_NAMES.pearlveinBay,
     x: 4380,
     y: 720,
-    land: "Sythren Coast",
+    land: LAND_NAMES.sythrenCoast,
     realm: "The Nacre League",
     population: 75600,
     government: "A league senate elected by pearl houses and canal districts",
@@ -1982,7 +1983,7 @@ ports.push(
     name: PORT_NAMES.starrynFall,
     x: 4800,
     y: 700,
-    land: "The Orynth Steppe",
+    land: LAND_NAMES.orynthSteppe,
     realm: "The Aster Khanate",
     population: 52100,
     government: "A harbor khan chosen from the five horse-banner families",
@@ -2026,7 +2027,7 @@ ports.push(
     name: PORT_NAMES.meridQasryn,
     x: 5530,
     y: 700,
-    land: "The Orynth Steppe",
+    land: LAND_NAMES.orynthSteppe,
     realm: "The Meridian Sultanate",
     population: 90300,
     government:
@@ -2079,8 +2080,8 @@ ports.push(
     name: PORT_NAMES.aetherreach,
     x: 6240,
     y: 760,
-    land: "Aurelmarch",
-    realm: "The Aurelmarch Principalities",
+    land: LAND_NAMES.aurelmarch,
+    realm: `The ${LAND_NAMES.aurelmarch} Principalities`,
     population: 68400,
     government: "A cliffside prince advised by aeromancers and sea captains",
     prosperity: "High",
@@ -2130,7 +2131,7 @@ ports.push(
     name: PORT_NAMES.vesperport,
     x: 6280,
     y: 1600,
-    land: "Vespryn Keys",
+    land: LAND_NAMES.vesprynKeys,
     realm: "The Meridian Free Keys",
     population: 28100,
     government: "A rotating captains’ moot held at the western sunset bell",
@@ -2182,7 +2183,7 @@ ports.push(
     name: PORT_NAMES.eoswatch,
     x: 80,
     y: 1730,
-    land: "Eoslyn Keys",
+    land: LAND_NAMES.eoslynKeys,
     realm: "The Meridian Free Keys",
     population: 26400,
     government: "A harbor assembly convened at the eastern sunrise bell",
@@ -2234,7 +2235,7 @@ ports.push(
     name: PORT_NAMES.crimsonharrow,
     x: 2470,
     y: 1760,
-    land: "Solvyr March",
+    land: LAND_NAMES.solvyrMarch,
     realm: "The Crimson Republic",
     population: 79800,
     government: "A martial republic led by elected banner consuls",
@@ -2284,7 +2285,7 @@ ports.push(
     name: PORT_NAMES.pearlspirel,
     x: 3410,
     y: 1660,
-    land: "Solvyr March",
+    land: LAND_NAMES.solvyrMarch,
     realm: "The Southern Principalities",
     population: 44600,
     government: "A hereditary pearl-prince constrained by a merchants’ chamber",
@@ -2335,8 +2336,8 @@ ports.push(
     name: PORT_NAMES.verdigate,
     x: 3760,
     y: 1780,
-    land: "The Verdantate",
-    realm: "The Verdantate",
+    land: LAND_NAMES.verdantate,
+    realm: LAND_NAMES.verdantate,
     population: 138000,
     government: "Imperial prefecture supervised by examination mandarins",
     prosperity: "Very high",
@@ -2381,7 +2382,7 @@ ports.push(
     name: PORT_NAMES.cloudhollow,
     x: 4640,
     y: 1510,
-    land: "The Verdantate",
+    land: LAND_NAMES.verdantate,
     realm: "The Cloud Mandate",
     population: 59200,
     government:
@@ -2434,7 +2435,7 @@ ports.push(
     name: PORT_NAMES.stormholden,
     x: 5020,
     y: 1640,
-    land: "Stormvane Crown",
+    land: LAND_NAMES.stormvaneCrown,
     realm: "The Stormbound Holds",
     population: 38600,
     government: "A fortress league ruled by storm captains",
@@ -2537,8 +2538,8 @@ ports.push(
     name: PORT_NAMES.orrasanctAnchorage,
     x: 3050,
     y: 1210,
-    land: "Orraward Isle",
-    realm: "The Concordat of Orra Vey",
+    land: LAND_NAMES.orrawardIsle,
+    realm: `The Concordat of ${LAND_NAMES.orraVey}`,
     population: 22100,
     government: "A neutral abbey-port administered by twelve hospitallers",
     prosperity: "Steady",
@@ -2583,7 +2584,7 @@ ports.push(
     name: PORT_NAMES.kavrelHaven,
     x: 4700,
     y: 1220,
-    land: "Kavrel Chain",
+    land: LAND_NAMES.kavrelChain,
     realm: "The Kestrel League",
     population: 31800,
     government: "A federation of courier islands and surveyor guilds",

@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -65,14 +66,14 @@ test("createContractOffer builds courier work and selects local or guild sponsor
 
   const guild = offer({
     origin: {
-      name: "Orvessa Quay",
+      name: PORT_NAMES.orvessaQuay,
       x: 0,
       y: 0,
       factions: [{ name: "Crown" }],
     },
     destinations: ["Far"],
   }).offer;
-  assert.equal(guild.faction, "Syrrelwake Oarwright Pact");
+  assert.equal(guild.faction, FACTION_NAMES.syrrelwakeOarwrightPact);
   assert.equal(guild.influence, 8);
   assert.equal(guild.estimatedDays, 1);
 });
@@ -166,7 +167,7 @@ test("survey contract catalogue has broad commission variety", () => {
 test("createSurveyContractOffer builds zero-hold exploration commissions", () => {
   const result = createSurveyContractOffer({
     origin: {
-      name: "Orvessa Quay",
+      name: PORT_NAMES.orvessaQuay,
       factions: [{ name: "Royal Navy" }, { name: "Free Keel Brotherhood" }],
     },
     index: 0,
@@ -258,7 +259,7 @@ test("surveyContractProgress tracks multi-site exploration commissions", () => {
   );
 });
 
-test("surveyContractProgress matches Mirravel, reef, and mineral objectives", () => {
+test("surveyContractProgress matches named passage, reef, and mineral objectives", () => {
   const glasswater = createSurveyContractOffer({
     origin: { name: "Harbor", factions: [] },
     index: 2,
@@ -273,7 +274,10 @@ test("surveyContractProgress matches Mirravel, reef, and mineral objectives", ()
       disposition: "share",
       site: {
         id: "glass",
-        route: { origin: "Velquorin", destination: "Mirravel" },
+        route: {
+          origin: PORT_NAMES.velquorin,
+          destination: PORT_NAMES.mirravel,
+        },
       },
     }),
     { complete: true, completed: 1, required: 1 },
@@ -346,7 +350,7 @@ test("survey objective matchers cover fallback route and description branches", 
       disposition: "share",
       site: {
         id: "glass-origin",
-        route: { origin: "Mirravel", destination: "Pearlstrand" },
+        route: { origin: PORT_NAMES.mirravel, destination: "Pearlstrand" },
       },
     }),
     { complete: true, completed: 1, required: 1 },
@@ -362,7 +366,10 @@ test("survey objective matchers cover fallback route and description branches", 
     surveyContractProgress(glassByBenefit, {
       type: "discovery",
       disposition: "share",
-      site: { id: "glass-benefit", benefit: "Safer Mirravel passage." },
+      site: {
+        id: "glass-benefit",
+        benefit: `Safer ${PORT_NAMES.mirravel} passage.`,
+      },
     }),
     { complete: true, completed: 1, required: 1 },
   );

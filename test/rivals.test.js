@@ -1,3 +1,4 @@
+import { PORT_NAMES, PERSON_NAMES, SHIP_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -24,7 +25,7 @@ test("rival state is complete, independent, and normalizes old saves", () => {
     claims: [
       {
         rivalId: "vale",
-        port: "Orvessa Quay",
+        port: PORT_NAMES.orvessaQuay,
         goodKey: "iron",
         day: 4,
         units: 0,
@@ -43,7 +44,7 @@ test("rival state is complete, independent, and normalizes old saves", () => {
   assert.deepEqual(normalized.claims, [
     {
       rivalId: "vale",
-      port: "Orvessa Quay",
+      port: PORT_NAMES.orvessaQuay,
       goodKey: "iron",
       day: 4,
       units: 1,
@@ -56,12 +57,14 @@ test("rival state is complete, independent, and normalizes old saves", () => {
   assert.deepEqual(defaults.captains.vale, second.captains.vale);
   assert.deepEqual(
     normalizeRivalState({
-      claims: [{ rivalId: "vale", port: "Orvessa Quay", goodKey: "iron" }],
+      claims: [
+        { rivalId: "vale", port: PORT_NAMES.orvessaQuay, goodKey: "iron" },
+      ],
     }).claims,
     [
       {
         rivalId: "vale",
-        port: "Orvessa Quay",
+        port: PORT_NAMES.orvessaQuay,
         goodKey: "iron",
         day: 0,
         units: 1,
@@ -73,7 +76,7 @@ test("rival state is complete, independent, and normalizes old saves", () => {
       claims: [
         null,
         { rivalId: "vale", goodKey: "iron" },
-        { rivalId: "vale", port: "Orvessa Quay" },
+        { rivalId: "vale", port: PORT_NAMES.orvessaQuay },
       ],
     }).claims.length,
     0,
@@ -83,16 +86,16 @@ test("rival state is complete, independent, and normalizes old saves", () => {
 test("merchant identity resolves by id or legacy vessel name", () => {
   assert.equal(
     rivalForMerchant({ rivalId: "voss" }).captain,
-    "Captain Torren Voss",
+    PERSON_NAMES.torrenVoss,
   );
-  assert.equal(rivalForMerchant({ name: "Amber Heron" }).id, "vale");
+  assert.equal(rivalForMerchant({ name: SHIP_NAMES.amberHeron }).id, "vale");
   assert.equal(rivalForMerchant({ name: "Unknown" }), null);
   assert.equal(rivalForMerchant(null), null);
 });
 
 test("deliveries build a house and create temporary market claims", () => {
   let state = recordRivalDelivery(createRivalState(), "vale", {
-    port: "Orvessa Quay",
+    port: PORT_NAMES.orvessaQuay,
     goodKey: "iron",
     units: 7,
     day: 10,
@@ -102,14 +105,14 @@ test("deliveries build a house and create temporary market claims", () => {
   assert.equal(state.captains.vale.wealth, 145);
   assert.equal(state.captains.vale.reputation, 22);
   state = recordRivalDelivery(state, "unknown", {
-    port: "Orvessa Quay",
+    port: PORT_NAMES.orvessaQuay,
     goodKey: "iron",
     units: 2,
     day: 20,
   });
   assert.equal(state.claims.length, 1);
   state = recordRivalDelivery(state, "voss", {
-    port: "Narthkel",
+    port: PORT_NAMES.narthkel,
     goodKey: "silk",
     units: 2,
     day: 20,
@@ -120,13 +123,13 @@ test("deliveries build a house and create temporary market claims", () => {
 
 test("selling into a recent rival market claim creates competition", () => {
   const delivered = recordRivalDelivery(createRivalState(), "vale", {
-    port: "Orvessa Quay",
+    port: PORT_NAMES.orvessaQuay,
     goodKey: "iron",
     units: 5,
     day: 10,
   });
   const competed = recordPlayerCompetition(delivered, {
-    port: "Orvessa Quay",
+    port: PORT_NAMES.orvessaQuay,
     goodKey: "iron",
     day: 12,
   });
@@ -134,14 +137,14 @@ test("selling into a recent rival market claim creates competition", () => {
   assert.equal(competed.state.captains.vale.relationship, -3);
   assert.equal(competed.state.captains.vale.reputation, 20);
   const missed = recordPlayerCompetition(delivered, {
-    port: "Orvessa Quay",
+    port: PORT_NAMES.orvessaQuay,
     goodKey: "silk",
     day: 12,
   });
   assert.equal(missed.rivalId, null);
   assert.equal(
     recordPlayerCompetition(delivered, {
-      port: "Orvessa Quay",
+      port: PORT_NAMES.orvessaQuay,
       goodKey: "iron",
       day: 14,
     }).rivalId,

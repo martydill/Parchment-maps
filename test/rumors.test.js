@@ -1,3 +1,4 @@
+import { PORT_NAMES, FACTION_NAMES } from "../src/names.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -17,7 +18,7 @@ import {
 } from "../src/core/discoveries.js";
 
 test("rumor leads create broad or specialist-interpreted search circles", () => {
-  const port = { name: "Narthkel", x: 50, y: 50 };
+  const port = { name: PORT_NAMES.narthkel, x: 50, y: 50 };
   const target = { id: "black-water", x: 1900, y: 120, faction: "Navigators" };
   const broad = createRumorLead({ port, target, day: 3, worldWidth: 2000 });
   const interpreted = createRumorLead({
@@ -31,7 +32,7 @@ test("rumor leads create broad or specialist-interpreted search circles", () => 
   assert.ok(broad.radius >= Math.round(BASE_RUMOR_RADIUS * 0.72));
   assert.ok(broad.radius <= Math.round(BASE_RUMOR_RADIUS * 1.35));
   assert.ok(interpreted.radius <= Math.round(SPECIALIST_RUMOR_RADIUS * 1.35));
-  assert.match(broad.clue, /of Narthkel/);
+  assert.match(broad.clue, new RegExp(`of ${PORT_NAMES.narthkel}`));
   assert.ok(RUMOR_TYPES.some((type) => type.id === broad.rumorType));
   assert.equal(broad.targetKind, "discovery");
   assert.ok(broad.x >= 0 && broad.x < 2000);
@@ -43,17 +44,20 @@ test("rumors can target expedition sites and prefer related factions", () => {
     x: 10,
     y: 20,
     objective: "Survey the floe",
-    factions: [{ name: "Narthkel Admiralty" }],
+    factions: [{ name: FACTION_NAMES.narthkelAdmiralty }],
   };
   const lead = createRumorLead({
-    port: { name: "Narthkel", x: 0, y: 0 },
+    port: { name: PORT_NAMES.narthkel, x: 0, y: 0 },
     target: expedition,
     day: 4,
     worldWidth: 1000,
   });
 
   assert.equal(lead.targetKind, "expedition");
-  assert.equal(targetMatchesFaction(expedition, ["Narthkel Admiralty"]), true);
+  assert.equal(
+    targetMatchesFaction(expedition, [FACTION_NAMES.narthkelAdmiralty]),
+    true,
+  );
   assert.equal(targetMatchesFaction(expedition, ["Pearl Senate"]), false);
 });
 
@@ -182,7 +186,7 @@ test("rumor type selection varies by faction, source, reliability, and specialis
     "specialist-interpretation",
   );
 
-  const port = { name: "Orvessa Quay", x: 100, y: 100 };
+  const port = { name: PORT_NAMES.orvessaQuay, x: 100, y: 100 };
   const target = { id: "auric", x: 180, y: 140, faction: "Guild" };
   const kinds = new Set(
     Array.from(

@@ -69,8 +69,7 @@ const FACTION_LORE = Object.freeze({
     backstory:
       "The League began with scholars and harbor clerks who met beneath one hooded lantern to compare censored charts and tax ledgers. Printers, minor nobles, teachers, and reform-minded officers have since turned it into a public movement.",
     history: `Its exposure of the False Beacon Scandal forced ${PORT_NAMES.orvessaQuay} to publish harbor accounts and standardize pilots’ examinations. Later investigations into vanished cargoes made the League the enduring enemy of smugglers protected by official patronage.`,
-    motivations:
-      "It pursues transparent government, public charts, educated navigation, and laws applied equally to crown agents and private merchants. The League considers the Mirror Knives proof that secrecy inevitably corrupts institutions.",
+    motivations: `It pursues transparent government, public charts, educated navigation, and laws applied equally to crown agents and private merchants. The League considers the ${FACTION_NAMES.mirrorKnives} proof that secrecy inevitably corrupts institutions.`,
   }),
   [FACTION_NAMES.mirrorKnives]: Object.freeze({
     backstory:

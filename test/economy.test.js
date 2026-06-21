@@ -1,3 +1,4 @@
+import { PORT_NAMES } from "../src/names.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -16,7 +17,7 @@ const baseOptions = {
   good: { key: "iron", base: 18 },
   bias: 1,
   day: 1,
-  portName: "Orvessa Quay",
+  portName: PORT_NAMES.orvessaQuay,
 };
 
 test("createEconomyState builds bounded state for every port and good", () => {
