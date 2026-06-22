@@ -69,8 +69,6 @@ import {
   cargoValueMultiplier,
   createCargoLot,
   grantCargo,
-  moveCargoLot,
-  normalizeCargoCompartments,
   normalizeCargoLot,
   normalizeCargoLots,
   resolveVoyageCargo,
@@ -78,21 +76,13 @@ import {
 } from "./core/cargo.js";
 import {
   ageWarehouseCargo,
-  depositCargo,
-  leaseWarehouse,
   normalizeWarehouseState,
-  warehouseAt,
-  warehouseLeaseCost,
-  withdrawCargo,
 } from "./core/warehouses.js";
 import {
-  buyOrEquipUpgrade,
-  buyOrSelectShipClass,
   calculateShipIdentity,
   calculateShipStats,
   normalizeShipUpgradeState,
   SHIP_CLASSES,
-  SHIP_IDENTITIES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
 } from "./core/upgrades.js";
@@ -118,25 +108,19 @@ import {
   normalizeExplorationState,
   resolveExpedition,
 } from "./core/exploration.js";
-import { chartedCityIndicators } from "./core/chart.js";
 import {
   advanceCrises,
   applyCrisisAftermath,
   CRISIS_TEMPLATES,
-  cargoInterventionStatus,
   crisisAtPort,
   crisisEconomyModifiers,
-  interveneInCrisis,
-  interveneInCrisisWithCargo,
   normalizeCrisisState,
 } from "./core/crises.js";
 import {
   applyComponentDamage,
   adjustedIntelCost,
-  buyProvisions,
   componentEfficiency,
   contractOutcome,
-  estimateVoyageReadiness,
   factionPrivilege,
   fulfillObligationsAtPort,
   intelligenceFreshness,
@@ -144,13 +128,10 @@ import {
   normalizeOperationsState,
   processObligations,
   processWages,
-  repairOperations,
-  repairShipComponent,
   resolveCombatAction,
   resolveHostileEncounter,
   resolveVoyageOperations,
   routePlanEffects,
-  ROUTE_PLANS,
   SHIP_COMPONENTS,
   weatherRoughness,
 } from "./core/operations.js";
@@ -159,8 +140,6 @@ import {
   availableMarketGoods,
   createRegionalState,
   dockingFee,
-  investInIndustry,
-  investmentCost,
   normalizeRegionalState,
   portEvolution,
   regionalSummary,
@@ -175,7 +154,6 @@ import {
 import {
   buyPermit,
   canTrade,
-  cultivateOfficial,
   jurisdictionLaw,
   lawDetails,
   normalizeLegalState,
@@ -195,7 +173,7 @@ import {
   intelEffectText,
   upcomingEvents as findUpcomingEvents,
 } from "./core/intelligence.js";
-import { currentObjective, voyageWarnings } from "./core/guidance.js";
+import { currentObjective } from "./core/guidance.js";
 import {
   completeLegacyCapstone,
   continueLegacySandbox,
@@ -226,12 +204,8 @@ import {
   CREW_ROLES,
   crewVoyageModifiers,
   resolveCrewVoyageEvent,
-  crewWeeklyWage,
   normalizeCrewState,
-  portRecruitmentPool,
-  recruitCrew,
   resolveCrewIncident,
-  takeShoreLeave,
 } from "./core/crew.js";
 import {
   aidRival,
@@ -288,6 +262,18 @@ import {
   drawWeatherEffects,
   wrappedCircleIntersectsViewport,
 } from "./rendering.js";
+import { renderChartPanel } from "./ui/chart-panel.js";
+import {
+  configureUiPanels,
+  openExploration,
+  renderDiscoveryPanel,
+  renderLedger,
+  renderPortSystems,
+  renderShipPanel,
+  updateHud,
+} from "./ui/panels.js";
+import { activateSectionTabs } from "./ui/tabs.js";
+import { configurePortPanels } from "./ui/port-panels.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -2526,73 +2512,6 @@ function buyIntel(id) {
   updateHud();
   showIntelReport(purchased);
 }
-function renderIntelOffice() {
-  const root = document.getElementById("intelOffice");
-  root.innerHTML = "";
-  const offers = ensureIntelOffers(currentPort);
-  if (!offers.length)
-    root.innerHTML =
-      '<p class="empty-note">Your informants have nothing new until their network refreshes.</p>';
-  for (const offer of offers) {
-    const localStanding = Math.max(
-      0,
-      ...currentPort.factions.map(
-        (faction) => game.factionStanding[faction.name] || 0,
-      ),
-    );
-    const cost = adjustedIntelCost(offer.cost, localStanding);
-    const card = document.createElement("div");
-    card.className = "intel-card";
-    card.innerHTML =
-      '<div class="intel-head"><h4>' +
-      offer.title +
-      '</h4><span class="contract-tag">' +
-      cost +
-      ' crowns</span></div><div class="intel-meta">Source confidence: ' +
-      offer.confidence +
-      "% · useful through Day " +
-      offer.expiresDay +
-      '</div><p class="small">The source will disclose the full report after payment.</p><div class="confidence"><span style="width:' +
-      offer.confidence +
-      '%"></span></div>';
-    const b = document.createElement("button");
-    b.className = "parchment";
-    b.textContent = "Buy & Reveal Report";
-    b.onclick = () => buyIntel(offer.id);
-    card.append(b);
-    root.append(card);
-  }
-  const purchased = game.intelligence.filter(
-    (report) =>
-      report.origin === currentPort.name && game.day <= report.expiresDay,
-  );
-  if (purchased.length) {
-    const heading = document.createElement("h4");
-    heading.className = "intel-purchased-heading";
-    heading.textContent = "Purchased reports";
-    root.append(heading);
-    purchased.forEach((report) => {
-      const card = document.createElement("div");
-      card.className = "intel-card intel-known";
-      card.innerHTML =
-        '<div class="intel-head"><h4>' +
-        report.title +
-        '</h4><span class="contract-tag">Valid to Day ' +
-        report.expiresDay +
-        '</span></div><p class="small">' +
-        report.body +
-        '</p><div class="intel-result"><b>Active effect:</b> ' +
-        intelEffectText(report) +
-        "</div>";
-      const b = document.createElement("button");
-      b.className = "parchment";
-      b.textContent = "View Full Report";
-      b.onclick = () => showIntelReport(report);
-      card.append(b);
-      root.append(card);
-    });
-  }
-}
 
 initializeMerchantShips();
 
@@ -3049,6 +2968,117 @@ const beginButton = document.getElementById("beginButton");
 const newMapButton = document.getElementById("newMapButton");
 document.getElementById("introWorldSeed").textContent = mapSeed;
 
+const panelContext = {
+  clearCourse,
+  courseBearing,
+  bestCargoCompartment,
+  syncCargoCounts,
+  RIVAL_CAPTAINS,
+  updateMilestoneCompletion,
+  rivalRelationshipLabel,
+  crewVoyageModifiers,
+  UPGRADE_SLOTS,
+  CREW_ROLES,
+  contractCargoCount,
+  CARGO_COMPARTMENTS,
+  createCargoLot,
+  EXPLORATION_APPROACHES,
+  chooseFactionCharter,
+  factionRivals,
+  SPECIALIST_ROSTER,
+  recordPlayerCompetition,
+  undertakeExpedition,
+  handleDiscoveryDisposition,
+  acceptContract,
+  addNews,
+  availableMarketGoods,
+  buyPermit,
+  buyPriceFor,
+  calculateShipIdentity,
+  canTrade,
+  cargoCapacities,
+  cargoCondition,
+  cargoCount,
+  cargoLotDescription,
+  cargoValueMultiplier,
+  closeDiscoveryDetails,
+  compassDirection,
+  completeLegacyCapstone,
+  contractConflict,
+  continueLegacySandbox,
+  currentObjective,
+  currentVisibilityKm,
+  DISCOVERY_DISPOSITIONS,
+  discoverySites,
+  document,
+  economyCondition,
+  economyState,
+  ensureContractOffers,
+  FACTION_NAMES,
+  factionPrivilege,
+  game,
+  get currentPort() {
+    return currentPort;
+  },
+  get nearExplorationSite() {
+    return nearExplorationSite;
+  },
+  get nearPort() {
+    return nearPort;
+  },
+  getPortByName,
+  goods,
+  guildStanding,
+  HOME_PORT,
+  intelligenceFreshness,
+  inventory: { ship },
+  lawDetails,
+  LEGACY_PATHS,
+  legacyChecklist,
+  legacyReadyForCapstone,
+  legalStatusAt,
+  localCurrent,
+  operationalShipStats,
+  PORT_NAMES,
+  portEvolution,
+  productionChains,
+  regionalSummary,
+  saveGameState,
+  sellPriceFor,
+  seasonalSiteActive,
+  SHIP_CLASSES,
+  SHIP_COMPONENTS,
+  SHIP_UPGRADES,
+  shipSpeedKnots,
+  showMessage,
+  tradeQuote,
+  ui,
+  worldEvents,
+  WORLD,
+  wrapX,
+  activeEventsAt,
+  activeShipClass,
+  advanceDays,
+  applyShipUpgrades,
+  bestTradeOpportunity,
+  buyIntel,
+  buyRumorLead,
+  canPassConvoyLaw,
+  currentLawText,
+  describeCargoRequirements,
+  ensureIntelOffers,
+  eventTemplates,
+  orientRoute,
+  passConvoyLaw,
+  renderPortSystems,
+  resolveCrisisIntervention,
+  routesFrom,
+  showIntelReport,
+  updateHud,
+};
+configureUiPanels(panelContext);
+configurePortPanels(panelContext);
+
 function applyNarrativeNames() {
   document.title = `${GAME_NAME} — Encircling World V9`;
   document.getElementById("homePortLabel").textContent = PORT_NAMES.orvessaQuay;
@@ -3138,91 +3168,6 @@ newMapButton.addEventListener("click", () => {
 
 function cargoCount() {
   return countCargo(game, contractCargoCount());
-}
-function updateHud() {
-  const stats = operationalShipStats();
-  ui.speed.textContent =
-    shipSpeedKnots(ship.speed, stats.waterlineLengthFt).toFixed(1) + " knots";
-  const dirs = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
-  const idx =
-    Math.round(
-      ((((game.windAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) /
-        (Math.PI * 2)) *
-        8,
-    ) % 8;
-  const currentInfo = localCurrent();
-  ui.wind.textContent =
-    "Wind " +
-    dirs[idx] +
-    " · " +
-    Math.round(game.windStrength * 100) +
-    " knots" +
-    (currentInfo.label ? " · " + currentInfo.label : "");
-  const km = currentVisibilityKm();
-  ui.visibility.textContent =
-    game.weatherName +
-    " · " +
-    (km < 10 ? km.toFixed(1) : Math.round(km)) +
-    " km sight · longitude " +
-    Math.round((wrapX(ship.x) / WORLD.w) * 360) +
-    "°";
-  ui.coins.textContent = game.coins + " crowns";
-  ui.day.textContent = "Day " + game.day;
-  ui.hold.textContent = cargoCount() + "/" + game.holdMax;
-  ui.objective.textContent = game.milestone.complete
-    ? "Merchant Prince · " + game.activeWorldEvents.length + " active crises"
-    : game.completedContracts +
-      "/3 contracts · shortage " +
-      (game.milestone.shortageExploited
-        ? "exploited"
-        : worldEvents.ironShortage.active
-          ? "active"
-          : "pending") +
-      " · Guild " +
-      guildStanding() +
-      "/20";
-  const objective = currentObjective({
-    game,
-    currentPortName: currentPort?.name || null,
-    nearPortName: nearPort?.name || null,
-    homePortName: HOME_PORT.name,
-  });
-  ui.course.className = objective.urgency;
-  ui.courseTitle.textContent = objective.title;
-  ui.courseDetail.textContent = objective.detail;
-  ui.courseAction.textContent =
-    objective.action === "dock"
-      ? "Dock now →"
-      : objective.action === "trade"
-        ? "Open contract board →"
-        : objective.action === "vessel"
-          ? "Prepare vessel →"
-          : objective.action === "politics"
-            ? "Open politics →"
-            : objective.action === "ledger"
-              ? "Open ledger →"
-              : "Open chart →";
-  let destination = getPortByName(game.navigation.destination);
-  if (destination && nearPort?.name === destination.name) {
-    clearCourse(game.navigation);
-    showMessage(`Course complete · ${destination.name} reached.`);
-    saveGameState();
-    destination = null;
-  }
-  ui.plottedCourse.hidden = !destination;
-  if (destination) {
-    const bearing = courseBearing(ship, destination, WORLD.w);
-    const direction = compassDirection(bearing.angle);
-    ui.plottedCourseTitle.textContent = `${direction} · ${destination.name}`;
-    ui.plottedCourseDetail.textContent =
-      `${Math.round(bearing.distance)} leagues remaining · ` +
-      `bearing ${Math.round(((bearing.angle * 180) / Math.PI + 360) % 360)}°`;
-  }
-  if (ship.anchored)
-    ui.steeringStatus.textContent = "AT ANCHOR · DRAG THE WHEEL TO SAIL";
-  else if (Math.abs(ship.speed) < 5)
-    ui.steeringStatus.textContent = "DRAG TOWARD YOUR DESTINATION";
-  else ui.steeringStatus.textContent = "SAILING · RELEASE TO COAST";
 }
 
 function followCurrentObjective() {
@@ -4290,223 +4235,7 @@ function legalStatusAt(port, key) {
     dominantFaction: dominantFaction(port).name,
   });
 }
-function renderMilestone(root) {
-  root.innerHTML = "";
-  const steps = [
-    {
-      done: game.completedContracts >= 3,
-      title: "Complete three contracts",
-      detail: game.completedContracts + "/3 fulfilled on time",
-    },
-    {
-      done: game.milestone.shortageExploited,
-      title: `Exploit ${PORT_NAMES.orvessaQuay}’s iron shortage`,
-      detail: game.milestone.shortageExploited
-        ? Math.round(game.milestone.shortageProfit) +
-          " crowns of shortage profit"
-        : worldEvents.ironShortage.active
-          ? `Buy cheap iron in ${PORT_NAMES.narthkel} or ${PORT_NAMES.drazhOvek}, then sell it in ${PORT_NAMES.orvessaQuay} · ` +
-            Math.round(game.milestone.shortageProfit) +
-            "/50 profit"
-          : "Complete two contracts to trigger a regional market event",
-    },
-    {
-      done: guildStanding() >= 20 || game.laws.amberConvoy,
-      title: "Build Guild influence",
-      detail: game.laws.amberConvoy
-        ? "Influence spent to pass the charter"
-        : guildStanding() +
-          `/20 with the ${FACTION_NAMES.syrrelwakeOarwrightPact}`,
-    },
-    {
-      done: game.milestone.lawChanged,
-      title: "Change regional trade law",
-      detail: game.milestone.lawChanged
-        ? "Royal Amber Convoy is active"
-        : `Petition available in ${PORT_NAMES.orvessaQuay} when prior steps are complete`,
-    },
-  ];
-  steps.forEach((step, i) => {
-    const d = document.createElement("div");
-    const unlocked = i === 0 || steps.slice(0, i).every((x) => x.done);
-    d.className =
-      "milestone-step " +
-      (step.done ? "done" : unlocked ? "pending" : "locked");
-    d.innerHTML =
-      "<b>" +
-      (step.done ? "✓ " : "") +
-      step.title +
-      '</b><div class="small">' +
-      step.detail +
-      "</div>";
-    root.append(d);
-  });
-  if (game.milestone.complete) {
-    const done = document.createElement("div");
-    done.className = "event-banner";
-    done.innerHTML =
-      "<b>Merchant Prince recognized</b>Your chartered seat grants a 250-crown completion bonus.";
-    root.append(done);
-  }
-}
 
-function renderLegacies(root) {
-  if (!root) return;
-  root.innerHTML = "";
-  if (!game.milestone.complete) {
-    root.innerHTML =
-      '<p class="empty-note">Reach Merchant Prince to choose a lasting legacy.</p>';
-    return;
-  }
-  if (!game.legacy.selected) {
-    const intro = document.createElement("p");
-    intro.className = "small";
-    intro.textContent =
-      "Choose one long-term identity. The choice is permanent for this save and unlocks a checklist, final crisis, ending summary, and sandbox continuation.";
-    root.append(intro);
-    const grid = document.createElement("div");
-    grid.className = "legacy-grid";
-    for (const path of Object.values(LEGACY_PATHS)) {
-      const card = document.createElement("div");
-      card.className = "legacy-card";
-      card.innerHTML = `<b>${path.name}</b><span>${path.description}</span><span class="small">Final crisis: ${path.crisisTitle}</span>`;
-      const button = document.createElement("button");
-      button.className = "parchment";
-      button.textContent = `Pursue ${path.name}`;
-      button.onclick = () => {
-        game.legacy.selected = path.id;
-        addNews("Legacy chosen", `You will pursue the ${path.name} legacy.`);
-        renderLegacies(root);
-        saveGameState();
-      };
-      card.append(button);
-      grid.append(card);
-    }
-    root.append(grid);
-    return;
-  }
-  const path = LEGACY_PATHS[game.legacy.selected];
-  const heading = document.createElement("div");
-  heading.className = "event-banner";
-  heading.innerHTML = `<b>${path.name}</b>${path.description}`;
-  root.append(heading);
-  for (const item of legacyChecklist(game)) {
-    const row = document.createElement("div");
-    row.className = "milestone-step " + (item.done ? "done" : "pending");
-    row.innerHTML = `<b>${item.done ? "✓ " : ""}${item.title}</b><div class="small">${item.detail}</div>`;
-    root.append(row);
-  }
-  const crisis = document.createElement("div");
-  crisis.className = "legacy-crisis";
-  crisis.innerHTML = `<b>${path.crisisTitle}</b><span>${path.crisis}</span>`;
-  const ready = legacyReadyForCapstone(game);
-  if (!game.legacy.capstoneComplete) {
-    const button = document.createElement("button");
-    button.className = "parchment";
-    button.textContent = ready
-      ? "Complete capstone voyage"
-      : "Checklist incomplete";
-    button.disabled = !ready;
-    button.onclick = () => {
-      const result = completeLegacyCapstone(game);
-      if (!result.ok) return showMessage(result.reason);
-      addNews(`${result.path.name} legacy fulfilled`, result.path.ending);
-      showMessage(`${result.path.name.toUpperCase()} · Legacy fulfilled`, 6);
-      renderLegacies(root);
-      saveGameState();
-    };
-    crisis.append(button);
-  }
-  root.append(crisis);
-  if (game.legacy.capstoneComplete) {
-    const ending = document.createElement("div");
-    ending.className = "event-banner legacy-ending";
-    ending.innerHTML = `<b>Ending: ${path.name}</b>${path.ending}`;
-    const sandbox = document.createElement("button");
-    sandbox.className = "parchment";
-    sandbox.textContent = game.legacy.sandbox
-      ? "Sandbox mode active"
-      : "Continue in sandbox mode";
-    sandbox.disabled = game.legacy.sandbox;
-    sandbox.onclick = () => {
-      continueLegacySandbox(game);
-      showMessage("Sandbox mode active · Continue trading freely.", 5);
-      renderLegacies(root);
-      saveGameState();
-    };
-    ending.append(sandbox);
-    root.append(ending);
-  }
-}
-
-function renderContractList(root, contracts, active = false) {
-  root.innerHTML = "";
-  if (!contracts.length) {
-    root.innerHTML =
-      '<p class="empty-note">' +
-      (active
-        ? "No active contracts. Visit a port contract board."
-        : "No commissions remain on this board until it refreshes.") +
-      "</p>";
-    return;
-  }
-  contracts.forEach((contract) => {
-    const card = document.createElement("div");
-    card.className = "contract-card" + (active ? " active" : "");
-    const head = document.createElement("div");
-    head.className = "contract-head";
-    head.innerHTML =
-      "<b>" +
-      contract.title +
-      '</b><span class="contract-tag">' +
-      contract.cargoUnits +
-      " hold</span>";
-    const desc = document.createElement("div");
-    desc.className = "small";
-    desc.textContent =
-      contract.cargoName + " · Sponsored by " + contract.faction;
-    const meta = document.createElement("div");
-    meta.className = "contract-meta";
-    if (active)
-      meta.innerHTML =
-        "<span>Due Day " +
-        contract.deadline +
-        "</span><span>" +
-        (contract.deadline - game.day) +
-        " days remain</span><span>" +
-        contract.reward +
-        " crowns · +" +
-        contract.influence +
-        " influence</span>";
-    else
-      meta.innerHTML =
-        "<span>Est. " +
-        contract.estimatedDays +
-        " days</span><span>" +
-        contract.reward +
-        " crowns</span><span>+" +
-        contract.influence +
-        " influence</span>";
-    card.append(head, desc, meta);
-    if (!active) {
-      const conflict = contractConflict(
-        contract,
-        game.activeContracts,
-        game.factionCharter,
-      );
-      const button = document.createElement("button");
-      button.className = "parchment";
-      button.textContent = conflict
-        ? "Conflicting Allegiance"
-        : "Accept Commission";
-      button.disabled = Boolean(conflict);
-      if (conflict) button.title = conflict;
-      button.onclick = () => acceptContract(contract.id);
-      card.append(button);
-    }
-    root.append(card);
-  });
-}
 function describeCargoRequirements(requirements) {
   return Object.entries(requirements || {})
     .map(([key, units]) => `${units} ${goods[key]?.name || key}`)
@@ -4532,883 +4261,6 @@ function resolveCrisisIntervention(result, body, standingReward) {
   saveGameState();
 }
 
-function renderPortEvent() {
-  const root = document.getElementById("portEvent");
-  root.innerHTML = "";
-  const e = worldEvents.ironShortage;
-  if (currentPort)
-    for (const arc of crisisAtPort(
-      game.regionalCrises,
-      currentPort.name,
-    ).reverse()) {
-      const box = document.createElement("div");
-      box.className =
-        "event-banner " + (arc.phase === "active" ? "event-live" : "");
-      const heading =
-        arc.phase === "warning"
-          ? "WARNING"
-          : arc.phase === "active"
-            ? `CRISIS · through Day ${arc.endDay}`
-            : arc.outcome === "resolved"
-              ? "RECOVERY"
-              : "LASTING AFTERMATH";
-      const body =
-        arc.phase === "warning"
-          ? arc.template.warning
-          : arc.phase === "active"
-            ? arc.template.active
-            : arc.outcome === "resolved"
-              ? arc.template.intervention.result
-              : arc.template.ignored;
-      box.innerHTML = `<b>${arc.template.title} · ${heading}</b>${body}`;
-      if (arc.phase === "active") {
-        const moneyAction = document.createElement("button");
-        moneyAction.className = "parchment crisis-action";
-        moneyAction.textContent = arc.template.intervention.label;
-        moneyAction.disabled = game.coins < arc.template.intervention.cost;
-        moneyAction.onclick = () => {
-          const result = interveneInCrisis(
-            game.regionalCrises,
-            arc.id,
-            game.coins,
-            game.day,
-          );
-          if (!result.ok) return showMessage(result.reason);
-          resolveCrisisIntervention(
-            result,
-            result.template.intervention.result,
-            6,
-          );
-        };
-        box.append(moneyAction);
-        if (arc.template.cargoIntervention) {
-          const status = cargoInterventionStatus(arc.template, game.cargoLots);
-          const cargoAction = document.createElement("button");
-          cargoAction.className = "parchment crisis-action";
-          cargoAction.textContent = `${arc.template.cargoIntervention.label} · ${describeCargoRequirements(arc.template.cargoIntervention.requirements)}`;
-          cargoAction.disabled = !status.ready;
-          if (!status.ready)
-            cargoAction.title = `Missing ${describeCargoRequirements(status.missing)}`;
-          cargoAction.onclick = () => {
-            const result = interveneInCrisisWithCargo(
-              game.regionalCrises,
-              arc.id,
-              game.cargoLots,
-              game.day,
-            );
-            if (!result.ok) return showMessage(result.reason);
-            game.cargoLots = result.cargoLots;
-            syncCargoCounts(game, goods);
-            resolveCrisisIntervention(
-              result,
-              result.template.cargoIntervention.result,
-              8,
-            );
-          };
-          box.append(cargoAction);
-        }
-      }
-      root.append(box);
-    }
-  if (currentPort)
-    for (const event of activeEventsAt(currentPort.name)) {
-      const t = eventTemplates[event.templateId],
-        box = document.createElement("div");
-      box.className = "event-banner event-live";
-      box.innerHTML =
-        "<b>" +
-        t.title +
-        " · through Day " +
-        event.endDay +
-        "</b>" +
-        t.description;
-      root.append(box);
-    }
-  if (e.active && currentPort && currentPort.name === e.port) {
-    const box = document.createElement("div");
-    box.className = "event-banner";
-    box.innerHTML = "<b>" + e.title + "</b>" + e.description;
-    root.append(box);
-  } else if (
-    game.laws.amberConvoy &&
-    currentPort &&
-    (currentPort.name === PORT_NAMES.orvessaQuay ||
-      currentPort.name === PORT_NAMES.drazhOvek)
-  ) {
-    const box = document.createElement("div");
-    box.className = "event-banner";
-    box.innerHTML = `<b>Protected Amber Run</b>Crown escorts are moving iron between ${PORT_NAMES.drazhOvek} and ${PORT_NAMES.orvessaQuay} each day. Route risk and ${PORT_NAMES.orvessaQuay} prices have fallen.`;
-    root.append(box);
-  }
-}
-function renderPolitics() {
-  const standings = document.getElementById("portStanding");
-  standings.innerHTML = "";
-  currentPort.factions.forEach((f) => {
-    const row = document.createElement("div");
-    row.className = "standing-row";
-    row.innerHTML =
-      "<span>" +
-      f.name +
-      '<span class="small">' +
-      factionPrivilege(game.factionStanding[f.name] || 0).label +
-      " · " +
-      factionPrivilege(game.factionStanding[f.name] || 0).privilege +
-      "</span></span><b>" +
-      (game.factionStanding[f.name] || 0) +
-      "</b>";
-    standings.append(row);
-  });
-  const law = document.getElementById("localLaw");
-  law.innerHTML =
-    '<div class="law-head"><b>Current law</b><span class="contract-tag">' +
-    (currentPort.name === PORT_NAMES.orvessaQuay
-      ? game.laws.amberConvoy
-        ? "Chartered"
-        : "Unprotected"
-      : "Local") +
-    '</span></div><div class="law-effect">' +
-    currentLawText(currentPort) +
-    "</div>";
-  const button = document.getElementById("politicsAction");
-  if (currentPort.name === PORT_NAMES.orvessaQuay && !game.laws.amberConvoy) {
-    button.style.display = "block";
-    button.textContent = "Charter the Royal Amber Convoy · 20 influence";
-    button.disabled = !canPassConvoyLaw();
-    button.onclick = passConvoyLaw;
-  } else {
-    button.style.display = "none";
-    button.onclick = null;
-  }
-}
-function renderPortSystems() {
-  if (!currentPort) return;
-  const regional = game.regionalEconomy[currentPort.name];
-  const summary = regionalSummary(regional);
-  const evolution = portEvolution(regional);
-  const features = [
-    evolution.cranes && "towering cargo cranes",
-    evolution.foundries && "smoking foundries",
-    evolution.warehouses && "new warehouses",
-    evolution.fortifications && "harbor fortifications",
-  ].filter(Boolean);
-  const collapsed = Object.entries(regional.industries)
-    .filter(([, industry]) => industry.collapsed)
-    .map(([id]) => productionChains.find((chain) => chain.id === id)?.name)
-    .filter(Boolean);
-  document.getElementById("portEvolution").innerHTML =
-    `<b>${features.length ? features.join(" · ") : "A modest working harbor"}</b>` +
-    `<span>${summary.pirateAttention >= 50 ? "Pirates are watching this wealthy harbor. " : ""}${summary.politicalAttention >= 50 ? "Courts and factions contest its growing influence. " : ""}${summary.unrest >= 45 ? "Protests and outward migration trouble the streets. " : ""}${collapsed.length ? `Collapsed: ${collapsed.join(", ")}. Restoration capital is required.` : ""}</span>`;
-  renderPortOpportunities();
-  renderMarket();
-  renderCustomsOffice();
-  renderCargoPlan();
-  renderWarehouse();
-  renderProductionChains();
-  renderPortEvent();
-  renderIntelOffice();
-  renderContractList(
-    document.getElementById("contractBoard"),
-    ensureContractOffers(currentPort),
-    false,
-  );
-  renderPolitics();
-  renderShipyard();
-  renderReadiness();
-  renderMilestone(document.getElementById("milestonePort"));
-}
-
-function renderPortOpportunities() {
-  const root = document.getElementById("portOpportunities");
-  const offers = ensureContractOffers(currentPort);
-  const opportunity = bestTradeOpportunity();
-  const damaged = Math.round(game.operations.condition) < 100;
-  const rows = [
-    {
-      title: `${offers.length} contract${offers.length === 1 ? "" : "s"} available`,
-      detail: "Open Trade to review pay, deadlines, and faction consequences.",
-      tab: "trade",
-    },
-    {
-      title:
-        opportunity.buy === currentPort.name
-          ? `Buy ${goods[opportunity.key].name} for a known trade`
-          : opportunity.sell === currentPort.name
-            ? `${goods[opportunity.key].name} is in demand here`
-            : "Review today’s market",
-      detail:
-        opportunity.buy === currentPort.name
-          ? `Known destination: ${opportunity.sell}, about ${opportunity.margin} crowns margin per unit.`
-          : opportunity.sell === currentPort.name
-            ? `Best known source: ${opportunity.buy}, about ${opportunity.margin} crowns margin per unit.`
-            : "Buy local surpluses and compare known prices before sailing.",
-      tab: "market",
-    },
-    {
-      title: "Buy a rumor lead",
-      detail: `${RUMOR_COST} crowns for a broad chart circle pointing to a hidden discovery or expedition site.`,
-      action: buyRumorLead,
-    },
-    {
-      title: damaged
-        ? "Your vessel needs attention"
-        : "Prepare the next voyage",
-      detail: damaged
-        ? `${Math.round(game.operations.condition)}% condition. Repair damaged systems before a long route.`
-        : `${game.operations.provisions}/30 provisions aboard; inspect route estimates before casting off.`,
-      tab: "vessel",
-    },
-  ];
-  root.innerHTML = "";
-  for (const row of rows) {
-    const item = document.createElement("div");
-    item.className = "port-opportunity";
-    item.innerHTML = `<div><b>${row.title}</b><span class="small">${row.detail}</span></div>`;
-    const button = document.createElement("button");
-    button.className = "parchment";
-    button.textContent = row.action ? "Buy" : "Open";
-    button.onclick = row.action
-      ? row.action
-      : () =>
-          activateSectionTabs(document.getElementById("portPanel"), row.tab);
-    item.append(button);
-    root.append(item);
-  }
-}
-
-function renderCustomsOffice() {
-  const root = document.getElementById("customsOffice");
-  root.innerHTML = "";
-  const inspection = game.legal.lastInspection;
-  const summary = document.createElement("div");
-  summary.className = "politics-box";
-  summary.innerHTML =
-    `<div class="law-head"><b>${currentPort.realm} jurisdiction</b><span class="contract-tag">${game.legal.offenses[currentPort.name] || 0} offenses</span></div>` +
-    `<div class="law-effect">${inspection?.portName === currentPort.name ? `Last arrival: ${inspection.inspected ? "inspected" : "cleared"} at ${Math.round(inspection.scrutiny * 100)}% scrutiny${inspection.fine ? ` · ${inspection.fine} crowns assessed` : ""}.` : "No recent customs record at this port."}</div>`;
-  root.append(summary);
-  const actions = document.createElement("div");
-  actions.className = "customs-actions";
-  const forgery = document.createElement("button");
-  forgery.className = "parchment";
-  forgery.textContent = game.legal.forgedManifest
-    ? "Forged manifest prepared"
-    : "Forge next manifest · 18 crowns";
-  forgery.disabled = game.legal.forgedManifest || game.coins < 18;
-  forgery.onclick = () => {
-    game.coins -= 18;
-    game.legal.forgedManifest = true;
-    renderPortSystems();
-    updateHud();
-  };
-  const remote = document.createElement("button");
-  remote.className = "parchment";
-  remote.textContent = game.legal.remoteAnchorage
-    ? "Remote landing arranged"
-    : "Arrange remote landing · 12 crowns";
-  remote.disabled = game.legal.remoteAnchorage || game.coins < 12;
-  remote.onclick = () => {
-    game.coins -= 12;
-    game.legal.remoteAnchorage = true;
-    renderPortSystems();
-    updateHud();
-  };
-  const cultivate = document.createElement("button");
-  cultivate.className = "parchment";
-  cultivate.textContent = game.legal.cultivatedOfficials[currentPort.name]
-    ? "Customs contact cultivated"
-    : "Cultivate an official · 55 crowns";
-  cultivate.disabled =
-    game.legal.cultivatedOfficials[currentPort.name] || game.coins < 55;
-  cultivate.onclick = () => {
-    const result = cultivateOfficial(game.legal, currentPort.name, game.coins);
-    if (!result.ok) return showMessage(result.reason);
-    game.coins = result.coins;
-    renderPortSystems();
-    updateHud();
-  };
-  actions.append(forgery, remote, cultivate);
-  root.append(actions);
-}
-
-function renderCargoPlan() {
-  const root = document.getElementById("cargoPlan");
-  root.innerHTML = "";
-  const capacities = cargoCapacities();
-  normalizeCargoCompartments(game.cargoLots, capacities);
-  for (const [key, compartment] of Object.entries(CARGO_COMPARTMENTS)) {
-    const lots = game.cargoLots.filter((lot) => lot.compartment === key);
-    const section = document.createElement("section");
-    section.className = "cargo-compartment";
-    section.innerHTML =
-      `<div class="cargo-compartment-head"><b>${compartment.label}</b><span>${lots.length}/${capacities[key]}</span></div>` +
-      `<p class="small">${compartment.description}</p>`;
-    if (!capacities[key]) section.classList.add("locked");
-    if (!lots.length) {
-      const empty = document.createElement("div");
-      empty.className = "empty-note";
-      empty.textContent = capacities[key]
-        ? "Empty"
-        : key === "concealed"
-          ? "Fit smuggler’s lockers to unlock."
-          : "No space available.";
-      section.append(empty);
-    }
-    for (const lot of lots) {
-      const row = document.createElement("div");
-      row.className = "cargo-lot-row";
-      const details = document.createElement("span");
-      details.innerHTML = `<b>${goods[lot.key].name}</b><span class="small">${cargoLotDescription(lot)}</span>`;
-      const select = document.createElement("select");
-      select.setAttribute("aria-label", `Move ${goods[lot.key].name}`);
-      for (const [destination, data] of Object.entries(CARGO_COMPARTMENTS)) {
-        const option = document.createElement("option");
-        option.value = destination;
-        option.textContent = data.label;
-        option.selected = destination === key;
-        option.disabled =
-          destination !== key &&
-          game.cargoLots.filter((item) => item.compartment === destination)
-            .length >= capacities[destination];
-        select.append(option);
-      }
-      select.onchange = () => {
-        const result = moveCargoLot(
-          game.cargoLots,
-          lot.id,
-          select.value,
-          capacities,
-        );
-        if (!result.ok) showMessage(result.reason);
-        renderCargoPlan();
-      };
-      row.append(details, select);
-      section.append(row);
-    }
-    root.append(section);
-  }
-}
-
-function localWarehouseStanding() {
-  return Math.max(
-    0,
-    ...currentPort.factions.map(
-      (faction) => game.factionStanding[faction.name] || 0,
-    ),
-  );
-}
-
-function renderWarehouse() {
-  const root = document.getElementById("warehouse");
-  root.innerHTML = "";
-  const warehouse = warehouseAt(game.warehouses, currentPort.name);
-  if (!warehouse?.leased) {
-    const standing = localWarehouseStanding();
-    const cost = warehouseLeaseCost(standing);
-    const note = document.createElement("p");
-    note.className = "empty-note";
-    note.textContent =
-      standing >= 10
-        ? "Trusted local factors offer you a reduced permanent lease."
-        : "A permanent lease stores up to 24 cargo lots at this port.";
-    const lease = document.createElement("button");
-    lease.className = "parchment";
-    lease.textContent = `Lease warehouse · ${cost} crowns`;
-    lease.disabled = game.coins < cost;
-    lease.onclick = () => {
-      const result = leaseWarehouse(
-        game.warehouses,
-        currentPort.name,
-        game.coins,
-        localWarehouseStanding(),
-      );
-      if (!result.ok) return showMessage(result.reason);
-      game.coins = result.coins;
-      addNews(
-        `Warehouse leased at ${currentPort.name}`,
-        `${result.cost} crowns secured permanent storage for 24 cargo lots.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    root.append(note, lease);
-    return;
-  }
-
-  const summary = document.createElement("div");
-  summary.className = "warehouse-summary";
-  summary.innerHTML = `<b>${warehouse.lots.length}/${warehouse.capacity} lots stored</b><span>Permanent local inventory · sheltered aging</span>`;
-  root.append(summary);
-
-  const grid = document.createElement("div");
-  grid.className = "warehouse-grid";
-  const aboard = document.createElement("section");
-  const stored = document.createElement("section");
-  aboard.className = "warehouse-column";
-  stored.className = "warehouse-column";
-  aboard.innerHTML = `<h4>Aboard ${activeShipClass().vesselName}</h4>`;
-  stored.innerHTML = `<h4>${currentPort.name} warehouse</h4>`;
-
-  if (!game.cargoLots.length)
-    aboard.insertAdjacentHTML(
-      "beforeend",
-      '<p class="empty-note">No trade cargo aboard.</p>',
-    );
-  for (const lot of game.cargoLots) {
-    const row = document.createElement("div");
-    row.className = "warehouse-lot-row";
-    const details = document.createElement("span");
-    details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
-    const button = document.createElement("button");
-    button.textContent = "Store";
-    button.disabled = warehouse.lots.length >= warehouse.capacity;
-    button.onclick = () => {
-      const result = depositCargo(
-        game.warehouses,
-        currentPort.name,
-        game.cargoLots,
-        lot.id,
-      );
-      if (!result.ok) return showMessage(result.reason);
-      syncCargoCounts(game, goods);
-      renderPortSystems();
-      updateHud();
-    };
-    row.append(details, button);
-    aboard.append(row);
-  }
-
-  if (!warehouse.lots.length)
-    stored.insertAdjacentHTML(
-      "beforeend",
-      '<p class="empty-note">The warehouse is empty.</p>',
-    );
-  for (const lot of warehouse.lots) {
-    const row = document.createElement("div");
-    row.className = "warehouse-lot-row";
-    const details = document.createElement("span");
-    details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
-    const button = document.createElement("button");
-    button.textContent = "Load";
-    button.disabled = cargoCount() >= game.holdMax;
-    button.onclick = () => {
-      const result = withdrawCargo(
-        game.warehouses,
-        currentPort.name,
-        game.cargoLots,
-        lot.id,
-        game.holdMax - cargoCount(),
-      );
-      if (!result.ok) return showMessage(result.reason);
-      result.lot.compartment = bestCargoCompartment(
-        result.lot,
-        cargoCapacities(),
-        game.cargoLots.filter((item) => item.id !== result.lot.id),
-      );
-      syncCargoCounts(game, goods);
-      renderPortSystems();
-      updateHud();
-    };
-    row.append(details, button);
-    stored.append(row);
-  }
-  grid.append(aboard, stored);
-  root.append(grid);
-}
-
-function renderReadiness() {
-  const root = document.getElementById("voyageReadiness");
-  const ops = game.operations;
-  const stats = operationalShipStats();
-  const crewModifiers = crewVoyageModifiers(ops.crew);
-  const routePlan = routePlanEffects(ops.routePlan);
-  const readinessStats = {
-    ...stats,
-    routePlan: routePlan.id,
-    stormResistance: stats.stormResistance * crewModifiers.stormResistance,
-    crewProvisionMultiplier: crewModifiers.provisionMultiplier,
-  };
-  const nearbyRoutes = routesFrom(currentPort.name);
-  const estimates = nearbyRoutes.map((route) => {
-    const destination = route.a === currentPort.name ? route.b : route.a;
-    const distance = pathLength(
-      orientRoute(route, currentPort.name, destination),
-    );
-    const estimate = estimateVoyageReadiness(
-      distance,
-      readinessStats,
-      routePlan.id,
-    );
-    return {
-      destination,
-      ...estimate,
-      arrivalDay: game.day + estimate.days,
-    };
-  });
-  root.innerHTML =
-    `<div class="ship-stats">Plan: ${routePlan.label} · ${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
-    `<div class="crew-grid">${Object.entries(ops.crew.groups)
-      .map(
-        ([role, group]) =>
-          `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} exp · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
-      )
-      .join("")}</div>` +
-    `<div class="component-grid">${Object.entries(SHIP_COMPONENTS)
-      .map(
-        ([key, component]) =>
-          `<div class="component-condition ${ops.components[key] < 40 ? "critical" : ""}"><span>${component.label}</span><b>${Math.round(ops.components[key])}%</b></div>`,
-      )
-      .join("")}</div>` +
-    estimates
-      .slice(0, 3)
-      .map((estimate) => {
-        const warnings = voyageWarnings(ops, estimate);
-        return `<div class="standing-row"><span><b>${estimate.destination}</b><span class="small">${estimate.days}d · arrive Day ${estimate.arrivalDay} · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span>${warnings.length ? warnings.map((warning) => `<span class="readiness-warning">⚠ ${warning}</span>`).join("") : '<span class="readiness-ready">✓ Ready to sail</span>'}</span></div>`;
-      })
-      .join("");
-  const planner = document.createElement("div");
-  planner.className = "route-plan-grid";
-  for (const plan of Object.values(ROUTE_PLANS)) {
-    const button = document.createElement("button");
-    button.className =
-      "route-plan" + (plan.id === routePlan.id ? " selected" : "");
-    button.type = "button";
-    button.innerHTML =
-      `<b>${plan.label}</b><span>${plan.description}</span>` +
-      `<small>${Math.round(plan.daysMultiplier * 100)}% days · ${Math.round(plan.provisionMultiplier * 100)}% stores · ${Math.round(plan.damageMultiplier * plan.roughnessMultiplier * 100)}% wear · ${Math.round(plan.hostileRiskMultiplier * 100)}% raider risk</small>`;
-    button.onclick = () => {
-      game.operations.routePlan = plan.id;
-      showMessage(`${plan.label} set for the next passage.`);
-      renderReadiness();
-      saveGameState();
-    };
-    planner.append(button);
-  }
-  root.append(planner);
-
-  const actions = document.createElement("div");
-  actions.className = "town-actions";
-  const provision = document.createElement("button");
-  provision.className = "parchment";
-  provision.textContent = "Buy provisions · 3 each";
-  provision.disabled = game.coins < 3 || ops.provisions >= 30;
-  provision.onclick = () => {
-    const result = buyProvisions(game.operations, game.coins);
-    game.operations = result.operations;
-    game.coins = result.coins;
-    showMessage(`Loaded ${result.purchased} provisions.`);
-    renderPortSystems();
-    updateHud();
-  };
-  const repairAll = document.createElement("button");
-  repairAll.className = "parchment";
-  repairAll.textContent = "Repair weakest systems · 2 per point";
-  repairAll.disabled = game.coins < 2 || ops.condition >= 100;
-  repairAll.onclick = () => {
-    const result = repairOperations(game.operations, game.coins);
-    game.operations = result.operations;
-    game.coins = result.coins;
-    applyShipUpgrades();
-    showMessage(
-      `Repaired ${result.repaired} component point${result.repaired === 1 ? "" : "s"}.`,
-    );
-    renderPortSystems();
-    updateHud();
-  };
-  actions.append(provision, repairAll);
-  const leave = document.createElement("button");
-  leave.className = "parchment";
-  leave.textContent = "Grant shore leave";
-  leave.onclick = () => {
-    const result = takeShoreLeave(game.operations.crew, game.coins);
-    if (!result.ok) return showMessage(result.reason);
-    game.operations.crew = result.crew;
-    game.coins = result.coins;
-    game.operations.morale = clampNumber(game.operations.morale + 8, 0, 100);
-    advanceDays(result.days);
-    showMessage(`Shore leave restored the crew · ${result.cost} crowns.`);
-    renderPortSystems();
-    updateHud();
-  };
-  actions.append(leave);
-  root.append(actions);
-  const recruiting = document.createElement("div");
-  recruiting.className = "crew-recruiting";
-  for (const offer of portRecruitmentPool(
-    currentPort.name,
-    currentPort.population,
-  )) {
-    const button = document.createElement("button");
-    button.className = "parchment";
-    button.textContent = `Recruit ${CREW_ROLES[offer.role].label} · ${offer.cost}`;
-    button.title = `${offer.available} available · ${offer.experience} experience`;
-    button.disabled = game.coins < offer.cost || offer.available <= 0;
-    button.onclick = () => {
-      const result = recruitCrew(game.operations.crew, offer, game.coins);
-      if (!result.ok) return showMessage(result.reason);
-      game.operations.crew = result.crew;
-      game.coins = result.coins;
-      offer.available -= 1;
-      showMessage(
-        `Recruited one ${CREW_ROLES[offer.role].label.toLowerCase()}.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    recruiting.append(button);
-  }
-  root.append(recruiting);
-  const componentActions = document.createElement("div");
-  componentActions.className = "component-repairs";
-  for (const [key, component] of Object.entries(SHIP_COMPONENTS)) {
-    const button = document.createElement("button");
-    button.className = "parchment";
-    button.textContent = `Repair ${component.label}`;
-    button.disabled =
-      game.coins < component.repairCost || ops.components[key] >= 100;
-    button.onclick = () => {
-      const result = repairShipComponent(game.operations, game.coins, key);
-      game.operations = result.operations;
-      game.coins = result.coins;
-      applyShipUpgrades();
-      showMessage(
-        `Repaired ${component.label.toLowerCase()} by ${result.repaired} point${result.repaired === 1 ? "" : "s"}.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    componentActions.append(button);
-  }
-  root.append(componentActions);
-}
-
-function formatChainGoods(entries) {
-  return Object.entries(entries)
-    .map(([key, units]) => units + " " + goods[key].name)
-    .join(" + ");
-}
-function renderProductionChains() {
-  const root = document.getElementById("productionChains");
-  root.innerHTML = "";
-  const regional = game.regionalEconomy[currentPort.name];
-  const summary = regionalSummary(regional);
-  const overview = document.createElement("div");
-  overview.className = "ship-stats";
-  overview.textContent = `${summary.infrastructure} infrastructure · ${summary.population.toLocaleString()} people · ${summary.laborPercent}% labor · ${summary.resourcePercent}% resources · ${summary.unrest}% unrest · ${summary.dockingFee} crown docking fee`;
-  root.append(overview);
-  const reports = Object.fromEntries(
-    (game.productionReports[currentPort.name] || []).map((report) => [
-      report.id,
-      report,
-    ]),
-  );
-  for (const chain of productionChains) {
-    const efficiency = currentPort.industries[chain.id];
-    const report = reports[chain.id];
-    const industry = regional.industries[chain.id];
-    const card = document.createElement("div");
-    card.className = "production-chain";
-    const status = industry.collapsed
-      ? "COLLAPSED"
-      : report
-        ? report.utilization < 0.5
-          ? "Input-starved"
-          : "Operating"
-        : "Awaiting daily cycle";
-    const recipe =
-      report?.recipeId === "standard"
-        ? "standard recipe"
-        : chain.alternatives?.find(
-            (alternative) => alternative.id === report?.recipeId,
-          )?.label || "standard recipe";
-    card.innerHTML =
-      "<div><b>" +
-      chain.name +
-      '</b><span class="small">' +
-      formatChainGoods(chain.inputs) +
-      " → " +
-      formatChainGoods(chain.outputs) +
-      `</span><span class="small">${recipe} · quality ${Math.round((report?.quality || 1) * 100)}%${report?.fuelLimited ? " · fuel-starved" : ""}</span></div><span class="contract-tag">` +
-      status +
-      " · " +
-      Math.round(efficiency * 100) +
-      `%</span>${industry.magnate ? `<span class="small magnate">Local power: ${industry.magnate}, ${industry.investment >= 2 ? "rival magnate" : "rising proprietor"}</span>` : ""}`;
-    const invest = document.createElement("button");
-    const cost = investmentCost(industry);
-    invest.className = "parchment";
-    invest.textContent = industry.collapsed
-      ? `Restore industry · ${cost}`
-      : industry.investment >= 3
-        ? "Fully developed"
-        : `Invest ${cost} · level ${industry.investment}/3`;
-    invest.disabled =
-      (industry.investment >= 3 && !industry.collapsed) || game.coins < cost;
-    invest.onclick = () => {
-      const result = investInIndustry(
-        regional,
-        chain.id,
-        game.coins,
-        currentPort.name,
-      );
-      if (!result.ok) return showMessage(result.reason);
-      game.coins = result.coins;
-      addNews(
-        `Investment in ${chain.name}`,
-        result.restored
-          ? `Your capital reopened ${currentPort.name}'s ruined ${chain.name.toLowerCase()} under ${result.magnate}.`
-          : `Your capital raised ${currentPort.name}'s ${chain.name.toLowerCase()} industry to level ${result.level}, creating a new local power in ${result.magnate}.`,
-      );
-      showMessage(
-        `${chain.name} expanded to investment level ${result.level}.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    card.append(invest);
-    root.append(card);
-  }
-}
-
-function signed(value) {
-  return value > 0 ? "+" + value : String(value);
-}
-function upgradeEffects(item) {
-  const labels = {
-    holdMax: "hold",
-    maxSpeed: "top speed",
-    accel: "acceleration",
-    turnRate: "turning",
-    visibilityHeightM: "lookout height",
-    windDrift: "wind drift",
-    inspectionRisk: "inspection risk",
-    stormResistance: "storm resistance",
-    crewComfort: "crew comfort",
-    defense: "defense",
-  };
-  const effects = Object.entries(item.modifiers).map(
-    ([key, value]) => signed(value) + " " + labels[key],
-  );
-  return effects.length ? effects.join(" · ") : "Balanced baseline";
-}
-function upgradeAffinities(item) {
-  if (!item.affinities.length) return "No specialist alignment";
-  return item.affinities.map((id) => SHIP_IDENTITIES[id].name).join(" · ");
-}
-function renderShipyard() {
-  const root = document.getElementById("shipyard");
-  root.innerHTML = "";
-  const stats = applyShipUpgrades();
-  const identity = calculateShipIdentity(game.shipUpgrades);
-  const activeClass = SHIP_CLASSES[game.shipUpgrades.activeClass];
-  const shipStats = document.getElementById("shipStats");
-  shipStats.innerHTML =
-    "<strong>" +
-    activeClass.vesselName +
-    " · " +
-    activeClass.name +
-    "</strong><span>" +
-    activeClass.description +
-    "</span><span>Fitting identity: <b>" +
-    identity.name +
-    "</b> · " +
-    identity.description +
-    "</span><span>" +
-    stats.holdMax +
-    " hold · " +
-    shipSpeedKnots(stats.maxSpeed, stats.waterlineLengthFt).toFixed(1) +
-    " knots · " +
-    stats.turnRate.toFixed(2) +
-    " turning · " +
-    currentVisibilityKm().toFixed(1) +
-    " km sight · defense " +
-    stats.defense +
-    "</span>";
-  const classSection = document.createElement("div");
-  classSection.className = "ship-class-section";
-  classSection.innerHTML =
-    '<h4>Vessels</h4><p class="small">Purchase ships once, then change vessels freely while docked. Fittings transfer between your owned ships.</p>';
-  const classGrid = document.createElement("div");
-  classGrid.className = "ship-class-grid";
-  for (const item of Object.values(SHIP_CLASSES)) {
-    const active = game.shipUpgrades.activeClass === item.id;
-    const owned = game.shipUpgrades.ownedClasses.includes(item.id);
-    const row = document.createElement("div");
-    row.className = "ship-class-option" + (active ? " active" : "");
-    const details = document.createElement("div");
-    details.innerHTML =
-      `<b>${item.name}</b><span class="ship-name">${item.vesselName}</span>` +
-      `<span class="small">${item.description}</span>` +
-      `<span class="upgrade-effects">${upgradeEffects(item)}</span>`;
-    const button = document.createElement("button");
-    button.textContent = active
-      ? "Active"
-      : owned
-        ? "Select"
-        : `Buy ${item.cost}`;
-    button.disabled = active || (!owned && game.coins < item.cost);
-    button.onclick = () => {
-      const result = buyOrSelectShipClass(game, item.id, cargoCount());
-      if (!result.ok) return showMessage(result.reason);
-      applyShipUpgrades();
-      normalizeCargoCompartments(game.cargoLots, cargoCapacities());
-      showMessage(
-        result.purchased
-          ? `Purchased ${item.vesselName}, a ${item.name.toLowerCase()}.`
-          : `${item.vesselName} is now your active vessel.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    row.append(details, button);
-    classGrid.append(row);
-  }
-  classSection.append(classGrid);
-  root.append(classSection);
-  for (const slot of UPGRADE_SLOTS) {
-    const section = document.createElement("div");
-    section.className = "upgrade-slot";
-    section.innerHTML = "<h4>" + slot.name + "</h4>";
-    for (const item of SHIP_UPGRADES[slot.id]) {
-      const equipped = game.shipUpgrades.equipped[slot.id] === item.id;
-      const owned = game.shipUpgrades.owned.includes(item.id);
-      const row = document.createElement("div");
-      row.className = "upgrade-option" + (equipped ? " equipped" : "");
-      const details = document.createElement("div");
-      details.innerHTML =
-        "<b>" +
-        item.name +
-        '</b><span class="small">' +
-        item.description +
-        '</span><span class="upgrade-effects">' +
-        upgradeEffects(item) +
-        '</span><span class="upgrade-affinities">Identity: ' +
-        upgradeAffinities(item) +
-        "</span>";
-      const button = document.createElement("button");
-      button.textContent = equipped
-        ? "Fitted"
-        : owned
-          ? "Equip"
-          : "Buy " + item.cost;
-      button.disabled = equipped || (!owned && game.coins < item.cost);
-      button.onclick = () => {
-        const result = buyOrEquipUpgrade(game, slot.id, item.id, cargoCount());
-        if (!result.ok) return showMessage(result.reason);
-        applyShipUpgrades();
-        normalizeCargoCompartments(game.cargoLots, cargoCapacities());
-        showMessage(
-          (result.purchased ? "Purchased and fitted " : "Fitted ") +
-            item.name +
-            ".",
-        );
-        renderPortSystems();
-        updateHud();
-      };
-      row.append(details, button);
-      section.append(row);
-    }
-    root.append(section);
-  }
-}
 function leadingVoyageMentor(specialists) {
   const officer = normalizeSpecialistState(specialists)
     .officers.filter((candidate) => candidate.loyalty >= 70)
@@ -5863,554 +4715,6 @@ function chooseCombatAction(action) {
   updateHud();
   saveGameState();
 }
-function renderMarket() {
-  document.getElementById("portCoins").textContent = game.coins + " crowns";
-  document.getElementById("portHold").textContent =
-    cargoCount() + "/" + game.holdMax;
-  const market = document.getElementById("market");
-  market.innerHTML = "";
-  const regional = game.regionalEconomy[currentPort.name];
-  const available = availableMarketGoods(
-    regional,
-    productionChains,
-    Object.keys(goods),
-  );
-  Object.keys(goods).forEach((key) => {
-    if (!available.has(key)) return;
-    const state = economyState(currentPort, key),
-      legalStatus = legalStatusAt(currentPort, key),
-      law = lawDetails(legalStatus),
-      buyQuote = tradeQuote(buyPriceFor(currentPort, key), legalStatus, "buy"),
-      baseSellQuote = tradeQuote(
-        sellPriceFor(currentPort, key),
-        legalStatus,
-        "sell",
-      ),
-      lots = game.cargoLots.filter((lot) => lot.key === key),
-      nextLot = lots[0],
-      sellQuote = nextLot
-        ? Math.max(
-            1,
-            Math.round(
-              baseSellQuote *
-                cargoValueMultiplier(nextLot, currentPort.name, goods[key]),
-            ),
-          )
-        : baseSellQuote,
-      condition = economyCondition(currentPort, key);
-    const tradeAccess = canTrade({
-      state: game.legal,
-      portName: currentPort.name,
-      good: key,
-      status: legalStatus,
-      day: game.day,
-      units: game.cargo[key],
-    });
-    const row = document.createElement("div");
-    row.className = "trade-row";
-    const klass =
-      condition === "Shortage"
-        ? "condition-shortage"
-        : condition === "Surplus" || condition === "Glut"
-          ? "condition-surplus"
-          : "";
-    const label = document.createElement("div");
-    label.className = "trade-good";
-    label.innerHTML =
-      `<span class="resource-icon-frame" title="${goods[key].name}">` +
-      `<svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"></use></svg>` +
-      "</span>" +
-      '<span class="trade-good-details"><b>' +
-      goods[key].name +
-      '</b><span class="small">Buy ' +
-      buyQuote +
-      " · Sell " +
-      sellQuote +
-      " crowns · aboard " +
-      game.cargo[key] +
-      '</span><span class="market-stock"><span class="market-condition ' +
-      klass +
-      '">' +
-      condition +
-      `</span> · <span class="legal-status legal-${legalStatus}">${law.label}</span> · ` +
-      Math.floor(state.stock) +
-      " units in market</span>" +
-      (lots.length
-        ? '<span class="cargo-manifest">' +
-          lots
-            .map((lot, index) => {
-              const value = Math.round(
-                cargoValueMultiplier(lot, currentPort.name, goods[key]) * 100,
-              );
-              const condition = cargoCondition(lot, goods[key]);
-              return `<span class="cargo-quality quality-${lot.quality} condition-${condition.id}"><b>#${index + 1}</b> ${cargoLotDescription(lot)} · ${value}% market value</span>`;
-            })
-            .join("") +
-          "</span>"
-        : "") +
-      "</span>";
-    const buy = document.createElement("button");
-    buy.textContent = "Buy " + buyQuote;
-    buy.title = "Buy one for " + buyQuote + " crowns";
-    buy.disabled =
-      !tradeAccess.ok ||
-      game.coins < buyQuote ||
-      cargoCount() >= game.holdMax ||
-      state.stock < 1;
-    buy.onclick = () => {
-      const access = canTrade({
-        state: game.legal,
-        portName: currentPort.name,
-        good: key,
-        status: legalStatus,
-        day: game.day,
-        units: game.cargo[key],
-      });
-      if (!access.ok) return showMessage(access.reason);
-      const livePrice = tradeQuote(
-        buyPriceFor(currentPort, key),
-        legalStatus,
-        "buy",
-      );
-      if (game.coins < livePrice) return showMessage("Not enough crowns.");
-      if (cargoCount() >= game.holdMax) return showMessage("The hold is full.");
-      if (state.stock < 1)
-        return showMessage("The market has no more " + goods[key].name + ".");
-      game.coins -= livePrice;
-      const lot = createCargoLot({
-        key,
-        cost: livePrice,
-        origin: currentPort.name,
-        day: game.day,
-        sequence: game.cargoLots.length,
-        good: goods[key],
-      });
-      lot.compartment = bestCargoCompartment(
-        lot,
-        cargoCapacities(),
-        game.cargoLots,
-      );
-      game.cargoLots.push(lot);
-      syncCargoCounts(game, goods);
-      state.stock -= 1;
-      renderPortSystems();
-      updateHud();
-    };
-    const sell = document.createElement("button");
-    sell.textContent = "Sell " + sellQuote;
-    sell.title = "Sell one for " + sellQuote + " crowns";
-    sell.disabled = game.cargo[key] <= 0 || !tradeAccess.ok;
-    sell.onclick = () => {
-      if (game.cargo[key] <= 0) return showMessage("None aboard.");
-      const lotIndex = game.cargoLots.findIndex((lot) => lot.key === key);
-      const lot = game.cargoLots[lotIndex];
-      const livePrice = Math.max(
-          1,
-          Math.round(
-            tradeQuote(sellPriceFor(currentPort, key), legalStatus, "sell") *
-              cargoValueMultiplier(lot, currentPort.name, goods[key]),
-          ),
-        ),
-        cost = lot.cost ?? goods[key].base;
-      game.cargoLots.splice(lotIndex, 1);
-      syncCargoCounts(game, goods);
-      game.coins += livePrice;
-      state.stock += 1;
-      const competition = recordPlayerCompetition(game.rivals, {
-        port: currentPort.name,
-        goodKey: key,
-        day: game.day,
-      });
-      game.rivals = competition.state;
-      if (competition.rivalId) {
-        const rival = RIVAL_CAPTAINS.find(
-          (entry) => entry.id === competition.rivalId,
-        );
-        addNews(
-          `Market contested with ${rival.house}`,
-          `Your ${goods[key].name} sale in ${currentPort.name} undercut a recent delivery by ${rival.captain}.`,
-        );
-      }
-      const e = worldEvents.ironShortage;
-      if (e.active && currentPort.name === e.port && key === e.good) {
-        game.milestone.shortageProfit += Math.max(0, livePrice - cost);
-        if (
-          game.milestone.shortageProfit >= 50 &&
-          !game.milestone.shortageExploited
-        ) {
-          game.milestone.shortageExploited = true;
-          addNews(
-            "A timely market coup",
-            `Your iron sales into ${PORT_NAMES.orvessaQuay}’s emergency earned enough profit to prove the value of a protected route.`,
-          );
-          showMessage(
-            "SHORTAGE EXPLOITED · Your iron sales have strengthened the Guild’s petition.",
-            4,
-          );
-        }
-      }
-      updateMilestoneCompletion();
-      renderPortSystems();
-      updateHud();
-    };
-    row.append(label, buy, sell);
-    if (
-      legalStatus === "licensed" &&
-      !tradeAccess.ok &&
-      !game.legal.portBans[currentPort.name]
-    ) {
-      const permit = document.createElement("button");
-      permit.textContent = "Permit 35";
-      permit.disabled = game.coins < 35;
-      permit.onclick = () => {
-        const result = buyPermit(
-          game.legal,
-          currentPort.name,
-          key,
-          game.day,
-          game.coins,
-        );
-        if (!result.ok) return showMessage(result.reason);
-        game.coins = result.coins;
-        showMessage(`Permit issued through Day ${result.expiresDay}.`);
-        renderPortSystems();
-        updateHud();
-      };
-      row.append(permit);
-    }
-    market.append(row);
-  });
-}
-function renderLedger() {
-  renderMilestone(document.getElementById("milestoneLedger"));
-  renderLegacies(document.getElementById("legacyLedger"));
-  renderContractList(
-    document.getElementById("activeContractsLedger"),
-    game.activeContracts,
-    true,
-  );
-  renderDiscoveries();
-  const factions = document.getElementById("factionLedger");
-  factions.innerHTML = "";
-  const standings = Object.entries(game.factionStanding)
-    .filter(([, v]) => v !== 0)
-    .sort((a, b) => b[1] - a[1]);
-  if (!standings.length)
-    factions.innerHTML =
-      '<p class="empty-note">Complete contracts to build political standing.</p>';
-  else
-    standings.forEach(([name, value]) => {
-      const privilege = factionPrivilege(value);
-      const row = document.createElement("div");
-      row.className = "standing-row";
-      row.innerHTML =
-        "<span>" +
-        name +
-        '<span class="small">' +
-        privilege.label +
-        " · " +
-        privilege.privilege +
-        (factionRivals(name).length
-          ? " · Rivals: " + factionRivals(name).join(", ")
-          : "") +
-        "</span></span><b>" +
-        value +
-        "</b>";
-      factions.append(row);
-      if (value >= 45 && !game.factionCharter) {
-        const charter = document.createElement("button");
-        charter.className = "parchment";
-        charter.textContent = `Accept ${name} charter`;
-        charter.onclick = () => {
-          const result = chooseFactionCharter(game, name);
-          if (!result.ok) return showMessage(result.reason);
-          addNews(
-            "Formal charter sworn",
-            `You entered the service of ${name}. Its rivals have closed their doors.`,
-          );
-          renderLedger();
-          updateHud();
-        };
-        factions.append(charter);
-      }
-    });
-  if (game.factionCharter) {
-    const charter = document.createElement("div");
-    charter.className = "event-banner";
-    charter.innerHTML = `<b>Formal charter</b>${game.factionCharter} · rival contracts unavailable`;
-    factions.prepend(charter);
-  }
-  const obligations = game.operations.obligations.filter(
-    (item) => !item.fulfilled && !item.failed,
-  );
-  if (obligations.length) {
-    const heading = document.createElement("h4");
-    heading.textContent = "Outstanding obligations";
-    factions.append(heading);
-    for (const obligation of obligations) {
-      const row = document.createElement("div");
-      row.className = "standing-row";
-      row.innerHTML = `<span>Call on ${obligation.faction}</span><b>Day ${obligation.dueDay}</b>`;
-      factions.append(row);
-    }
-  }
-  const intel = document.getElementById("intelLedger");
-  intel.innerHTML = "";
-  if (!game.intelligence.length)
-    intel.innerHTML =
-      '<p class="empty-note">Buy reports from a port Whisper Network.</p>';
-  else
-    game.intelligence.forEach((report) => {
-      const freshness = intelligenceFreshness(report, game.day),
-        expired = freshness.label === "Expired",
-        card = document.createElement("div");
-      card.className =
-        "intel-card intel-known" + (expired ? " intel-expired" : "");
-      card.innerHTML =
-        '<div class="intel-head"><h4>' +
-        report.title +
-        '</h4><span class="contract-tag">' +
-        freshness.label +
-        '</span></div><p class="small">' +
-        report.body +
-        '</p><div class="intel-meta">Purchased Day ' +
-        report.boughtDay +
-        " in " +
-        report.origin +
-        " · source confidence " +
-        report.confidence +
-        "%</div>";
-      intel.append(card);
-    });
-  const traffic = document.getElementById("merchantLedger");
-  traffic.innerHTML = "";
-  const sightings = Object.values(game.merchantSightings).sort(
-    (a, b) => b.day - a.day,
-  );
-  if (!sightings.length)
-    traffic.innerHTML =
-      '<p class="empty-note">No merchant vessels have been identified yet. Sail close enough to sight them or buy a shipping list.</p>';
-  else
-    sightings.forEach((s) => {
-      const rival = RIVAL_CAPTAINS.find((entry) => entry.id === s.rivalId);
-      const standing = rival ? game.rivals.captains[rival.id] : null;
-      const row = document.createElement("div");
-      row.className = "merchant-sighting";
-      row.innerHTML =
-        "<span><b>" +
-        s.name +
-        '</b><br><span class="small">' +
-        (rival
-          ? `${rival.captain} · ${rival.house} · ${rivalRelationshipLabel(standing.relationship)}<br>`
-          : "") +
-        s.origin +
-        " → " +
-        s.destination +
-        " · " +
-        s.cargoUnits +
-        " " +
-        goods[s.cargoKey].name +
-        '</span></span><span class="contract-tag">Day ' +
-        s.day +
-        "</span>";
-      traffic.append(row);
-    });
-  const news = document.getElementById("newsLedger");
-  news.innerHTML = "";
-  if (!game.news.length)
-    news.innerHTML = '<p class="empty-note">No major port news yet.</p>';
-  else
-    game.news.forEach((item) => {
-      const card = document.createElement("div");
-      card.className = "news-card";
-      card.innerHTML =
-        "<h4>Day " +
-        item.day +
-        " · " +
-        item.title +
-        "</h4><p>" +
-        item.body +
-        "</p>";
-      news.append(card);
-    });
-}
-function renderShipPanel() {
-  const stats = operationalShipStats();
-  const identity = calculateShipIdentity(game.shipUpgrades);
-  const activeClass = SHIP_CLASSES[game.shipUpgrades.activeClass];
-  const ops = game.operations;
-
-  document.getElementById("shipRegisterName").textContent =
-    activeClass.vesselName;
-  document.getElementById("shipRegisterDescription").textContent =
-    activeClass.name + " — " + activeClass.description;
-
-  document.getElementById("shipRegisterStats").innerHTML =
-    "<strong>Fitting identity: " +
-    identity.name +
-    "</strong><span>" +
-    identity.description +
-    "</span><span>" +
-    stats.holdMax +
-    " hold · " +
-    shipSpeedKnots(stats.maxSpeed, stats.waterlineLengthFt).toFixed(1) +
-    " knots · " +
-    stats.turnRate.toFixed(2) +
-    " turning · " +
-    currentVisibilityKm().toFixed(1) +
-    " km sight · defense " +
-    (stats.defense + crewVoyageModifiers(ops.crew).defense).toFixed(1) +
-    "</span>";
-
-  const fittings = document.getElementById("shipRegisterFittings");
-  fittings.innerHTML = "<h4>Fitted gear</h4>";
-  const gearList = document.createElement("div");
-  gearList.className = "fitted-gear-list";
-  for (const slot of UPGRADE_SLOTS) {
-    const equippedId = game.shipUpgrades.equipped[slot.id];
-    const upgrade =
-      SHIP_UPGRADES[slot.id].find((item) => item.id === equippedId) || null;
-    const row = document.createElement("div");
-    row.className = "fitted-gear-row";
-    row.innerHTML =
-      '<span class="fitted-gear-slot">' +
-      slot.name +
-      "</span>" +
-      '<span class="fitted-gear-name">' +
-      (upgrade ? upgrade.name : "—") +
-      "</span>" +
-      '<span class="fitted-gear-stats">' +
-      (upgrade ? upgradeEffects(upgrade) : "Nothing fitted") +
-      "</span>";
-    gearList.append(row);
-  }
-  fittings.append(gearList);
-
-  document.getElementById("shipRegisterCrew").innerHTML =
-    ops.provisions +
-    "/30 provisions · " +
-    Math.round(ops.condition) +
-    "% overall condition · " +
-    Math.round(ops.morale) +
-    " morale · wages Day " +
-    ops.wagesDueDay +
-    (ops.wageArrears ? " · " + ops.wageArrears + " crowns in arrears" : "");
-
-  document.getElementById("shipRegisterCrewGroups").innerHTML = Object.entries(
-    ops.crew.groups,
-  )
-    .map(
-      ([role, group]) =>
-        `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} experience · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span><p>${CREW_ROLES[role].description}</p></article>`,
-    )
-    .join("");
-
-  document.getElementById("shipRegisterComponents").innerHTML = Object.entries(
-    SHIP_COMPONENTS,
-  )
-    .map(
-      ([key, component]) =>
-        '<div class="component-condition ' +
-        (ops.components[key] < 40 ? "critical" : "") +
-        '"><span>' +
-        component.label +
-        "</span><b>" +
-        Math.round(ops.components[key]) +
-        "%</b></div>",
-    )
-    .join("");
-
-  const specialistState = new Map(
-    game.specialists.officers.map((officer) => [officer.id, officer]),
-  );
-  document.getElementById("shipRegisterSpecialists").innerHTML =
-    SPECIALIST_ROSTER.map((definition) => {
-      const officer = specialistState.get(definition.id);
-      return `<article class="specialist-card"><header><span class="specialist-emblem">${definition.emblem}</span><span><h4>${definition.name}</h4><span class="small">${definition.role} · ${definition.origin}</span></span><b>${Math.round(officer.loyalty)} ♥</b></header><p><b>Benefit:</b> ${definition.benefit}</p><p><b>Flaw:</b> ${definition.flaw}</p><p class="small"><b>Ambition:</b> ${definition.ambition}<br><b>Ties:</b> ${definition.relationship} · ${officer.events} event${officer.events === 1 ? "" : "s"}</p></article>`;
-    }).join("");
-
-  const obligationsRoot = document.getElementById("shipRegisterObligations");
-  const obligations = ops.obligations.filter(
-    (item) => !item.fulfilled && !item.failed,
-  );
-  obligationsRoot.innerHTML = "";
-  if (obligations.length) {
-    const heading = document.createElement("h4");
-    heading.textContent = "Outstanding obligations";
-    obligationsRoot.append(heading);
-    for (const obligation of obligations) {
-      const row = document.createElement("div");
-      row.className = "standing-row";
-      row.innerHTML =
-        "<span>Call on " +
-        obligation.faction +
-        "</span><b>Day " +
-        obligation.dueDay +
-        "</b>";
-      obligationsRoot.append(row);
-    }
-  }
-
-  const cargoRoot = document.getElementById("shipRegisterCargo");
-  cargoRoot.innerHTML = "";
-  const capacities = cargoCapacities();
-  const aboard = cargoCount();
-  const sealed = contractCargoCount();
-  const summary = document.createElement("div");
-  summary.className = "ship-stats";
-  summary.innerHTML =
-    "<strong>" +
-    aboard +
-    "/" +
-    game.holdMax +
-    " hold</strong>" +
-    (sealed
-      ? "<span>" +
-        sealed +
-        " unit" +
-        (sealed === 1 ? "" : "s") +
-        " sealed as contract cargo.</span>"
-      : "");
-  cargoRoot.append(summary);
-
-  if (game.cargoLots.length) {
-    const used = {};
-    for (const lot of game.cargoLots)
-      used[lot.compartment] = (used[lot.compartment] || 0) + 1;
-    for (const [key, compartment] of Object.entries(CARGO_COMPARTMENTS)) {
-      if (!used[key]) continue;
-      const section = document.createElement("section");
-      section.className = "cargo-compartment";
-      section.innerHTML =
-        '<div class="cargo-compartment-head"><b>' +
-        compartment.label +
-        "</b><span>" +
-        used[key] +
-        "/" +
-        capacities[key] +
-        "</span></div>";
-      for (const lot of game.cargoLots.filter(
-        (item) => item.compartment === key,
-      )) {
-        const row = document.createElement("div");
-        row.className = "cargo-lot-row";
-        row.innerHTML =
-          "<b>" +
-          goods[lot.key].name +
-          '</b><span class="small">' +
-          cargoLotDescription(lot) +
-          "</span>";
-        section.append(row);
-      }
-      cargoRoot.append(section);
-    }
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "empty-note";
-    empty.textContent = "The hold is empty.";
-    cargoRoot.append(empty);
-  }
-}
 
 function activeRumorLeads() {
   return game.discoveries.rumorLeads.filter(
@@ -6503,91 +4807,6 @@ function checkRumorLeads() {
   }
 }
 
-function renderDiscoveries() {
-  const root = document.getElementById("discoveryLedger");
-  root.innerHTML = "";
-  const records = Object.values(game.discoveries.found).sort(
-    (a, b) => b.foundDay - a.foundDay,
-  );
-  const visibleLeads = game.discoveries.rumorLeads.some(
-    (lead) => !lead.resolvedDay,
-  );
-  if (!records.length && !visibleLeads) {
-    root.innerHTML =
-      '<p class="empty-note">No hidden places recorded. Sail beyond familiar coasts and investigate close sightings.</p>';
-    return;
-  }
-  const leads = game.discoveries.rumorLeads
-    .filter((lead) => !lead.resolvedDay)
-    .slice(0, 8);
-  for (const lead of leads) {
-    const card = document.createElement("div");
-    card.className = "discovery-card rumor-card";
-    const status = lead.expiredDay
-      ? `Expired Day ${lead.expiredDay}`
-      : `Search by Day ${lead.expiresDay}`;
-    card.innerHTML =
-      `<div class="intel-head"><h4>🗺 ${lead.title || "Rumor lead"}</h4><span class="contract-tag">${status}</span></div>` +
-      `<div class="town-kicker">${lead.source} · ${lead.origin}${lead.interpreted ? " · interpreted" : ""}</div>` +
-      `<p class="small">“${lead.clue}”</p><p><b>Search zone:</b> broad circle on the chart, radius ${Math.round(lead.radius)} leagues.</p>`;
-    root.append(card);
-  }
-  for (const record of records) {
-    const site = discoverySites.find((entry) => entry.id === record.id);
-    if (!site) continue;
-    const card = document.createElement("div");
-    card.className = "discovery-card";
-    const season = site.season
-      ? '<span class="contract-tag">' +
-        (seasonalSiteActive(site, game.day) ? "In season" : "Out of season") +
-        "</span>"
-      : "";
-    card.innerHTML =
-      '<div class="intel-head"><h4>' +
-      site.icon +
-      " " +
-      site.name +
-      "</h4>" +
-      season +
-      '</div><div class="town-kicker">' +
-      site.type +
-      " · found Day " +
-      record.foundDay +
-      '</div><p class="small">' +
-      site.description +
-      "</p><p><b>Consequence:</b> " +
-      site.benefit +
-      "</p>";
-    if (record.disposition) {
-      const status = document.createElement("div");
-      status.className = "discovery-status";
-      status.textContent =
-        DISCOVERY_DISPOSITIONS[record.disposition].label +
-        " · resolved Day " +
-        record.resolvedDay;
-      card.append(status);
-    } else {
-      const actions = document.createElement("div");
-      actions.className = "discovery-actions";
-      for (const disposition of ["secret", "sell", "share"]) {
-        const button = document.createElement("button");
-        button.className = "mini-action";
-        button.textContent =
-          disposition === "sell"
-            ? "Sell · " + site.saleValue + " crowns"
-            : disposition === "share"
-              ? "Share · +" + site.standingValue + " standing"
-              : "Keep secret";
-        button.addEventListener("click", () =>
-          handleDiscoveryDisposition(site.id, disposition),
-        );
-        actions.append(button);
-      }
-      card.append(actions);
-    }
-    root.append(card);
-  }
-}
 function handleDiscoveryDisposition(id, disposition) {
   const result = resolveDiscovery(
     game.discoveries,
@@ -6672,132 +4891,6 @@ function openDiscoveryDetails(site) {
 }
 function closeDiscoveryDetails() {
   document.getElementById("discoveryPanel").style.display = "none";
-}
-function renderDiscoveryPanel(id) {
-  const site = discoverySites.find((entry) => entry.id === id);
-  const record = game.discoveries.found[id];
-  if (!site || !record) {
-    closeDiscoveryDetails();
-    return;
-  }
-  document.getElementById("discoveryType").textContent = site.type;
-  document.getElementById("discoveryName").textContent =
-    site.icon + " " + site.name;
-  document.getElementById("discoveryDescription").textContent =
-    site.description;
-  document.getElementById("discoveryBenefit").textContent = site.benefit;
-  const meta = document.getElementById("discoveryMeta");
-  meta.innerHTML = "";
-  const metaRows = [
-    ["Found", "Day " + record.foundDay],
-    ["Recorded by", site.faction],
-    ["Chart value", site.saleValue + " crowns"],
-    ["Standing", "+" + site.standingValue + " if shared"],
-  ];
-  if (record.recovered) {
-    const name = goods[record.recovered.good]?.name || record.recovered.good;
-    metaRows.splice(1, 0, [
-      "Recovered",
-      record.recovered.units > 0
-        ? `${record.recovered.units} ${name} in the hold`
-        : `Hold full — ${name} left behind`,
-    ]);
-  }
-  if (site.season)
-    metaRows.push([
-      "Season",
-      seasonalSiteActive(site, game.day) ? "In season" : "Out of season",
-    ]);
-  if (site.route) {
-    const perDay = Math.round(site.route.units);
-    metaRows.push([
-      "Opens route",
-      `${goods[site.route.good]?.name || site.route.good}, ~${perDay}/day: ${site.route.origin} → ${site.route.destination}`,
-    ]);
-  }
-  for (const [label, value] of metaRows) {
-    const item = document.createElement("div");
-    item.className = "summary-item";
-    item.innerHTML = "<b>" + label + "</b><span>" + value + "</span>";
-    meta.append(item);
-  }
-  const dispositionRoot = document.getElementById("discoveryDisposition");
-  dispositionRoot.innerHTML = "";
-  if (record.disposition) {
-    const status = document.createElement("div");
-    status.className = "discovery-status";
-    status.textContent =
-      DISCOVERY_DISPOSITIONS[record.disposition].label +
-      " · resolved Day " +
-      record.resolvedDay;
-    dispositionRoot.append(status);
-  } else {
-    const actions = document.createElement("div");
-    actions.className = "discovery-actions";
-    for (const disposition of ["secret", "sell", "share"]) {
-      const button = document.createElement("button");
-      button.className = "parchment";
-      button.textContent =
-        disposition === "sell"
-          ? "Sell · " + site.saleValue + " crowns"
-          : disposition === "share"
-            ? "Share · +" + site.standingValue + " standing"
-            : "Keep secret";
-      button.addEventListener("click", () => {
-        handleDiscoveryDisposition(id, disposition);
-        renderDiscoveryPanel(id);
-      });
-      actions.append(button);
-    }
-    dispositionRoot.append(actions);
-  }
-}
-function openExploration() {
-  if (!nearExplorationSite) return;
-  ship.anchored = true;
-  ship.speed = 0;
-  const site = nearExplorationSite;
-  document.getElementById("explorationName").textContent = site.name;
-  document.getElementById("explorationObjective").textContent = site.objective;
-  document.getElementById("explorationHazards").textContent =
-    "Hazards: " + site.hazards;
-  const progress = game.exploration.sites[site.id];
-  document.getElementById("explorationStatus").textContent = progress
-    ? `${progress.status} · ${progress.visits} previous expedition${progress.visits === 1 ? "" : "s"}`
-    : "This coast has not been surveyed. A successful expedition reveals this landmass on your chart.";
-  const options = document.getElementById("explorationApproaches");
-  options.innerHTML = "";
-  if (progress) {
-    const unavailable = document.createElement("p");
-    unavailable.className = "small";
-    unavailable.textContent =
-      "This shore expedition has already sailed and cannot be repeated.";
-    options.append(unavailable);
-    document.getElementById("explorationPanel").style.display = "grid";
-    return;
-  }
-  for (const [approach, plan] of Object.entries(EXPLORATION_APPROACHES)) {
-    const button = document.createElement("button");
-    button.className = "parchment expedition-option";
-    const provisionShortage = Math.max(
-      0,
-      plan.provisions - game.operations.provisions,
-    );
-    button.disabled = provisionShortage > 0;
-    if (button.disabled) {
-      button.setAttribute(
-        "aria-label",
-        `${plan.label} unavailable; need ${provisionShortage} more provisions`,
-      );
-      button.title = `Need ${provisionShortage} more provisions`;
-    }
-    button.innerHTML =
-      `<b>${plan.label}</b><span>${plan.days} day${plan.days === 1 ? "" : "s"}</span>` +
-      `<span class="small">${plan.provisions} provisions${provisionShortage ? ` · need ${provisionShortage} more` : ""} · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
-    button.addEventListener("click", () => undertakeExpedition(site, approach));
-    options.append(button);
-  }
-  document.getElementById("explorationPanel").style.display = "grid";
 }
 
 function explorationHazardContext() {
@@ -7051,26 +5144,6 @@ document.getElementById("closePort").addEventListener("click", () => {
   );
 });
 
-// Section tabs shared by the dock, town, ship, and ledger panels. Each panel
-// owns its own .port-tabs bar and .port-panel sections, so activation is scoped
-// to the panel that contains the clicked tab — they never interfere.
-// Re-rendering a section's inner content (renderPortSystems / openTownDetails /
-// renderLedger) never rebuilds this tab structure, so the active section
-// persists across buys and other actions; only opening a panel resets to its
-// first tab.
-function activateSectionTabs(root, name) {
-  if (!root) return;
-  root
-    .querySelectorAll(".port-tab")
-    .forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === name));
-  root
-    .querySelectorAll(".port-panel")
-    .forEach((panel) =>
-      panel.classList.toggle("active", panel.dataset.tab === name),
-    );
-  const body = root.querySelector(".port-body");
-  if (body) body.scrollTop = 0;
-}
 document.querySelectorAll(".port-tabs").forEach((bar) => {
   const root = bar.closest("#portPanel, #townPanel, #shipPanel, #ledgerPanel");
   bar.addEventListener("click", (event) => {
@@ -7142,192 +5215,42 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
   }
 });
 function renderChart() {
-  buildVisibilityPolygon(true);
-  const c = minimapCtx,
-    w = minimap.width,
-    h = minimap.height,
-    sx = w / WORLD.w,
-    sy = h / WORLD.h;
-  c.globalCompositeOperation = "source-over";
-  c.clearRect(0, 0, w, h);
-  c.drawImage(mapLayer, 0, 0, w, h);
-  const f = minimapFogCtx;
-  f.clearRect(0, 0, w, h);
-  f.fillStyle = "rgba(23,20,16,.92)";
-  f.fillRect(0, 0, w, h);
-  f.globalCompositeOperation = "destination-out";
-  f.globalAlpha = 0.48;
-  f.drawImage(exploredMask, 0, 0, w, h);
-  f.globalAlpha = 1;
-  punchCurrentVisibility(f, sx, sy, true);
-  f.globalCompositeOperation = "source-over";
-  c.drawImage(minimapFog, 0, 0);
-  if (game.laws.amberConvoy) {
-    c.strokeStyle = "rgba(190,132,45,.95)";
-    c.lineWidth = 3;
-    c.setLineDash([9, 6]);
-    c.beginPath();
-    c.moveTo(650 * sx, 485 * sy);
-    c.bezierCurveTo(
-      850 * sx,
-      570 * sy,
-      1070 * sx,
-      780 * sy,
-      1190 * sx,
-      1050 * sy,
-    );
-    c.lineTo(1450 * sx, 1185 * sy);
-    c.stroke();
-    c.setLineDash([]);
-  }
-  for (const contract of game.activeContracts) {
-    const p = getPortByName(contract.destination);
-    if (p) {
-      c.strokeStyle = "#d5a13d";
-      c.lineWidth = 3;
-      c.beginPath();
-      c.arc(p.x * sx, p.y * sy, 12, 0, Math.PI * 2);
-      c.stroke();
-    }
-  }
-  const objective = currentObjective({
+  renderChartPanel({
+    activeRumorLeads,
+    buildVisibilityPolygon,
+    chartedCities,
+    courseBearing,
+    currentObjective,
+    currentPort,
+    drawShipOptions: {
+      angle: ship.angle,
+      classId: game.shipUpgrades.activeClass,
+      windAngle: game.windAngle,
+      windStrength: game.windStrength,
+    },
+    eventTemplates,
+    exploredMask,
+    explorationSites,
     game,
-    currentPortName: currentPort?.name || null,
-    nearPortName: nearPort?.name || null,
+    getPortByName,
     homePortName: HOME_PORT.name,
-  });
-  if (objective.destination) {
-    const p = getPortByName(objective.destination);
-    if (p) {
-      c.strokeStyle = "#75c978";
-      c.lineWidth = 4;
-      c.beginPath();
-      c.arc(p.x * sx, p.y * sy, 19, 0, Math.PI * 2);
-      c.stroke();
-      c.fillStyle = "#fff0c5";
-      c.font = "bold 14px Georgia";
-      c.textAlign = "center";
-      c.fillText(objective.title, p.x * sx, p.y * sy - 25);
-    }
-  }
-  for (const lead of activeRumorLeads()) {
-    c.strokeStyle = lead.falseLead
-      ? "rgba(180,92,70,.75)"
-      : "rgba(244,218,157,.85)";
-    c.fillStyle = "rgba(244,218,157,.12)";
-    c.lineWidth = 2;
-    c.setLineDash([6, 6]);
-    for (const offset of [-WORLD.w, 0, WORLD.w]) {
-      c.beginPath();
-      c.arc(
-        (lead.x + offset) * sx,
-        lead.y * sy,
-        lead.radius * sx,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
-      c.stroke();
-    }
-    c.setLineDash([]);
-  }
-  const courseDestination = getPortByName(game.navigation.destination);
-  if (courseDestination) {
-    const bearing = courseBearing(ship, courseDestination, WORLD.w);
-    c.strokeStyle = "#66c8b5";
-    c.lineWidth = 3;
-    c.setLineDash([9, 6]);
-    for (const offset of [-WORLD.w, 0, WORLD.w]) {
-      c.beginPath();
-      c.moveTo((wrapX(ship.x) + offset) * sx, ship.y * sy);
-      c.lineTo((bearing.destinationX + offset) * sx, courseDestination.y * sy);
-      c.stroke();
-    }
-    c.setLineDash([]);
-    c.beginPath();
-    c.arc(
-      courseDestination.x * sx,
-      courseDestination.y * sy,
-      23,
-      0,
-      Math.PI * 2,
-    );
-    c.stroke();
-  }
-  for (const site of explorationSites) {
-    const progress = game.exploration.sites[site.id];
-    if (!progress && !isWorldPointExplored(site.x, site.y)) continue;
-    c.strokeStyle = progress?.status === "surveyed" ? "#7bcda0" : "#f4da9d";
-    c.fillStyle = progress ? "rgba(52,72,46,.88)" : "rgba(62,45,25,.82)";
-    c.lineWidth = 2;
-    c.setLineDash(progress?.status === "surveyed" ? [] : [4, 3]);
-    c.beginPath();
-    c.arc(site.x * sx, site.y * sy, 7, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-    c.setLineDash([]);
-  }
-  for (const event of game.scheduledEvents) {
-    if (!event.known || event.started) continue;
-    const t = eventTemplates[event.templateId],
-      p = getPortByName(t.port);
-    c.strokeStyle = "#8b4e2d";
-    c.lineWidth = 3;
-    c.setLineDash([5, 4]);
-    c.beginPath();
-    c.arc(p.x * sx, p.y * sy, 15, 0, Math.PI * 2);
-    c.stroke();
-    c.setLineDash([]);
-  }
-  for (const merchant of merchantShips) {
-    if (!merchantVisible(merchant)) continue;
-    c.fillStyle = merchant.color;
-    c.strokeStyle = "#f1ddb0";
-    c.lineWidth = 1.5;
-    c.beginPath();
-    c.moveTo(wrapX(merchant.x) * sx, (merchant.y - 8) * sy);
-    c.lineTo((wrapX(merchant.x) + 6) * sx, (merchant.y + 6) * sy);
-    c.lineTo((wrapX(merchant.x) - 6) * sx, (merchant.y + 6) * sy);
-    c.closePath();
-    c.fill();
-    c.stroke();
-  }
-  c.save();
-  c.translate(wrapX(ship.x) * sx, ship.y * sy);
-  c.scale(0.5, 0.5);
-  drawShip(
-    c,
-    0,
-    0,
-    ship.angle,
-    game.windAngle,
-    game.windStrength,
-    game.shipUpgrades.activeClass,
-  );
-  c.restore();
-  renderChartedCities();
-}
-function renderChartedCities() {
-  chartedCities.replaceChildren();
-  const indicators = chartedCityIndicators(
+    isWorldPointExplored,
+    mapLayer,
+    merchantShips,
+    merchantVisible,
+    minimap,
+    minimapCtx,
+    minimapFog,
+    minimapFogCtx,
+    minimapWrap,
+    nearPort,
+    onOpenTown: openTownDetails,
     ports,
-    (port) => isWorldPointExplored(port.x, port.y),
-    WORLD,
-  );
-  for (const indicator of indicators) {
-    const marker = document.createElement("button");
-    marker.type = "button";
-    marker.className = "charted-city";
-    marker.style.left = indicator.left;
-    marker.style.top = indicator.top;
-    marker.dataset.cityName = indicator.city.name;
-    marker.setAttribute("aria-label", `Open ${indicator.city.name}`);
-    marker.addEventListener("click", () => {
-      minimapWrap.style.display = "none";
-      openTownDetails(indicator.city, true);
-    });
-    chartedCities.append(marker);
-  }
+    punchCurrentVisibility,
+    ship,
+    world: WORLD,
+    wrapX,
+  });
 }
 mapButton.addEventListener("click", () => {
   minimapWrap.style.display = "grid";
