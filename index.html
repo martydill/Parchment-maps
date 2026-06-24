@@ -20,7 +20,7 @@
         } catch {}
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=10" />
+    <link rel="stylesheet" href="./styles.css?v=11" />
   </head>
   <body>
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -561,6 +561,9 @@
           <button type="button" class="port-tab" data-tab="traffic" role="tab">
             Traffic
           </button>
+          <button type="button" class="port-tab" data-tab="fleet" role="tab">
+            Fleet
+          </button>
           <button type="button" class="port-tab" data-tab="news" role="tab">
             News
           </button>
@@ -614,6 +617,18 @@
             <div class="detail-card">
               <h3>Observed merchant traffic</h3>
               <div id="merchantLedger"></div>
+            </div>
+          </section>
+          <section class="port-panel" data-tab="fleet" role="tabpanel">
+            <div class="detail-card">
+              <h3>Fleet &amp; trade routes</h3>
+              <p class="small">
+                Commission vessels at a port shipyard, then assign each a route
+                and an officer. Fleet traders sail, sell, and resupply on their
+                own — but wages, repairs, and the perils of the sea steadily
+                cost crowns, so mind the net tally.
+              </p>
+              <div id="fleetLedger"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="news" role="tabpanel">
@@ -789,10 +804,6 @@
           <div><b>Your vessel</b><span id="combatPlayer"></span></div>
           <div><b>Hostile force</b><span id="combatEnemy"></span></div>
         </div>
-        <p class="small">
-          Choose how to answer. Speed favors escape, armament and morale favor
-          resistance, and parley costs coin but usually preserves the ship.
-        </p>
         <div class="combat-actions">
           <button class="parchment" data-combat-action="flee">
             Run under full sail
@@ -858,6 +869,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=22"></script>
+    <script type="module" src="./src/app.js?v=31"></script>
   </body>
 </html>

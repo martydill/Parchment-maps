@@ -48,6 +48,10 @@ import {
   investInIndustry,
 } from "../core/regional.js";
 import { pathLength } from "../core/routes.js";
+import {
+  commissionFleetShip,
+  FLEET_COMMISSION_FITTING_FEE,
+} from "../core/fleet.js";
 import { shipSpeedKnots } from "../core/sailing.js";
 import {
   crisisAtPort,
@@ -997,6 +1001,37 @@ export function renderShipyard() {
   }
   classSection.append(classGrid);
   root.append(classSection);
+  const fleetSection = document.createElement("div");
+  fleetSection.className = "ship-class-section";
+  fleetSection.innerHTML =
+    '<h4>Commission fleet vessel</h4><p class="small">Build an autonomous trader for your fleet. Commissioned vessels are assigned routes and officers from the captain\'s ledger.</p>';
+  const fleetGrid = document.createElement("div");
+  fleetGrid.className = "ship-class-grid";
+  for (const item of Object.values(SHIP_CLASSES)) {
+    const cost = item.cost + FLEET_COMMISSION_FITTING_FEE;
+    const row = document.createElement("div");
+    row.className = "ship-class-option";
+    const details = document.createElement("div");
+    details.innerHTML = `<b>${item.name}</b><span class="small">Fleet trader · ${item.description}</span>`;
+    const button = document.createElement("button");
+    button.textContent = `Commission · ${cost}`;
+    button.disabled = game.coins < cost;
+    button.onclick = () => {
+      const result = commissionFleetShip(game, item.id);
+      if (!result.ok) return showMessage(result.reason);
+      addNews(
+        "Fleet vessel commissioned",
+        `${result.ship.name} joins your fleet and awaits a route.`,
+      );
+      showMessage(`${result.ship.name} commissioned.`);
+      renderPortSystems();
+      updateHud();
+    };
+    row.append(details, button);
+    fleetGrid.append(row);
+  }
+  fleetSection.append(fleetGrid);
+  root.append(fleetSection);
   for (const slot of UPGRADE_SLOTS) {
     const section = document.createElement("div");
     section.className = "upgrade-slot";

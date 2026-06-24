@@ -2,8 +2,8 @@ import {
   GAME_NAME,
   PORT_NAMES,
   LAND_NAMES,
-  SHIP_NAMES,
   FACTION_NAMES,
+  RIVAL_SHIP_NAMES,
 } from "./names.js";
 import {
   clamp,
@@ -217,6 +217,16 @@ import {
   rivalRelationshipLabel,
   tradeRivalIntelligence,
 } from "./core/rivals.js";
+import {
+  assignRoute,
+  fleetRenderObject,
+  loadDepartureCargo,
+  normalizeFleetState,
+  resolveFleetArrival,
+  runFleetDay,
+  suggestRouteTemplates,
+  updateFleetShip,
+} from "./core/fleet.js";
 import {
   currentAtPosition,
   markHazardEncounter,
@@ -1167,17 +1177,7 @@ const {
   minimapFogCtx,
 } = createMapRendering({ WORLD, game, merchantRoutePaths });
 
-const merchantNames = [
-  SHIP_NAMES.amberHeron,
-  SHIP_NAMES.silverWake,
-  SHIP_NAMES.crownPetrel,
-  "Moss Lantern",
-  "Iron Minnow",
-  "Velvet Gull",
-  "Pearl Cormorant",
-  "Ashen Star",
-  "Reed Swan",
-];
+const merchantNames = RIVAL_SHIP_NAMES;
 const merchantColors = [
   "#b24d34",
   "#496a72",
@@ -1616,6 +1616,7 @@ function advanceDays(days) {
     processWorldEventsForDay();
     processRegionalCrisesForDay();
     runEconomyDay();
+    runFleetDay(game);
     for (const route of advanceDiscoveryConsequences(
       game.discoveries,
       game.day,
@@ -2150,6 +2151,81 @@ function updateMerchantShips(dt) {
     merchant.angle = p.angle;
   }
 }
+
+function fleetContext() {
+  return {
+    routes: merchantRoutePaths,
+    worldWidth: WORLD.w,
+    hazardsEnabled: true,
+    portX: (name) => getPortByName(name)?.x ?? 0,
+    economyState: (name, key) => {
+      const port = getPortByName(name);
+      return port ? economyState(port, key) : null;
+    },
+    pricingOptions: (name, key) => {
+      const port = getPortByName(name);
+      return port ? pricingOptions(port, key) : null;
+    },
+    good: (key) => ({ ...(goods[key] || {}), key }),
+    goodsKeys: () => Object.keys(goods),
+    day: game.day,
+    specialistState: game.specialists,
+    recordCompetition: (portName, key, day) => {
+      const port = getPortByName(portName);
+      if (port)
+        game.rivals = recordPlayerCompetition(game.rivals, {
+          port: port.name,
+          goodKey: key,
+          day,
+        });
+    },
+  };
+}
+
+function updateFleetShips(dt) {
+  const fleet = game.fleet;
+  if (!fleet || !Array.isArray(fleet.ships) || fleet.ships.length === 0) return;
+  const ctx = fleetContext();
+  for (const ship of fleet.ships) {
+    const { arrived } = updateFleetShip(ship, dt, ctx);
+    if (!arrived) continue;
+    const events = resolveFleetArrival(game, ship, ctx);
+    for (const event of events) {
+      if (event.type === "delivery") {
+        const goodName = goods[event.key]?.name || event.key;
+        const line = `${ship.name} delivered ${event.units} ${goodName} to ${event.port}.`;
+        if (event.significant) addNews("Fleet delivery", line);
+        else showMessage(line, 2.4);
+      } else if (event.type === "storm") {
+        const line = `${ship.name} rode out a storm${event.damage ? ` · ${event.damage} damage` : ""}.`;
+        if (event.significant) addNews("Fleet vessel storms", line);
+        else showMessage(line, 2.4);
+      } else if (event.type === "pirate") {
+        const line = event.repelled
+          ? `${ship.name} repelled a pirate attack.`
+          : `${ship.name} was raided · ${event.coinsLost} crowns and ${event.cargoLost} cargo lost.`;
+        addNews(
+          event.repelled ? "Pirates repelled" : "Fleet vessel raided",
+          line,
+        );
+      }
+    }
+  }
+}
+
+function startFleetRoute(shipId, ports) {
+  const ctx = fleetContext();
+  const result = assignRoute(game, shipId, ports, ctx);
+  if (!result.ok) return result;
+  const ship = game.fleet?.ships?.find((entry) => entry.id === shipId);
+  if (ship) loadDepartureCargo(game, ship, ctx);
+  return result;
+}
+
+function fleetRouteSuggestions() {
+  return suggestRouteTemplates(fleetContext());
+}
+
 function pointCurrentlyVisible(x, y) {
   const wx = nearestWrappedX(x, ship.x);
   if (Math.hypot(wx - ship.x, y - ship.y) > visibility.radius + 8) return false;
@@ -2195,6 +2271,19 @@ function nearestVisibleMerchant(x, y, radius) {
     if (d < dBest) {
       dBest = d;
       best = merchant;
+    }
+  }
+  return best;
+}
+function nearestFleetShip(x, y, radius) {
+  let best = null,
+    dBest = radius;
+  for (const ship of game.fleet?.ships || []) {
+    if (ship.status === "laidUp") continue;
+    const d = Math.hypot(x - nearestWrappedX(ship.x, x), y - ship.y);
+    if (d < dBest) {
+      dBest = d;
+      best = ship;
     }
   }
   return best;
@@ -2727,6 +2816,15 @@ function loadGameState() {
     0,
     Math.floor(Number(game.legacyProgress.piratesRepelled) || 0),
   );
+  game.legacyProgress.fleetRevenue = Math.max(
+    0,
+    Math.floor(Number(game.legacyProgress.fleetRevenue) || 0),
+  );
+  game.legacyProgress.fleetDeliveries = Math.max(
+    0,
+    Math.floor(Number(game.legacyProgress.fleetDeliveries) || 0),
+  );
+  game.fleet = normalizeFleetState(game.fleet);
   game.navigation = normalizeNavigationState(
     game.navigation,
     ports.map((port) => port.name),
@@ -3075,6 +3173,9 @@ const panelContext = {
   routesFrom,
   showIntelReport,
   updateHud,
+  ports,
+  startFleetRoute,
+  fleetRouteSuggestions,
 };
 configureUiPanels(panelContext);
 configurePortPanels(panelContext);
@@ -3683,6 +3784,44 @@ function drawDynamicTradeWorld(c, z, time) {
       c.fillText(merchant.name, x, merchant.y - 19 / z);
     }
   }
+  // Player fleet: assigned trade routes, then the vessels sailing them.
+  for (const ship of game.fleet?.ships || []) {
+    if (ship.status === "laidUp" || !ship.route) continue;
+    c.strokeStyle = "rgba(106,140,138,.5)";
+    c.lineWidth = 1.4 / z;
+    c.setLineDash([4 / z, 6 / z]);
+    for (const leg of ship.route.legs) {
+      c.beginPath();
+      leg.points.forEach((point, index) => {
+        const wx = nearestWrappedX(point[0], camera.x);
+        if (index === 0) c.moveTo(wx, point[1]);
+        else c.lineTo(wx, point[1]);
+      });
+      c.stroke();
+    }
+    c.setLineDash([]);
+  }
+  for (const ship of game.fleet?.ships || []) {
+    if (ship.status === "laidUp") continue;
+    const render = fleetRenderObject(ship);
+    const x = nearestWrappedX(render.x, camera.x);
+    if (!isWorldCircleInViewport(render.x, render.y, 60, z)) continue;
+    // A green halo marks player vessels apart from rival traffic, and the name
+    // reads in the same green so the fleet is identifiable at a glance.
+    c.beginPath();
+    c.arc(x, render.y, 12 / z, 0, Math.PI * 2);
+    c.fillStyle = "rgba(58,170,99,.22)";
+    c.fill();
+    c.lineWidth = 1.8 / z;
+    c.strokeStyle = "rgba(46,158,90,.9)";
+    c.stroke();
+    drawMerchantShip(c, render, z, x);
+    c.fillStyle = "rgba(34,150,82,.96)";
+    c.font = "bold " + 11 / z + "px Georgia";
+    c.textAlign = "center";
+    c.textBaseline = "alphabetic";
+    c.fillText(ship.name, x, render.y - 19 / z);
+  }
   c.restore();
 }
 function render() {
@@ -3793,6 +3932,12 @@ function readInput() {
 const MAP_MARGIN = 58;
 const EDGE_RECOVERY_ZONE = 155;
 function update(dt) {
+  // Fleet vessels trade autonomously in real time and keep sailing even while
+  // the player is docked or has a town dossier open — otherwise commissioning a
+  // ship, assigning a route, and checking the Fleet tab from port would appear
+  // to do nothing. Rivals (updateMerchantShips) stay paused at port as ambient
+  // traffic, unchanged.
+  if (gameStarted) updateFleetShips(dt);
   if (
     !gameStarted ||
     currentPort ||
@@ -4157,6 +4302,15 @@ canvas.addEventListener("pointerup", (e) => {
   canvasTapStart = null;
   if (moved > 12) return;
   const world = screenToWorld(e.clientX, e.clientY);
+  const fleetShip = nearestFleetShip(
+    world.x,
+    world.y,
+    Math.max(34, 26 / camera.zoom),
+  );
+  if (fleetShip) {
+    openFleetLedger();
+    return;
+  }
   const merchant = nearestVisibleMerchant(
     world.x,
     world.y,
@@ -4200,6 +4354,7 @@ canvas.addEventListener("pointermove", (e) => {
   ) {
     const world = screenToWorld(e.clientX, e.clientY);
     canvas.style.cursor =
+      nearestFleetShip(world.x, world.y, Math.max(34, 26 / camera.zoom)) ||
       nearestVisibleMerchant(
         world.x,
         world.y,
@@ -5158,6 +5313,13 @@ ledgerButton.addEventListener("click", () => {
   activateSectionTabs(ledgerPanel, "milestone");
   ledgerPanel.style.display = "grid";
 });
+// Opens the Captain's Ledger straight to the Fleet tab — used when a fleet
+// vessel is clicked on the world map or minimap.
+function openFleetLedger() {
+  renderLedger();
+  activateSectionTabs(ledgerPanel, "fleet");
+  ledgerPanel.style.display = "grid";
+}
 document
   .getElementById("closeLedger")
   .addEventListener("click", () => (ledgerPanel.style.display = "none"));
@@ -5260,6 +5422,11 @@ minimap.addEventListener("pointerup", (e) => {
   const rect = minimap.getBoundingClientRect();
   const x = ((e.clientX - rect.left) / rect.width) * WORLD.w;
   const y = ((e.clientY - rect.top) / rect.height) * WORLD.h;
+  const fleetShip = nearestFleetShip(x, y, 58);
+  if (fleetShip) {
+    openFleetLedger();
+    return;
+  }
   const merchant = nearestVisibleMerchant(x, y, 58);
   if (merchant) {
     openVesselDetails(merchant);

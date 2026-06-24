@@ -11,6 +11,11 @@ import {
   renderWarehouse,
   upgradeEffects,
 } from "./port-panels.js";
+import {
+  assignCaptain,
+  clearFleetRoute,
+  decommissionFleetShip,
+} from "../core/fleet.js";
 
 let panelContext;
 let acceptContract,
@@ -93,7 +98,10 @@ let acceptContract,
   ship,
   currentPort,
   nearExplorationSite,
-  nearPort;
+  nearPort,
+  startFleetRoute,
+  fleetRouteSuggestions,
+  ports;
 
 export function configureUiPanels(context) {
   panelContext = context;
@@ -179,6 +187,9 @@ function syncPanelContext() {
     worldEvents,
     WORLD,
     wrapX,
+    startFleetRoute,
+    fleetRouteSuggestions,
+    ports,
   } = panelContext);
   ship = panelContext.inventory.ship;
   currentPort = panelContext.currentPort;
@@ -912,6 +923,324 @@ export function renderLedger() {
         "</p>";
       news.append(card);
     });
+  renderFleet();
+}
+
+function renderFleet() {
+  const root = document.getElementById("fleetLedger");
+  if (!root) return;
+  root.innerHTML = "";
+
+  const fleet = game.fleet;
+  const ships = Array.isArray(fleet?.ships) ? fleet.ships : [];
+  if (!ships.length) {
+    root.innerHTML =
+      '<p class="empty-note">Commission a fleet vessel at a port shipyard to begin automated trade.</p>';
+    return;
+  }
+
+  const suggestions = fleetRouteSuggestions();
+  const assignments = fleet.captainAssignments || {};
+  for (const ship of ships) {
+    root.append(renderFleetShipCard(ship, suggestions, assignments));
+  }
+}
+
+function fleetStatusLabel(ship) {
+  if (ship.status === "repairing")
+    return `In repair · ${ship.repairDaysLeft} day${ship.repairDaysLeft === 1 ? "" : "s"}`;
+  if (ship.status === "sailing" && ship.route) return "Under way";
+  return "Laid up";
+}
+
+function renderFleetShipCard(ship, suggestions, assignments) {
+  const card = document.createElement("div");
+  card.className = "fleet-ship-card";
+
+  const shipClass = SHIP_CLASSES[ship.classId] || { name: ship.classId };
+  const condition = Math.round(ship.operations?.condition ?? 0);
+  const morale = Math.round(ship.operations?.morale ?? 0);
+
+  const header = document.createElement("div");
+  header.className = "standing-row";
+  const captainName = ship.captain
+    ? SPECIALIST_ROSTER.find((officer) => officer.id === ship.captain)?.name ||
+      "Officer"
+    : "No officer";
+  header.innerHTML =
+    "<span><b>" +
+    ship.name +
+    '</b><br><span class="small">' +
+    shipClass.name +
+    " · " +
+    captainName +
+    " · " +
+    fleetStatusLabel(ship) +
+    "</span></span>" +
+    '<span class="contract-tag">F' +
+    (ship.id || "").replace(/^F/, "") +
+    "</span>";
+  card.append(header);
+
+  const stats = document.createElement("div");
+  stats.className = "ship-stats";
+  stats.innerHTML =
+    "<strong>" +
+    condition +
+    "% condition</strong><span>" +
+    ship.cargoLots.length +
+    "/" +
+    ship.holdMax +
+    " hold" +
+    (ship.cargoKey
+      ? " · " +
+        ship.cargoUnits +
+        " " +
+        (goods[ship.cargoKey]?.name || ship.cargoKey)
+      : "") +
+    "</span><span>" +
+    morale +
+    " morale</span>";
+  card.append(stats);
+
+  card.append(renderFleetRouteSection(ship, suggestions));
+  card.append(renderFleetCaptainRow(ship, assignments));
+  card.append(renderFleetTally(ship));
+
+  const actions = document.createElement("div");
+  actions.className = "town-actions";
+  const decommission = document.createElement("button");
+  decommission.className = "parchment";
+  decommission.textContent = "Decommission";
+  decommission.onclick = () => {
+    const refund = decommissionFleetShip(game, ship.id);
+    if (!refund.ok) return showMessage(refund.reason);
+    addNews(
+      "Fleet vessel retired",
+      `${ship.name} has been sold off for ${refund.refund} crowns.`,
+    );
+    showMessage(`${ship.name} decommissioned for ${refund.refund} crowns.`);
+    saveGameState();
+    renderFleet();
+    updateHud();
+  };
+  actions.append(decommission);
+  card.append(actions);
+
+  return card;
+}
+
+function renderFleetRouteSection(ship, suggestions) {
+  const section = document.createElement("div");
+  section.className = "detail-block";
+
+  if (ship.route) {
+    const summary = document.createElement("p");
+    summary.className = "small";
+    const routeLine = ship.route.ports.join(" → ");
+    const leg =
+      ship.origin && ship.destination
+        ? ship.origin + " → " + ship.destination
+        : routeLine;
+    summary.innerHTML =
+      "<b>Route</b> " +
+      routeLine +
+      "<br>Now sailing " +
+      leg +
+      " · leg " +
+      (ship.route.legIndex + 1) +
+      "/" +
+      ship.route.legs.length;
+    section.append(summary);
+
+    const layUp = document.createElement("button");
+    layUp.className = "parchment";
+    layUp.textContent = "Lay up";
+    layUp.onclick = () => {
+      clearFleetRoute(game, ship.id);
+      saveGameState();
+      renderFleet();
+      updateHud();
+    };
+    section.append(layUp);
+    return section;
+  }
+
+  const note = document.createElement("p");
+  note.className = "small";
+  note.textContent =
+    ship.status === "repairing"
+      ? "Awaiting repair before she can sail again."
+      : "No route assigned. Choose a template below.";
+  section.append(note);
+
+  const select = document.createElement("select");
+  select.className = "fleet-route-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Choose a route…";
+  select.append(placeholder);
+  for (const template of suggestions) {
+    const option = document.createElement("option");
+    option.value = template.id;
+    option.textContent = template.name;
+    select.append(option);
+  }
+  section.append(select);
+
+  const assign = document.createElement("button");
+  assign.className = "parchment";
+  assign.textContent = "Assign route";
+  assign.onclick = () => {
+    if (!select.value) return showMessage("Pick a route to assign.");
+    const result = startFleetRoute(ship.id, select.value);
+    if (!result.ok) return showMessage(result.reason);
+    saveGameState();
+    renderFleet();
+    updateHud();
+  };
+  section.append(assign);
+
+  section.append(renderFleetCustomBuilder(ship));
+  return section;
+}
+
+function renderFleetCustomBuilder(ship) {
+  const builder = document.createElement("div");
+  builder.className = "fleet-custom-route";
+  const heading = document.createElement("p");
+  heading.className = "small";
+  heading.textContent = "Or plot a custom route:";
+  builder.append(heading);
+
+  const portNames = ports.map((port) => port.name);
+  const stops = [ship.homePort || portNames[0] || "", ""];
+
+  const stopWrap = document.createElement("div");
+  stopWrap.className = "fleet-stops";
+
+  const renderStops = () => {
+    stopWrap.innerHTML = "";
+    stops.forEach((value, index) => {
+      const select = document.createElement("select");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Port…";
+      select.append(blank);
+      for (const name of portNames) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        if (name === value) option.selected = true;
+        select.append(option);
+      }
+      select.onchange = () => {
+        stops[index] = select.value;
+      };
+      stopWrap.append(select);
+      if (stops.length > 2) {
+        const remove = document.createElement("button");
+        remove.className = "parchment";
+        remove.type = "button";
+        remove.textContent = "✕";
+        remove.title = "Remove stop";
+        remove.onclick = () => {
+          stops.splice(index, 1);
+          renderStops();
+        };
+        stopWrap.append(remove);
+      }
+    });
+  };
+  renderStops();
+
+  const addStop = document.createElement("button");
+  addStop.type = "button";
+  addStop.className = "parchment";
+  addStop.textContent = "+ Stop";
+  addStop.disabled = stops.length >= 5;
+  addStop.onclick = () => {
+    if (stops.length < 5) {
+      stops.push("");
+      renderStops();
+      addStop.disabled = stops.length >= 5;
+    }
+  };
+
+  const plot = document.createElement("button");
+  plot.className = "parchment";
+  plot.textContent = "Plot custom route";
+  plot.onclick = () => {
+    const chosen = stops.filter(Boolean);
+    if (chosen.length < 2)
+      return showMessage("A route needs at least two ports.");
+    const result = startFleetRoute(ship.id, chosen);
+    if (!result.ok) return showMessage(result.reason);
+    saveGameState();
+    renderFleet();
+    updateHud();
+  };
+
+  builder.append(stopWrap, addStop, plot);
+  return builder;
+}
+
+function renderFleetCaptainRow(ship, assignments) {
+  const row = document.createElement("div");
+  row.className = "detail-block";
+  const label = document.createElement("span");
+  label.className = "small";
+  label.innerHTML = "<b>Officer</b> ";
+  row.append(label);
+
+  const select = document.createElement("select");
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "— Uncommanded —";
+  select.append(none);
+  for (const officer of SPECIALIST_ROSTER) {
+    const option = document.createElement("option");
+    const assignedTo = assignments[officer.id];
+    option.value = officer.id;
+    option.textContent =
+      officer.name +
+      " · " +
+      officer.role +
+      (assignedTo && assignedTo !== ship.id
+        ? " (commands another vessel)"
+        : "");
+    if (officer.id === ship.captain) option.selected = true;
+    select.append(option);
+  }
+  select.onchange = () => {
+    const result = assignCaptain(game, ship.id, select.value || null);
+    if (!result.ok) return showMessage(result.reason);
+    saveGameState();
+    renderFleet();
+    updateHud();
+  };
+  row.append(select);
+  return row;
+}
+
+function renderFleetTally(ship) {
+  const tally = document.createElement("div");
+  tally.className = "ship-stats";
+  const profit = ship.totalRevenue - ship.totalCosts;
+  tally.innerHTML =
+    "<strong>" +
+    profit +
+    " crowns net</strong><span>" +
+    ship.totalRevenue +
+    " earned · " +
+    ship.totalCosts +
+    " spent</span><span>" +
+    ship.deliveries +
+    " deliver" +
+    (ship.deliveries === 1 ? "y" : "ies") +
+    (ship.homePort ? " · home " + ship.homePort : "") +
+    "</span>";
+  return tally;
 }
 
 export function renderShipPanel() {

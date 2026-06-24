@@ -95,6 +95,12 @@ export function legacyChecklist(game) {
         `${metrics.industryInvestment}/8`,
       ),
       step(
+        "fleet-revenue",
+        "Earn 600 crowns from fleet trade",
+        metrics.fleetRevenue >= 600,
+        `${metrics.fleetRevenue}/600`,
+      ),
+      step(
         "capital",
         "Hold 900 crowns in reserve",
         metrics.coins >= 900,
@@ -158,9 +164,15 @@ export function legacyChecklist(game) {
       ),
       step(
         "fleet",
-        "Own three vessel classes",
-        metrics.vesselClasses >= 3,
-        `${metrics.vesselClasses}/3`,
+        "Command three fleet vessels across two classes",
+        metrics.fleetShips >= 3 && metrics.fleetClasses >= 2,
+        `${metrics.fleetShips}/3 · ${metrics.fleetClasses}/2`,
+      ),
+      step(
+        "routes",
+        "Run two simultaneous trade routes",
+        metrics.fleetActiveRoutes >= 2,
+        `${metrics.fleetActiveRoutes}/2`,
       ),
       step(
         "upgrades",
@@ -262,6 +274,7 @@ export function legacyMetrics(game = {}) {
   const upgrades = Object.values(game.shipUpgrades?.equipped || {}).filter(
     Boolean,
   ).length;
+  const fleetShips = Array.isArray(game.fleet?.ships) ? game.fleet.ships : [];
   return {
     leasedWarehouses: warehouses,
     industryInvestment: industries,
@@ -292,6 +305,15 @@ export function legacyMetrics(game = {}) {
     friendlyFactions: Object.values(game.factionStanding || {}).filter(
       (standing) => standing >= 25,
     ).length,
+    fleetShips: fleetShips.length,
+    fleetActiveRoutes: fleetShips.filter(
+      (ship) => ship?.route && ship.status === "sailing",
+    ).length,
+    fleetClasses: new Set(
+      fleetShips.map((ship) => ship?.classId).filter(Boolean),
+    ).size,
+    fleetDeliveries: Number(game.legacyProgress?.fleetDeliveries) || 0,
+    fleetRevenue: Number(game.legacyProgress?.fleetRevenue) || 0,
   };
 }
 

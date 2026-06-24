@@ -98,3 +98,122 @@ export const HOUSE_NAMES = Object.freeze({
 export const ROUTE_NAMES = Object.freeze({
   thornvayleCircuit: "Thornvayle Circuit",
 });
+
+// Rival merchant ships sail under this fixed roster. Kept here as the single
+// source of truth so the fleet name generator can avoid duplicating a name that
+// is already on the water.
+export const RIVAL_SHIP_NAMES = Object.freeze([
+  SHIP_NAMES.amberHeron,
+  SHIP_NAMES.silverWake,
+  SHIP_NAMES.crownPetrel,
+  "Moss Lantern",
+  "Iron Minnow",
+  "Velvet Gull",
+  "Pearl Cormorant",
+  "Ashen Star",
+  "Reed Swan",
+]);
+
+// Fleet vessels receive generated "Adjective Noun" registry names so each one
+// is distinct instead of reading as its bare hull class (e.g. "Merchant Cutter").
+export const FLEET_NAME_PREFIXES = Object.freeze([
+  "Amber",
+  "Silver",
+  "Sable",
+  "Iron",
+  "Velvet",
+  "Pearl",
+  "Ashen",
+  "Reed",
+  "Golden",
+  "Crimson",
+  "Dusky",
+  "Salt",
+  "Storm",
+  "Ember",
+  "Ivory",
+  "Jade",
+  "Copper",
+  "Bronze",
+  "Slate",
+  "Misty",
+  "Winter",
+  "Scarlet",
+  "Indigo",
+  "Verdant",
+  "Sunken",
+  "Pale",
+  "Russet",
+  "Twilight",
+  "Foam",
+  "Driftwood",
+  "Vermilion",
+  "Lazuli",
+]);
+export const FLEET_NAME_NOUNS = Object.freeze([
+  "Heron",
+  "Wake",
+  "Petrel",
+  "Gull",
+  "Cormorant",
+  "Swan",
+  "Star",
+  "Minnow",
+  "Lantern",
+  "Kestrel",
+  "Tern",
+  "Albatross",
+  "Marlin",
+  "Osprey",
+  "Kingfisher",
+  "Dolphin",
+  "Gannet",
+  "Fulmar",
+  "Skua",
+  "Selkie",
+  "Pelican",
+  "Brambling",
+  "Halcyon",
+  "Whimbrel",
+  "Knot",
+  "Tattler",
+  "Beacon",
+  "Compass",
+  "Coracle",
+  "Moonfish",
+  "Wreck",
+  "Cathead",
+]);
+
+// Names a fleet vessel must never take: the rival roster plus the player's own
+// flagship, so two ships never share a name on the same map.
+export const RESERVED_SHIP_NAMES = Object.freeze([
+  ...RIVAL_SHIP_NAMES,
+  SHIP_NAMES.starter,
+]);
+
+// Deterministic "Adjective Noun" name that avoids every string in `avoid` (the
+// reserved roster plus the fleet's existing names). The seed picks a starting
+// combination and the walk returns the next unused one. Pure and testable.
+export function generateFleetShipName(seed, avoid = []) {
+  const taken = new Set(
+    Array.isArray(avoid)
+      ? avoid.filter((value) => typeof value === "string")
+      : [],
+  );
+  const prefixCount = FLEET_NAME_PREFIXES.length;
+  const nounCount = FLEET_NAME_NOUNS.length;
+  const total = prefixCount * nounCount;
+  const start = Math.abs(Math.trunc(Number(seed) || 0)) % total;
+  for (let step = 0; step < total; step += 1) {
+    const index = (start + step) % total;
+    const prefix = FLEET_NAME_PREFIXES[index % prefixCount];
+    const noun = FLEET_NAME_NOUNS[Math.floor(index / prefixCount) % nounCount];
+    const name = `${prefix} ${noun}`;
+    if (!taken.has(name)) return name;
+  }
+  // Every combination is already in use — fall back to a numbered hull.
+  let suffix = 2;
+  while (taken.has(`Nameless ${suffix}`)) suffix += 1;
+  return `Nameless ${suffix}`;
+}

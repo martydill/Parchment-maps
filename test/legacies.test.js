@@ -51,6 +51,7 @@ test("legacy state is created and old saves normalize safely", () => {
 test("trade magnate checklist combines warehouses, industries, and reserves", () => {
   const game = merchantPrince("tradeMagnate");
   game.coins = 900;
+  game.legacyProgress.fleetRevenue = 600;
   game.warehouses = {
     [PORT_NAMES.orvessaQuay]: { leased: true },
     [PORT_NAMES.narthkel]: { leased: true },
@@ -67,7 +68,7 @@ test("trade magnate checklist combines warehouses, industries, and reserves", ()
   assert.equal(legacyReadyForCapstone(game), true);
   assert.deepEqual(
     legacyChecklist(game).map((step) => step.done),
-    [true, true, true, true],
+    [true, true, true, true, true],
   );
 });
 
@@ -95,6 +96,13 @@ test("each legacy path exposes measurable checklist requirements", () => {
     admiral.shipUpgrades.owned.map((id, index) => [`S${index}`, id]),
   );
   admiral.legacyProgress.piratesRepelled = 5;
+  admiral.fleet = {
+    ships: [
+      { id: "F1", classId: "cutter", route: { legs: [] }, status: "sailing" },
+      { id: "F2", classId: "brig", route: { legs: [] }, status: "sailing" },
+      { id: "F3", classId: "cutter", route: { legs: [] }, status: "sailing" },
+    ],
+  };
   assert.equal(legacyReadyForCapstone(admiral), true);
 
   const broker = merchantPrince("shadowBroker");
@@ -134,6 +142,7 @@ test("capstone completion requires a chosen and ready legacy, then unlocks sandb
     ["A", "B", "C", "D"].map((port) => [port, { leased: true }]),
   );
   game.regionalEconomy = { A: { industries: { one: { investment: 8 } } } };
+  game.legacyProgress.fleetRevenue = 600;
   const completed = completeLegacyCapstone(game);
   assert.equal(completed.ok, true);
   assert.equal(completed.path.name, "Trade Magnate");
@@ -272,4 +281,30 @@ test("legacy metrics treat missing day as day zero for permits", () => {
     legacyMetrics({ legal: { permits: { open: { expiresDay: 0 } } } }).permits,
     1,
   );
+});
+
+test("legacy metrics track the fleet and its trade routes", () => {
+  const game = createGameState();
+  game.fleet = {
+    ships: [
+      { id: "F1", classId: "cutter", route: { legs: [] }, status: "sailing" },
+      { id: "F2", classId: "carrack", route: { legs: [] }, status: "sailing" },
+      { id: "F3", classId: "cutter", route: null, status: "laidUp" },
+    ],
+  };
+  game.legacyProgress.fleetRevenue = 650;
+  game.legacyProgress.fleetDeliveries = 9;
+
+  const metrics = legacyMetrics(game);
+  assert.equal(metrics.fleetShips, 3);
+  assert.equal(metrics.fleetClasses, 2);
+  assert.equal(metrics.fleetActiveRoutes, 2);
+  assert.equal(metrics.fleetRevenue, 650);
+  assert.equal(metrics.fleetDeliveries, 9);
+
+  const admiral = merchantPrince("fleetAdmiral");
+  const stepIds = legacyChecklist(admiral).map((step) => step.id);
+  assert.ok(stepIds.includes("fleet"));
+  assert.ok(stepIds.includes("routes"));
+  assert.equal(legacyReadyForCapstone(admiral), false);
 });
