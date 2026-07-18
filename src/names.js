@@ -1,7 +1,7 @@
 // Centralized original names for people, places, ships, factions, and titles.
 // Import these constants instead of hard-coding narrative entity names.
 
-export const GAME_NAME = "The Brindlewake Mercatorium";
+export const GAME_NAME = "Parchemt Maps";
 
 export const SHIP_NAMES = Object.freeze({
   starter: "The Vaelith Kest",

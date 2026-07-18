@@ -264,6 +264,7 @@ import {
   moveUnreachablePointsToOpenWater,
   separateWrappedPoints,
 } from "./core/map-generation.js";
+import { buildSeaField, routeLaneAroundLand, segmentClear } from "./core/navfield.js";
 import {
   createMapRendering,
   createRoughSeaParticles,
@@ -1164,6 +1165,36 @@ for (const route of merchantRoutePaths) {
     point[0] = mapped.x;
     point[1] = mapped.y;
   }
+}
+
+// Bake land-avoidance into every lane now that its waypoints are in world
+// coordinates: rasterize the (already transformed) coastlines once, then re-route
+// any lane segment that crosses land around it. Rivals, the player's fleet (which
+// reuses these same lanes), and the minimap overlay all consume the result.
+const seaField = buildSeaField(lands, { width: WORLD.w, height: WORLD.h });
+for (const route of merchantRoutePaths) {
+  route.points = routeLaneAroundLand(seaField, route.points);
+}
+
+// Invariant check: every baked lane should now stay off land. A count here
+// means a detour fell back to its authored (crossing) segment — worth knowing.
+let landCrossings = 0;
+for (const route of merchantRoutePaths) {
+  for (let i = 0; i + 1 < route.points.length; i += 1) {
+    if (
+      !segmentClear(
+        seaField,
+        route.points[i][0],
+        route.points[i][1],
+        route.points[i + 1][0],
+        route.points[i + 1][1],
+      )
+    )
+      landCrossings += 1;
+  }
+}
+if (landCrossings > 0 && typeof console !== "undefined") {
+  console.warn(`${landCrossings} sea-lane segments still cross land`);
 }
 
 const {

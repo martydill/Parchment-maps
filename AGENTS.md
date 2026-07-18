@@ -2,8 +2,7 @@
 
 ## Project overview
 
-The Gilded Archipelago is a dependency-free, browser-based merchant sailing
-game. It is implemented with HTML, CSS, JavaScript ES modules, and the Canvas
+Parchment Maps is a dependency-free, browser-based merchant sailing game. It is implemented with HTML, CSS, JavaScript ES modules, and the Canvas
 2D API. The application does not use a build step or a front-end framework.
 
 ## Important paths
