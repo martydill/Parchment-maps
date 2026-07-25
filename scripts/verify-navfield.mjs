@@ -76,7 +76,9 @@ function buildForSeed(seed) {
   };
   for (const land of lands) {
     const c = polygonCentroid(land.poly);
-    const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+    const r = land.name
+      ? regions.find((g) => g.key === land.name)
+      : near(c.x, c.y);
     for (const p of land.poly) {
       const m = mt.regionPoint(p[0], p[1], r.key, r.c);
       p[0] = m.x;
@@ -91,7 +93,9 @@ function buildForSeed(seed) {
 
 function segsClear(field, pts) {
   for (let i = 0; i + 1 < pts.length; i++)
-    if (!segmentClear(field, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]))
+    if (
+      !segmentClear(field, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+    )
       return false;
   return true;
 }
@@ -111,13 +115,27 @@ for (const seed of ["", "abc123", "7Q2v9", "maple-leaf", "zzz42"]) {
     bakeMs += performance.now() - t0;
     const bad = [];
     for (let i = 0; i + 1 < baked.length; i++)
-      if (!segmentClear(field, baked[i][0], baked[i][1], baked[i + 1][0], baked[i + 1][1]))
+      if (
+        !segmentClear(
+          field,
+          baked[i][0],
+          baked[i][1],
+          baked[i + 1][0],
+          baked[i + 1][1],
+        )
+      )
         bad.push(i);
     if (bad.length) {
       crossings++;
       console.log(
-        "  seed " + JSON.stringify(seed) + " lane " + lane[0] + " FAIL segs=" +
-          JSON.stringify(bad) + " npts=" + baked.length,
+        "  seed " +
+          JSON.stringify(seed) +
+          " lane " +
+          lane[0] +
+          " FAIL segs=" +
+          JSON.stringify(bad) +
+          " npts=" +
+          baked.length,
       );
     }
   }

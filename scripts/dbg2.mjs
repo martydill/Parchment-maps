@@ -1,17 +1,39 @@
 import { createMapTransform } from "../src/core/map-generation.js";
 import { polygonCentroid } from "../src/core/geometry.js";
 import { wrappedDelta } from "../src/core/math.js";
-import { buildSeaField, routeLaneAroundLand, segmentClear } from "../src/core/navfield.js";
+import {
+  buildSeaField,
+  routeLaneAroundLand,
+  segmentClear,
+} from "../src/core/navfield.js";
 import { lands as sourceLands } from "../src/world-data.js";
 
 const WORLD = { w: 4800, h: 3200 };
 const PAIRS = [
-  [[650, 485], [2380, 650]],
-  [[4700, 1220], [4640, 1510]],
-  [[6240, 760], [6280, 1600]],
-  [[6280, 1600], [40, 1690]],
-  [[1950, 1105], [3410, 1660]],
-  [[2000, 765], [3050, 1210]],
+  [
+    [650, 485],
+    [2380, 650],
+  ],
+  [
+    [4700, 1220],
+    [4640, 1510],
+  ],
+  [
+    [6240, 760],
+    [6280, 1600],
+  ],
+  [
+    [6280, 1600],
+    [40, 1690],
+  ],
+  [
+    [1950, 1105],
+    [3410, 1660],
+  ],
+  [
+    [2000, 765],
+    [3050, 1210],
+  ],
 ];
 function unwrap(poly, w) {
   let p = poly[0][0];
@@ -37,7 +59,9 @@ function buildForSeed(seed) {
   };
   for (const land of lands) {
     const c = polygonCentroid(land.poly);
-    const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+    const r = land.name
+      ? regions.find((g) => g.key === land.name)
+      : near(c.x, c.y);
     for (const p of land.poly) {
       const m = mt.regionPoint(p[0], p[1], r.key, r.c);
       p[0] = m.x;
@@ -45,7 +69,10 @@ function buildForSeed(seed) {
     }
     unwrap(land.poly, WORLD.w);
   }
-  return { field: buildSeaField(lands, { width: WORLD.w, height: WORLD.h }), mp };
+  return {
+    field: buildSeaField(lands, { width: WORLD.w, height: WORLD.h }),
+    mp,
+  };
 }
 for (const seed of ["", "abc123"]) {
   const { field, mp } = buildForSeed(seed);
@@ -59,13 +86,28 @@ for (const seed of ["", "abc123"]) {
     ]);
     const bad = [];
     for (let i = 0; i + 1 < baked.length; i++)
-      if (!segmentClear(field, baked[i][0], baked[i][1], baked[i + 1][0], baked[i + 1][1]))
+      if (
+        !segmentClear(
+          field,
+          baked[i][0],
+          baked[i][1],
+          baked[i + 1][0],
+          baked[i + 1][1],
+        )
+      )
         bad.push(i);
     if (bad.length)
       console.log(
-        "pair " + idx + " FAIL segs=" + JSON.stringify(bad) + " npts=" + baked.length +
-          " startOnLand=" + !segmentClear(field, ma.x, ma.y, ma.x, ma.y) +
-          " endOnLand=" + !segmentClear(field, mb.x, mb.y, mb.x, mb.y),
+        "pair " +
+          idx +
+          " FAIL segs=" +
+          JSON.stringify(bad) +
+          " npts=" +
+          baked.length +
+          " startOnLand=" +
+          !segmentClear(field, ma.x, ma.y, ma.x, ma.y) +
+          " endOnLand=" +
+          !segmentClear(field, mb.x, mb.y, mb.x, mb.y),
       );
   });
 }

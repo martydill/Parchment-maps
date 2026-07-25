@@ -33,7 +33,9 @@ const mp = (x, y) => {
 };
 for (const land of lands) {
   const c = polygonCentroid(land.poly);
-  const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+  const r = land.name
+    ? regions.find((g) => g.key === land.name)
+    : near(c.x, c.y);
   for (const p of land.poly) {
     const m = mt.regionPoint(p[0], p[1], r.key, r.c);
     p[0] = m.x;
@@ -48,7 +50,15 @@ function snapDist(x, y) {
     for (let dr = -rad; dr <= rad; dr++)
       for (let dc = -rad; dc <= rad; dc++) {
         if (Math.max(Math.abs(dr), Math.abs(dc)) !== rad) continue;
-        if (segmentClear(field, x + dc * 10, y + dr * 10, x + dc * 10, y + dr * 10))
+        if (
+          segmentClear(
+            field,
+            x + dc * 10,
+            y + dr * 10,
+            x + dc * 10,
+            y + dr * 10,
+          )
+        )
           return rad;
       }
   }
@@ -57,20 +67,44 @@ function snapDist(x, y) {
 
 const ma = mp(650, 485);
 const mb = mp(2380, 650);
-console.log("A snapCells=" + snapDist(ma.x, ma.y), "B snapCells=" + snapDist(mb.x, mb.y));
+console.log(
+  "A snapCells=" + snapDist(ma.x, ma.y),
+  "B snapCells=" + snapDist(mb.x, mb.y),
+);
 const baked = routeLaneAroundLand(field, [
   [ma.x, ma.y],
   [mb.x, mb.y],
 ]);
 console.log("baked npts=" + baked.length);
 console.log(
-  "baked[0] onLand=" + !segmentClear(field, baked[0][0], baked[0][1], baked[0][0], baked[0][1]),
+  "baked[0] onLand=" +
+    !segmentClear(field, baked[0][0], baked[0][1], baked[0][0], baked[0][1]),
   "baked[last] onLand=" +
-    !segmentClear(field, baked.at(-1)[0], baked.at(-1)[1], baked.at(-1)[0], baked.at(-1)[1]),
+    !segmentClear(
+      field,
+      baked.at(-1)[0],
+      baked.at(-1)[1],
+      baked.at(-1)[0],
+      baked.at(-1)[1],
+    ),
 );
-console.log("segmentClear(baked[0],baked[last])=" +
-  segmentClear(field, baked[0][0], baked[0][1], baked.at(-1)[0], baked.at(-1)[1]));
-const p = findSeaPath(field, baked[0][0], baked[0][1], baked.at(-1)[0], baked.at(-1)[1]);
+console.log(
+  "segmentClear(baked[0],baked[last])=" +
+    segmentClear(
+      field,
+      baked[0][0],
+      baked[0][1],
+      baked.at(-1)[0],
+      baked.at(-1)[1],
+    ),
+);
+const p = findSeaPath(
+  field,
+  baked[0][0],
+  baked[0][1],
+  baked.at(-1)[0],
+  baked.at(-1)[1],
+);
 console.log("findSeaPath(baked endpoints) =>", p ? p.length + " pts" : "null");
 const p2 = findSeaPath(field, ma.x, ma.y, mb.x, mb.y);
 console.log("findSeaPath(raw endpoints) =>", p2 ? p2.length + " pts" : "null");

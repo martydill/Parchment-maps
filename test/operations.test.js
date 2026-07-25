@@ -6,6 +6,7 @@ import {
   adjustedContractReward,
   adjustedIntelCost,
   buyProvisions,
+  combatEnemyProfile,
   componentEfficiency,
   contractOutcome,
   createOperationsState,
@@ -366,8 +367,8 @@ test("combat actions offer escape, negotiation, fighting, and surrender", () => 
     coins: 100,
   });
   assert.equal(parley.outcome, "parleyed");
-  assert.equal(parley.coinsLost, 22);
-  assert.ok(parley.description.includes("22 crowns"));
+  assert.equal(parley.coinsLost, 18);
+  assert.ok(parley.description.includes("18 crowns"));
 
   const penniless = resolveCombatAction({
     action: "parley",
@@ -384,6 +385,7 @@ test("combat actions offer escape, negotiation, fighting, and surrender", () => 
   });
   assert.equal(victory.outcome, "repelled");
   assert.equal(victory.moraleChange, 5);
+  assert.ok(victory.prizeValue > 0);
 
   const defeat = resolveCombatAction({
     action: "fight",
@@ -402,6 +404,52 @@ test("combat actions offer escape, negotiation, fighting, and surrender", () => 
   });
   assert.equal(surrendered.outcome, "surrendered");
   assert.equal(surrendered.coinsLost, 10);
+});
+
+test("combat profiles change ransom, chase, and prize stakes", () => {
+  const privateer = combatEnemyProfile(12, 2);
+  assert.ok(privateer.id);
+  assert.ok(privateer.cargoPreference.length > 0);
+
+  const easyParley = resolveCombatAction({
+    action: "parley",
+    attackStrength: 2,
+    coins: 100,
+    profile: "smugglers",
+  });
+  const hardParley = resolveCombatAction({
+    action: "parley",
+    attackStrength: 2,
+    coins: 100,
+    profile: "desperate",
+  });
+  assert.ok(easyParley.coinsLost < hardParley.coinsLost);
+
+  const fastCutters = resolveCombatAction({
+    action: "flee",
+    attackStrength: 2,
+    maxSpeed: 100,
+    morale: 50,
+    seed: 9,
+    profile: "cutters",
+    cargoValue: 60,
+  });
+  assert.equal(fastCutters.outcome, "caught");
+  assert.ok(fastCutters.cargoLossRisk > 0);
+
+  const gunnerVictory = resolveCombatAction({
+    action: "fight",
+    attackStrength: 2,
+    defense: 1.2,
+    morale: 60,
+    seed: 4,
+    profile: { id: "custom", label: "Custom raider", fightModifier: -0.2 },
+    officerBonus: 1,
+    locationAdvantage: 0.08,
+    cargoValue: 100,
+  });
+  assert.equal(gunnerVictory.outcome, "repelled");
+  assert.ok(gunnerVictory.prizeValue > 0);
 });
 
 test("weekly wages, provisions, and repairs create predictable operating costs", () => {

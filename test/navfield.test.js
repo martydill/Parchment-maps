@@ -296,3 +296,28 @@ test("buildSeaField rasterizes the real refined coastline quickly (integration)"
   assert.ok(land < field.grid.length, "expected open water too");
   assert.ok(elapsed < 500, `rasterize took ${elapsed.toFixed(1)}ms`);
 });
+
+test("routeLaneAroundLand snaps stranded transformed waypoints or falls back", () => {
+  const field = fieldFrom([rectangle(0, 0, WIDTH, HEIGHT)], {
+    width: WIDTH,
+    height: HEIGHT,
+    cellSize: 50,
+  });
+  const waypoints = [
+    [100, 100],
+    [200, 200],
+  ];
+  assert.deepEqual(routeLaneAroundLand(field, waypoints), waypoints);
+
+  const coastal = fieldFrom([rectangle(100, 100, 300, 300)], {
+    width: WIDTH,
+    height: HEIGHT,
+    cellSize: 50,
+  });
+  const detoured = routeLaneAroundLand(coastal, [
+    [150, 150],
+    [500, 150],
+  ]);
+  assert.ok(detoured.length >= 2);
+  assert.ok(everySegmentClear(coastal, detoured));
+});
