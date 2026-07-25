@@ -39,6 +39,69 @@ export const SHIP_COMPONENTS = Object.freeze({
   weapons: { label: "Weapons", repairCost: 2 },
 });
 
+export const COMBAT_ENEMY_PROFILES = Object.freeze({
+  privateers: {
+    id: "privateers",
+    label: "Hungry privateers",
+    description: "They want a quick prize more than blood.",
+    parleyMultiplier: 0.82,
+    fleeModifier: 0.03,
+    fightModifier: -0.08,
+    cargoPreference: ["provisions", "spice", "silk"],
+  },
+  desperate: {
+    id: "desperate",
+    label: "Desperate pirates",
+    description: "Their hull rides low and their crew looks reckless.",
+    parleyMultiplier: 1.18,
+    fleeModifier: -0.03,
+    fightModifier: 0.12,
+    cargoPreference: ["medicine", "provisions", "fittings"],
+  },
+  cutters: {
+    id: "cutters",
+    label: "Fast cutters",
+    description: "Lean sails and shallow keels make them hard to shake.",
+    parleyMultiplier: 1,
+    fleeModifier: -0.12,
+    fightModifier: -0.02,
+    cargoPreference: ["tea", "spice", "pearls"],
+  },
+  boarders: {
+    id: "boarders",
+    label: "Boarding brutes",
+    description: "Grapnels hang ready from their rails.",
+    parleyMultiplier: 1.1,
+    fleeModifier: -0.05,
+    fightModifier: 0.18,
+    cargoPreference: ["iron", "fittings", "garments"],
+  },
+  smugglers: {
+    id: "smugglers",
+    label: "Mistaken smugglers",
+    description: "They are dangerous, but not eager for witnesses.",
+    parleyMultiplier: 0.72,
+    fleeModifier: 0.06,
+    fightModifier: -0.15,
+    cargoPreference: ["salt", "ore", "grain"],
+  },
+});
+
+export function combatEnemyProfile(seed = 0, strength = 1) {
+  const profiles = Object.values(COMBAT_ENEMY_PROFILES);
+  const roll = encounterRoll(Number(seed) + strength * 19);
+  return profiles[
+    Math.min(profiles.length - 1, Math.floor(roll * profiles.length))
+  ];
+}
+
+function normalizeCombatProfile(profile) {
+  if (!profile) return COMBAT_ENEMY_PROFILES.privateers;
+  if (typeof profile === "string")
+    return COMBAT_ENEMY_PROFILES[profile] || COMBAT_ENEMY_PROFILES.privateers;
+  return { ...COMBAT_ENEMY_PROFILES.privateers, ...profile };
+}
+
 export const ROUTE_PLANS = Object.freeze({
   balanced: {
     id: "balanced",
@@ -330,14 +393,27 @@ export function resolveCombatAction({
   morale = 50,
   coins = 0,
   seed = 0,
+  profile,
+  cargoValue = 0,
+  officerBonus = 0,
+  locationAdvantage = 0,
 }) {
   const strength = clamp(Math.floor(Number(attackStrength)), 1, 3);
   const availableCoins = Math.max(0, Math.floor(Number(coins)));
+  const raiders = normalizeCombatProfile(profile);
   const roll = encounterRoll(seed + 7);
+  const tacticalBonus = Number(officerBonus) || 0;
+  const waters = Number(locationAdvantage) || 0;
 
   if (action === "flee") {
     const escapeChance = clamp(
-      0.24 + maxSpeed / 420 + morale / 500 - strength * 0.1,
+      0.24 +
+        maxSpeed / 420 +
+        morale / 500 -
+        strength * 0.1 +
+        raiders.fleeModifier +
+        tacticalBonus * 0.04 +
+        waters,
       0.12,
       0.86,
     );
@@ -353,12 +429,16 @@ export function resolveCombatAction({
             componentDamage: { rigging: 4 + strength * 2, hull: strength },
             moraleChange: -4 - strength,
             coinsLost: Math.min(availableCoins, 5 + strength * 4),
+            cargoLossRisk: cargoValue ? 0.25 + strength * 0.08 : 0,
           },
         );
   }
 
   if (action === "parley") {
-    const demand = Math.min(availableCoins, 8 + strength * 7);
+    const demand = Math.min(
+      availableCoins,
+      Math.max(1, Math.round((8 + strength * 7) * raiders.parleyMultiplier)),
+    );
     return combatResult(
       "parleyed",
       demand
@@ -369,13 +449,14 @@ export function resolveCombatAction({
         : {
             componentDamage: { fittings: 5 + strength * 2 },
             moraleChange: -5,
+            cargoLossRisk: cargoValue ? 0.55 : 0,
           },
     );
   }
 
   if (action === "fight") {
-    const combatPower = defense + morale / 55 + roll;
-    const won = combatPower >= strength + 0.65;
+    const combatPower = defense + morale / 55 + roll + tacticalBonus;
+    const won = combatPower >= strength + 0.65 + raiders.fightModifier - waters;
     return won
       ? combatResult(
           "repelled",
@@ -383,6 +464,10 @@ export function resolveCombatAction({
           {
             componentDamage: { weapons: strength, rigging: strength },
             moraleChange: 5,
+            prizeValue: Math.max(
+              0,
+              Math.round(4 + strength * 6 + cargoValue * 0.08),
+            ),
           },
         )
       : combatResult(
@@ -396,6 +481,7 @@ export function resolveCombatAction({
             },
             moraleChange: -8 - strength * 2,
             coinsLost: Math.min(availableCoins, 10 + strength * 8),
+            cargoLossRisk: cargoValue ? 0.45 + strength * 0.1 : 0,
           },
         );
   }
@@ -407,6 +493,7 @@ export function resolveCombatAction({
       componentDamage: { fittings: 2 + strength },
       moraleChange: -4,
       coinsLost: Math.min(availableCoins, 7 + strength * 6),
+      cargoLossRisk: cargoValue ? 0.35 + strength * 0.08 : 0,
     },
   );
 }
@@ -417,6 +504,8 @@ function combatResult(outcome, description, effects) {
       componentDamage: {},
       moraleChange: 0,
       coinsLost: 0,
+      cargoLossRisk: 0,
+      prizeValue: 0,
     },
     effects,
     {

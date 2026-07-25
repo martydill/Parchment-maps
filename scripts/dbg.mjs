@@ -33,7 +33,9 @@ const mp = (x, y) => {
 };
 for (const land of lands) {
   const c = polygonCentroid(land.poly);
-  const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+  const r = land.name
+    ? regions.find((g) => g.key === land.name)
+    : near(c.x, c.y);
   for (const p of land.poly) {
     const m = mt.regionPoint(p[0], p[1], r.key, r.c);
     p[0] = m.x;
@@ -63,7 +65,17 @@ for (const [sx, sy] of [
   const m = mp(sx, sy);
   const onLand = !segmentClear(field, m.x, m.y, m.x, m.y);
   console.log(
-    "src [" + sx + "," + sy + "] -> world (" + m.x.toFixed(0) + "," + m.y.toFixed(0) +
-      ") onLand=" + onLand + " snapCells=" + snapDist(m.x, m.y),
+    "src [" +
+      sx +
+      "," +
+      sy +
+      "] -> world (" +
+      m.x.toFixed(0) +
+      "," +
+      m.y.toFixed(0) +
+      ") onLand=" +
+      onLand +
+      " snapCells=" +
+      snapDist(m.x, m.y),
   );
 }

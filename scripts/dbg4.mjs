@@ -1,7 +1,11 @@
 import { createMapTransform } from "../src/core/map-generation.js";
 import { polygonCentroid } from "../src/core/geometry.js";
 import { wrappedDelta } from "../src/core/math.js";
-import { buildSeaField, findSeaPath, routeLaneAroundLand } from "../src/core/navfield.js";
+import {
+  buildSeaField,
+  findSeaPath,
+  routeLaneAroundLand,
+} from "../src/core/navfield.js";
 import { lands as sourceLands } from "../src/world-data.js";
 
 const WORLD = { w: 4800, h: 3200 };
@@ -28,7 +32,9 @@ const mp = (x, y) => {
 };
 for (const land of lands) {
   const c = polygonCentroid(land.poly);
-  const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+  const r = land.name
+    ? regions.find((g) => g.key === land.name)
+    : near(c.x, c.y);
   for (const p of land.poly) {
     const m = mt.regionPoint(p[0], p[1], r.key, r.c);
     p[0] = m.x;
@@ -49,21 +55,52 @@ const B = baked[baked.length - 1];
 for (const mn of [12000, 50000, 200000]) {
   const t0 = performance.now();
   const p = findSeaPath(field, A[0], A[1], B[0], B[1], { maxNodes: mn });
-  console.log("maxNodes=" + mn + " => " + (p ? p.length + " pts" : "null") + " (" + (performance.now() - t0).toFixed(1) + "ms)");
+  console.log(
+    "maxNodes=" +
+      mn +
+      " => " +
+      (p ? p.length + " pts" : "null") +
+      " (" +
+      (performance.now() - t0).toFixed(1) +
+      "ms)",
+  );
 }
 
 // Control: two clearly-open cells far apart (scan grid for water cells).
 const opens = [];
 for (let r = 0; r < field.rows && opens.length < 4; r += 40)
   for (let c = 0; c < field.cols && opens.length < 4; c += 200)
-    if (field.grid[r * field.cols + c] === 0) opens.push([c * 10 + 5, r * 10 + 5]);
+    if (field.grid[r * field.cols + c] === 0)
+      opens.push([c * 10 + 5, r * 10 + 5]);
 for (let i = 0; i + 2 < opens.length; i += 2) {
-  const p = findSeaPath(field, opens[i][0], opens[i][1], opens[i + 2][0], opens[i + 2][1], {
-    maxNodes: 200000,
-  });
+  const p = findSeaPath(
+    field,
+    opens[i][0],
+    opens[i][1],
+    opens[i + 2][0],
+    opens[i + 2][1],
+    {
+      maxNodes: 200000,
+    },
+  );
   console.log(
-    "control " + i + " (" + opens[i][0] + "," + opens[i][1] + ")->(" + opens[i + 2][0] + "," + opens[i + 2][1] + ") => " +
+    "control " +
+      i +
+      " (" +
+      opens[i][0] +
+      "," +
+      opens[i][1] +
+      ")->(" +
+      opens[i + 2][0] +
+      "," +
+      opens[i + 2][1] +
+      ") => " +
       (p ? p.length + " pts" : "null"),
   );
 }
-console.log("A=", A.map((v) => v.toFixed(0)), "B=", B.map((v) => v.toFixed(0)));
+console.log(
+  "A=",
+  A.map((v) => v.toFixed(0)),
+  "B=",
+  B.map((v) => v.toFixed(0)),
+);

@@ -119,6 +119,7 @@ import {
 import {
   applyComponentDamage,
   adjustedIntelCost,
+  combatEnemyProfile,
   componentEfficiency,
   contractOutcome,
   factionPrivilege,
@@ -264,7 +265,11 @@ import {
   moveUnreachablePointsToOpenWater,
   separateWrappedPoints,
 } from "./core/map-generation.js";
-import { buildSeaField, routeLaneAroundLand, segmentClear } from "./core/navfield.js";
+import {
+  buildSeaField,
+  routeLaneAroundLand,
+  segmentClear,
+} from "./core/navfield.js";
 import {
   createMapRendering,
   createRoughSeaParticles,
@@ -4656,11 +4661,96 @@ function openPort() {
   updateHud();
 }
 
+function encounterRollLike(seed) {
+  const value = Math.sin(Number(seed || 0) * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function combatCargoValue() {
+  return game.cargoLots.reduce(
+    (sum, lot) => sum + (goods[lot.key]?.base || 0),
+    0,
+  );
+}
+
+function combatLocationAdvantage() {
+  const weather = currentWeather(ship.angle);
+  let advantage = 0;
+  if (weather.visibilityKm < 8) advantage += 0.04;
+  if ((weather.roughness || 0) > 0.35) advantage += 0.03;
+  if (nearPort === currentPort) advantage += 0.03;
+  return advantage;
+}
+
+function combatOfficerBonus(action) {
+  if (action === "fight")
+    return specialistPower(game.specialists, "gunner") * 0.42;
+  if (action === "flee")
+    return specialistPower(game.specialists, "navigator") * 0.28;
+  if (action === "parley")
+    return specialistPower(game.specialists, "factor") * 0.32;
+  if (action === "surrender")
+    return specialistPower(game.specialists, "purser") * 0.18;
+  return 0;
+}
+
+function combatOfficerNote(action) {
+  if (action === "fight" && specialistPower(game.specialists, "gunner") > 0)
+    return "Gunner steadies the batteries";
+  if (action === "flee" && specialistPower(game.specialists, "navigator") > 0)
+    return "Navigator finds broken water";
+  if (action === "parley" && specialistPower(game.specialists, "factor") > 0)
+    return "Factor bargains down the ransom";
+  if (action === "surrender" && specialistPower(game.specialists, "purser") > 0)
+    return "Purser hides the strongbox";
+  return "";
+}
+
+function prizedCargoLot(profile) {
+  if (!game.cargoLots.length) return null;
+  const preferred = profile.cargoPreference || [];
+  return (
+    preferred
+      .map((key) => game.cargoLots.find((lot) => lot.key === key))
+      .find(Boolean) ||
+    [...game.cargoLots].sort(
+      (a, b) => (goods[b.key]?.base || 0) - (goods[a.key]?.base || 0),
+    )[0]
+  );
+}
+
+function removeCombatCargo(profile) {
+  const lot = prizedCargoLot(profile);
+  if (!lot) return null;
+  game.cargoLots = game.cargoLots.filter((item) => item.id !== lot.id);
+  syncCargoCounts(game, goods);
+  return lot;
+}
+
+function combatBackdropClass() {
+  const weather = currentWeather(ship.angle);
+  const land = currentPort?.land || "open-sea";
+  const climate = land.toLowerCase().includes("rime")
+    ? "ice"
+    : land.toLowerCase().includes("mire")
+      ? "marsh"
+      : land.toLowerCase().includes("storm") || weather.roughness > 0.38
+        ? "storm"
+        : land.toLowerCase().includes("keys") ||
+            land.toLowerCase().includes("isle")
+          ? "isles"
+          : "coast";
+  return `combat-visual ${climate}`;
+}
+
 function openCombatEncounter(encounter, stats) {
+  const seed = game.day + currentPort.name.length + 31;
+  const profile = combatEnemyProfile(seed, encounter.attackStrength);
   pendingCombat = {
     encounter,
     stats,
-    seed: game.day + currentPort.name.length + 31,
+    profile,
+    seed,
   };
   const strengthLabels = [
     "",
@@ -4669,13 +4759,26 @@ function openCombatEncounter(encounter, stats) {
     "Heavy boarding ship",
   ];
   document.getElementById("combatDescription").textContent =
-    `${strengthLabels[encounter.attackStrength]} shadows your wake outside ${currentPort.name}. The harbor is close, but not close enough for its guns to protect you.`;
+    `${profile.label}: ${profile.description} ${strengthLabels[encounter.attackStrength]} shadows your wake outside ${currentPort.name}. The harbor is close, but not close enough for its guns to protect you.`;
   document.getElementById("combatPlayer").textContent =
     `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
   document.getElementById("combatEnemy").textContent =
-    `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3`;
+    `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3 · ${profile.label}`;
+  renderCombatVisual(strengthLabels[encounter.attackStrength], profile);
   renderCombatActions();
   document.getElementById("combatPanel").style.display = "grid";
+}
+
+function renderCombatVisual(enemyLabel, profile) {
+  const visual = document.getElementById("combatVisual");
+  visual.className = combatBackdropClass();
+  document.getElementById("combatLocation").textContent =
+    `${currentPort.land} waters`;
+  document.getElementById("combatWaters").textContent = currentWeather(
+    ship.angle,
+  ).name;
+  document.getElementById("combatEnemyVisualLabel").textContent = enemyLabel;
+  document.getElementById("combatProfileLabel").textContent = profile.label;
 }
 
 function previewCombatAction(action) {
@@ -4688,6 +4791,10 @@ function previewCombatAction(action) {
     morale: game.operations.morale,
     coins: game.coins,
     seed: pendingCombat.seed,
+    profile: pendingCombat.profile,
+    cargoValue: combatCargoValue(),
+    officerBonus: combatOfficerBonus(action),
+    locationAdvantage: combatLocationAdvantage(),
   });
 }
 
@@ -4710,6 +4817,13 @@ function describeCombatConsequence(action, result) {
       `${result.moraleChange > 0 ? "+" : ""}${result.moraleChange} morale`,
     );
   if (result.coinsLost) parts.push(`-${result.coinsLost} crowns`);
+  if (result.prizeValue) parts.push(`+${result.prizeValue} salvage`);
+  if (result.cargoLossRisk > 0) {
+    const risk = Math.round(result.cargoLossRisk * 100);
+    parts.push(`${risk}% cargo risk`);
+  }
+  const note = combatOfficerNote(action);
+  if (note) parts.push(note);
   if (action === "surrender") parts.push("Gunner loyalty -8");
   return parts.join("  ·  ");
 }
@@ -4876,6 +4990,10 @@ function chooseCombatAction(action) {
     morale: game.operations.morale,
     coins: game.coins,
     seed: pendingCombat.seed,
+    profile: pendingCombat.profile,
+    cargoValue: combatCargoValue(),
+    officerBonus: combatOfficerBonus(action),
+    locationAdvantage: combatLocationAdvantage(),
   });
   game.operations = applyComponentDamage(
     game.operations,
@@ -4892,8 +5010,20 @@ function chooseCombatAction(action) {
     game.legacyProgress ||= { piratesRepelled: 0 };
     game.legacyProgress.piratesRepelled += 1;
   }
+  let cargoText = "";
+  if (
+    result.cargoLossRisk &&
+    encounterRollLike(pendingCombat.seed + 23) < result.cargoLossRisk
+  ) {
+    const lost = removeCombatCargo(pendingCombat.profile);
+    if (lost) cargoText = ` Raiders seized ${goods[lost.key].name}.`;
+  }
+  if (result.prizeValue) game.coins += result.prizeValue;
   game.coins -= result.coinsLost;
-  addNews(`Sea encounter: ${result.outcome}`, result.description);
+  addNews(
+    `Sea encounter: ${result.outcome}`,
+    `${result.description}${cargoText}${result.prizeValue ? ` Prize salvage yielded ${result.prizeValue} crowns.` : ""}`,
+  );
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
   pendingCombat = null;
   document.getElementById("combatPanel").style.display = "none";

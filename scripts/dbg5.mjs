@@ -18,7 +18,9 @@ function unwrap(poly, w) {
 }
 const lands = structuredClone(sourceLands);
 const mt = createMapTransform("");
-const regions = lands.filter((l) => l.name).map((l) => ({ key: l.name, c: polygonCentroid(l.poly) }));
+const regions = lands
+  .filter((l) => l.name)
+  .map((l) => ({ key: l.name, c: polygonCentroid(l.poly) }));
 const near = (x, y) =>
   regions.reduce((b, r) => {
     const d = Math.hypot(x - r.c.x, y - r.c.y);
@@ -30,7 +32,9 @@ const mp = (x, y) => {
 };
 for (const land of lands) {
   const c = polygonCentroid(land.poly);
-  const r = land.name ? regions.find((g) => g.key === land.name) : near(c.x, c.y);
+  const r = land.name
+    ? regions.find((g) => g.key === land.name)
+    : near(c.x, c.y);
   for (const p of land.poly) {
     const m = mt.regionPoint(p[0], p[1], r.key, r.c);
     p[0] = m.x;
@@ -51,12 +55,22 @@ const baked = routeLaneAroundLand(
 console.log("npts=" + baked.length);
 baked.forEach((p, i) =>
   console.log(
-    " " + i + " (" + p[0].toFixed(0) + "," + p[1].toFixed(0) + ") onLand=" +
+    " " +
+      i +
+      " (" +
+      p[0].toFixed(0) +
+      "," +
+      p[1].toFixed(0) +
+      ") onLand=" +
       !segmentClear(field, p[0], p[1], p[0], p[1]),
   ),
 );
 // connectivity of each baked point to a known open-ocean cell
 for (let i = 0; i < baked.length; i++) {
-  const p = findSeaPath(field, baked[i][0], baked[i][1], 5, 5, { maxNodes: 200000 });
-  console.log("  pt" + i + " -> ocean: " + (p ? p.length + "pts" : "DISCONNECTED"));
+  const p = findSeaPath(field, baked[i][0], baked[i][1], 5, 5, {
+    maxNodes: 200000,
+  });
+  console.log(
+    "  pt" + i + " -> ocean: " + (p ? p.length + "pts" : "DISCONNECTED"),
+  );
 }
