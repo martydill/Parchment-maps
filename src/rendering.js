@@ -34,6 +34,58 @@ export function isLandPoint(x, y, worldWidth, landShapes = lands) {
   );
 }
 
+// Cache for viewport calculations to avoid redundant math operations
+const viewportCache = {
+  lastCameraX: 0,
+  lastCameraY: 0,
+  lastZoom: 0,
+  lastViewportWidth: 0,
+  lastViewportHeight: 0,
+  lastWorldWidth: 0,
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+  dirty: true,
+
+  update(cameraX, cameraY, viewportWidth, viewportHeight, zoom, worldWidth) {
+    if (this.dirty ||
+        Math.abs(this.lastCameraX - cameraX) > 1 ||
+        Math.abs(this.lastCameraY - cameraY) > 1 ||
+        Math.abs(this.lastZoom - zoom) > 0.01 ||
+        this.lastViewportWidth !== viewportWidth ||
+        this.lastViewportHeight !== viewportHeight ||
+        this.lastWorldWidth !== worldWidth) {
+
+      this.lastCameraX = cameraX;
+      this.lastCameraY = cameraY;
+      this.lastZoom = zoom;
+      this.lastViewportWidth = viewportWidth;
+      this.lastViewportHeight = viewportHeight;
+      this.lastWorldWidth = worldWidth;
+
+      const visibleHalfWidth = viewportWidth / (2 * zoom);
+      const visibleHalfHeight = viewportHeight / (2 * zoom);
+
+      this.left = cameraX - visibleHalfWidth;
+      this.right = cameraX + visibleHalfWidth;
+      this.top = cameraY - visibleHalfHeight;
+      this.bottom = cameraY + visibleHalfHeight;
+      this.dirty = false;
+    }
+  },
+
+  checkCircle(x, y, radius, cameraX, worldWidth) {
+    const wrappedX = x + Math.round((cameraX - x) / worldWidth) * worldWidth;
+    return (
+      wrappedX + radius >= this.left &&
+      wrappedX - radius <= this.right &&
+      y + radius >= this.top &&
+      y - radius <= this.bottom
+    );
+  }
+};
+
 export function wrappedCircleIntersectsViewport(
   x,
   y,
@@ -45,15 +97,8 @@ export function wrappedCircleIntersectsViewport(
   zoom,
   worldWidth,
 ) {
-  const visibleHalfWidth = viewportWidth / (2 * zoom);
-  const visibleHalfHeight = viewportHeight / (2 * zoom);
-  const wrappedX = x + Math.round((cameraX - x) / worldWidth) * worldWidth;
-  return (
-    wrappedX + radius >= cameraX - visibleHalfWidth &&
-    wrappedX - radius <= cameraX + visibleHalfWidth &&
-    y + radius >= cameraY - visibleHalfHeight &&
-    y - radius <= cameraY + visibleHalfHeight
-  );
+  viewportCache.update(cameraX, cameraY, viewportWidth, viewportHeight, zoom, worldWidth);
+  return viewportCache.checkCircle(x, y, radius, cameraX, worldWidth);
 }
 
 export function createRoughSeaParticles(seas, isOnLand) {
@@ -390,6 +435,13 @@ function drawWeatherClouds(
   const rollSpeed = 0.022 + windStrength * 0.05 + storm * 0.05;
   const sway = Math.sin(windAngle);
   c.save();
+
+  // Pre-calculate common values to reduce redundant calculations
+  const stormLightBoost = storm * 0.12;
+  const fairLightBoost = (1 - storm) * 0.58;
+  const cloudAlphaFactor = (0.55 + cloud * 0.5) * (0.7 + storm * 0.5);
+  const stormTint = storm > 0.4 ? 8 : 0;
+
   for (let i = 0; i < count; i++) {
     const layer = i % 3; // 0 far .. 2 near — nearer banks loom larger
     const speed = rollSpeed * (0.45 + layer * 0.45 + weatherRand(i, 1) * 0.5);
@@ -405,12 +457,12 @@ function drawWeatherClouds(
     // Per-cloud lightness: storms skew dark, fair weather skews bright, and
     // every cloud varies across the full dark-to-light range.
     const baseLight = clamp01(
-      storm * 0.12 + (1 - storm) * 0.58 + (weatherRand(i, 7) - 0.5) * 0.7,
+      stormLightBoost + fairLightBoost + (weatherRand(i, 7) - 0.5) * 0.7,
     );
     // Per-cloud thickness: some dense and heavy, some thin and wispy.
     const thick = weatherRand(i, 9);
     const alpha = clamp01(
-      (0.06 + thick * 0.24) * (0.55 + cloud * 0.5) * (0.7 + storm * 0.5),
+      (0.06 + thick * 0.24) * cloudAlphaFactor,
     );
     // A cloud is a small cluster of overlapping puffs so its body varies in
     // colour and thickness instead of reading as a flat disc.
@@ -425,7 +477,7 @@ function drawWeatherClouds(
       const tint = (weatherRand(i * 5 + j, 13) - 0.5) * 18;
       const cr = clamp255(val + tint);
       const cg = clamp255(val + tint * 0.5);
-      const cb = clamp255(val - tint * 0.3 + (storm > 0.4 ? 8 : 0));
+      const cb = clamp255(val - tint * 0.3 + stormTint);
       const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
       const pa = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
       const grad = c.createRadialGradient(px, py, 0, px, py, pr);
@@ -464,16 +516,18 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   c.fillRect(0, 0, vw, vh);
   // Drifting low fog banks rolling across the water.
   const count = 4 + Math.round(fog * 5);
+  const baseAlpha = fog;
+  const span = vw + 500;
+
   for (let i = 0; i < count; i++) {
     const speed = 0.004 + weatherRand(i, 11) * 0.01;
-    const span = vw + 500;
     let x = (weatherRand(i, 12) * span + time * speed) % span;
     if (x < 0) x += span;
     x -= 250;
     const y = weatherRand(i, 13) * (vh + 300) - 150;
     const rx = 220 + weatherRand(i, 14) * 220;
     const ry = 90 + weatherRand(i, 15) * 70;
-    const a = (0.05 + weatherRand(i, 16) * 0.06) * fog;
+    const a = (0.05 + weatherRand(i, 16) * 0.06) * baseAlpha;
     const bank = c.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
     bank.addColorStop(0, `rgba(224,228,232,${a})`);
     bank.addColorStop(1, "rgba(224,228,232,0)");
@@ -484,6 +538,23 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   }
   c.restore();
 }
+
+// Cache for directional fog calculations
+const dirFogCache = {
+  lastAheadVis: 0,
+  lastAsternVis: 0,
+  lastHeading: 0,
+  lastVW: 0,
+  lastVH: 0,
+  lastGradient: null,
+  lastContrast: 0,
+  lastDirection: 0,
+  lastCX: 0,
+  lastCY: 0,
+  lastDX: 0,
+  lastDY: 0,
+  valid: false
+};
 
 function drawDirectionalFog(
   c,
@@ -498,6 +569,23 @@ function drawDirectionalFog(
   const asternFog = clamp01((7.5 - asternVisibilityKm) / 5.5);
   const contrast = Math.abs(aheadFog - asternFog);
   if (contrast <= 0.04) return;
+
+  // Check cache validity
+  if (dirFogCache.valid &&
+      Math.abs(dirFogCache.lastAheadVis - aheadVisibilityKm) < 0.1 &&
+      Math.abs(dirFogCache.lastAsternVis - asternVisibilityKm) < 0.1 &&
+      Math.abs(dirFogCache.lastHeading - headingAngle) < 0.01 &&
+      dirFogCache.lastVW === vw &&
+      dirFogCache.lastVH === vh &&
+      Math.abs(dirFogCache.lastContrast - contrast) < 0.01) {
+
+    c.save();
+    c.fillStyle = dirFogCache.lastGradient;
+    c.fillRect(0, 0, vw, vh);
+    c.restore();
+    return;
+  }
+
   const denseAhead = aheadFog > asternFog;
   const direction = headingAngle - Math.PI / 2 + (denseAhead ? 0 : Math.PI);
   const cx = vw / 2;
@@ -505,10 +593,27 @@ function drawDirectionalFog(
   const span = Math.hypot(vw, vh);
   const dx = Math.cos(direction) * span;
   const dy = Math.sin(direction) * span;
+
   const gradient = c.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
   gradient.addColorStop(0, "rgba(222,226,213,0)");
   gradient.addColorStop(0.48, `rgba(222,226,213,${contrast * 0.08})`);
   gradient.addColorStop(1, `rgba(222,226,213,${contrast * 0.36})`);
+
+  // Update cache
+  dirFogCache.lastAheadVis = aheadVisibilityKm;
+  dirFogCache.lastAsternVis = asternVisibilityKm;
+  dirFogCache.lastHeading = headingAngle;
+  dirFogCache.lastVW = vw;
+  dirFogCache.lastVH = vh;
+  dirFogCache.lastGradient = gradient;
+  dirFogCache.lastContrast = contrast;
+  dirFogCache.lastDirection = direction;
+  dirFogCache.lastCX = cx;
+  dirFogCache.lastCY = cy;
+  dirFogCache.lastDX = dx;
+  dirFogCache.lastDY = dy;
+  dirFogCache.valid = true;
+
   c.save();
   c.fillStyle = gradient;
   c.fillRect(0, 0, vw, vh);
@@ -576,11 +681,48 @@ function drawWeatherLightning(c, lightning, vw, vh, time) {
   c.restore();
 }
 
+// Cache for weather calculations to avoid redundant string operations and math
+const weatherCache = {
+  lastName: '',
+  lastRoughness: -1,
+  lastVisibilityKm: -1,
+  cachedResult: null,
+
+  calculate(name, roughness, visibilityKm) {
+    if (this.cachedResult &&
+        this.lastName === name &&
+        Math.abs(this.lastRoughness - roughness) < 0.01 &&
+        Math.abs(this.lastVisibilityKm - visibilityKm) < 0.1) {
+      return this.cachedResult;
+    }
+
+    const lower = (name || "").toLowerCase();
+    const storm = clamp01((roughness - 0.2) / 0.28);
+    let nameFog = 0;
+    if (/mist/.test(lower)) nameFog = 0.62;
+    if (/fog/.test(lower)) nameFog = Math.max(nameFog, 0.82);
+    if (/haze/.test(lower)) nameFog = Math.max(nameFog, 0.26);
+    const visFog = visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
+    const fog = Math.max(nameFog, visFog);
+    const cloud = clamp01(
+      (/(cloud|overcast|haze)/.test(lower) ? 0.5 : 0) + storm * 0.6,
+    );
+    const rain = clamp01(storm + (/rain/.test(lower) ? 0.4 : 0));
+    const lightning = clamp01((storm - 0.45) / 0.2);
+
+    this.lastName = name;
+    this.lastRoughness = roughness;
+    this.lastVisibilityKm = visibilityKm;
+    this.cachedResult = { storm, fog, cloud, rain, lightning };
+
+    return this.cachedResult;
+  }
+};
+
 // Renders the full atmospheric stack for the current weather. `opts.roughness`
 // and `opts.visibilityKm` come from the interpolated weather pattern; the name
 // adds hints (mist/fog/cloud/rain) on top of the continuous values.
 export function drawWeatherEffects(c, opts) {
-  const lower = (opts.name || "").toLowerCase();
   const roughness = opts.roughness || 0;
   const visibilityKm = opts.visibilityKm;
   const vw = opts.vw;
@@ -592,18 +734,8 @@ export function drawWeatherEffects(c, opts) {
   const asternVisibilityKm = opts.asternVisibilityKm;
   const headingAngle = opts.headingAngle || 0;
 
-  const storm = clamp01((roughness - 0.2) / 0.28);
-  let nameFog = 0;
-  if (/mist/.test(lower)) nameFog = 0.62;
-  if (/fog/.test(lower)) nameFog = Math.max(nameFog, 0.82);
-  if (/haze/.test(lower)) nameFog = Math.max(nameFog, 0.26);
-  const visFog = visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
-  const fog = Math.max(nameFog, visFog);
-  const cloud = clamp01(
-    (/(cloud|overcast|haze)/.test(lower) ? 0.5 : 0) + storm * 0.6,
-  );
-  const rain = clamp01(storm + (/rain/.test(lower) ? 0.4 : 0));
-  const lightning = clamp01((storm - 0.45) / 0.2);
+  const weather = weatherCache.calculate(opts.name, roughness, visibilityKm);
+  const { storm, fog, cloud, rain, lightning } = weather;
 
   if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
 

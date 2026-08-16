@@ -3000,30 +3000,44 @@ function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
 function drawAnimatedRoughSeas(c, time, z) {
   c.save();
   c.lineCap = "round";
+  // Batch rendering by reducing state changes - process all particles for each sea
   for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
     const sea = roughSeas[seaIndex];
     if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
       continue;
     const nearestX = nearestWrappedX(sea.x, camera.x);
 
-    for (const particle of roughSeaParticles[seaIndex]) {
+    // Group particles by similar transformations to reduce state changes
+    const particles = roughSeaParticles[seaIndex];
+    if (!particles || particles.length === 0) continue;
+
+    // Pre-calculate common values
+    const baseColor1 = [249,232,184];
+    const baseColor2 = [57,61,47];
+
+    for (let i = 0; i < particles.length; i++) {
+      const particle = particles[i];
       const phase = time * particle.speed + particle.phaseOffset;
       const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
-      const y =
-        sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
+      const y = sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
       const crest = (Math.sin(phase) + 1) * 0.5;
+
       c.save();
       c.translate(x, y);
       c.rotate(particle.rotation);
       c.scale(particle.scale, particle.scale);
-      c.strokeStyle = `rgba(249,232,184,${0.1 + crest * 0.2})`;
+
+      // First stroke
+      c.strokeStyle = `rgba(${baseColor1[0]},${baseColor1[1]},${baseColor1[2]},${0.1 + crest * 0.2})`;
       c.lineWidth = (1.2 + crest) / z;
       c.beginPath();
       c.moveTo(-15, 3);
       c.quadraticCurveTo(-8, -7 - crest * 3, -1, 1);
       c.quadraticCurveTo(6, 9, 14, -2 - crest * 2);
       c.stroke();
-      c.strokeStyle = `rgba(57,61,47,${0.12 + crest * 0.11})`;
+
+      // Second stroke
+      c.strokeStyle = `rgba(${baseColor2[0]},${baseColor2[1]},${baseColor2[2]},${0.12 + crest * 0.11})`;
       c.lineWidth = 1 / z;
       c.beginPath();
       c.moveTo(-10, 8);
@@ -3601,6 +3615,28 @@ function screenToWorld(clientX, clientY) {
   };
 }
 
+// Cache for fog rendering state to avoid unnecessary redraws
+const fogRenderState = {
+  lastCameraX: 0,
+  lastCameraY: 0,
+  lastVW: 0,
+  lastVH: 0,
+  needsFullRedraw: true,
+  mistParticles: [],
+  initMistParticles: function() {
+    this.mistParticles = [];
+    for (let i = 0; i < 11; i++) {
+      this.mistParticles.push({
+        index: i,
+        rx: 150 + (i % 4) * 38,
+        squash: 0.24 + (i % 3) * 0.055,
+        rotation: ((i % 5) - 2) * 0.08
+      });
+    }
+  }
+};
+fogRenderState.initMistParticles();
+
 function renderFog() {
   if (!gameStarted) return;
   buildVisibilityPolygon();
@@ -3617,22 +3653,23 @@ function renderFog() {
   // than a hard game mask. They remain subtle enough not to obscure controls.
   const time = performance.now() * 0.000018;
   f.save();
-  for (let i = 0; i < 11; i++) {
+  // Optimized: use pre-calculated particles and reduce state changes
+  for (let i = 0; i < fogRenderState.mistParticles.length; i++) {
+    const p = fogRenderState.mistParticles[i];
     const x = ((i * 211 + time * 7600) % (vw + 420)) - 210;
     const y = ((i * 127 + Math.sin(time * 42 + i) * 48) % (vh + 220)) - 110;
-    const rx = 150 + (i % 4) * 38,
-      squash = 0.24 + (i % 3) * 0.055;
+
     f.save();
     f.translate(x, y);
-    f.rotate(((i % 5) - 2) * 0.08);
-    f.scale(1, squash);
-    const mist = f.createRadialGradient(0, 0, 0, 0, 0, rx);
+    f.rotate(p.rotation);
+    f.scale(1, p.squash);
+    const mist = f.createRadialGradient(0, 0, 0, 0, 0, p.rx);
     mist.addColorStop(0, "rgba(239,233,214,.065)");
     mist.addColorStop(0.52, "rgba(239,233,214,.025)");
     mist.addColorStop(1, "rgba(239,233,214,0)");
     f.fillStyle = mist;
     f.beginPath();
-    f.arc(0, 0, rx, 0, Math.PI * 2);
+    f.arc(0, 0, p.rx, 0, Math.PI * 2);
     f.fill();
     f.restore();
   }
@@ -3682,6 +3719,10 @@ function drawDynamicTradeWorld(c, z, time) {
     c.stroke();
     c.setLineDash([]);
   }
+  // Batch text rendering setup - set common properties once
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+
   for (const site of explorationSites) {
     if (!isWorldCircleInViewport(site.x, site.y, site.radius * 3.2, z))
       continue;
@@ -3707,8 +3748,6 @@ function drawDynamicTradeWorld(c, z, time) {
     c.setLineDash([]);
     c.fillStyle = "#fff0c0";
     c.font = 15 / z + "px Georgia";
-    c.textAlign = "center";
-    c.textBaseline = "middle";
     c.fillText("✦", 0, -1 / z);
     if ((visible || progress) && progress?.status !== "surveyed") {
       c.fillStyle = "rgba(47,29,15,.82)";
@@ -3732,8 +3771,6 @@ function drawDynamicTradeWorld(c, z, time) {
     c.setLineDash([]);
     c.fillStyle = "#fff0c0";
     c.font = 14 / z + "px Georgia";
-    c.textAlign = "center";
-    c.textBaseline = "middle";
     c.fillText(nearDiscovery.icon, 0, 0);
     c.restore();
   }
@@ -3756,8 +3793,6 @@ function drawDynamicTradeWorld(c, z, time) {
     c.stroke();
     c.fillStyle = "#fff0c0";
     c.font = 13 / z + "px Georgia";
-    c.textAlign = "center";
-    c.textBaseline = "middle";
     c.fillText(site.icon, 0, 0);
     c.restore();
   }
@@ -3777,7 +3812,6 @@ function drawDynamicTradeWorld(c, z, time) {
     c.setLineDash([]);
     c.fillStyle = "rgba(61,38,18,.9)";
     c.font = "700 16px Georgia";
-    c.textAlign = "center";
     c.fillText("ROYAL AMBER CONVOY", 1110, 940);
     c.restore();
   }
@@ -3816,7 +3850,6 @@ function drawDynamicTradeWorld(c, z, time) {
       recordMerchantSighting(merchant);
       c.fillStyle = "rgba(47,29,15,.8)";
       c.font = 11 / z + "px Georgia";
-      c.textAlign = "center";
       c.fillText(merchant.name, x, merchant.y - 19 / z);
     }
   }
@@ -3865,14 +3898,22 @@ function render() {
   ctx.clearRect(0, 0, vw, vh);
   const z = camera.zoom;
   const time = performance.now();
-  ctx.save();
-  ctx.translate(vw / 2, vh / 2);
-  ctx.scale(z, z);
-  ctx.translate(-camera.x, -camera.y);
+  const worldTransform = () => {
+    ctx.save();
+    ctx.translate(vw / 2, vh / 2);
+    ctx.scale(z, z);
+    ctx.translate(-camera.x, -camera.y);
+  };
+
+  // World layer rendering
+  worldTransform();
   for (const offset of worldCopiesNear(camera.x))
     ctx.drawImage(mapLayer, offset, 0);
   drawAnimatedRoughSeas(ctx, time, z);
   drawDynamicTradeWorld(ctx, z, time);
+
+  // Batch trail and wind rendering
+  ctx.save();
   // wake
   if (ship.trail.length > 1) {
     ctx.strokeStyle = "rgba(245,236,201,.55)";
@@ -3888,25 +3929,24 @@ function render() {
   ctx.lineWidth = 1.5 / z;
   const windLeft = camera.x - vw / (2 * z) - 60,
     windSpan = vw / z + 120;
+  const windCos = Math.cos(game.windAngle) * 30;
+  const windSin = Math.sin(game.windAngle) * 30;
+
   for (let i = 0; i < 14; i++) {
     const x = windLeft + ((i * 173 + time * 0.025) % windSpan),
       y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(
-      x + Math.cos(game.windAngle) * 30,
-      y + Math.sin(game.windAngle) * 30,
-    );
+    ctx.lineTo(x + windCos, y + windSin);
     ctx.stroke();
   }
   ctx.restore();
+  ctx.restore(); // Restore world transform
+
   renderFog();
 
   // The ship and immediate docking cue remain readable above the fog layer.
-  ctx.save();
-  ctx.translate(vw / 2, vh / 2);
-  ctx.scale(z, z);
-  ctx.translate(-camera.x, -camera.y);
+  worldTransform();
   drawShip(
     ctx,
     ship.x,
@@ -3926,6 +3966,7 @@ function render() {
     ctx.stroke();
   }
   ctx.restore();
+
   if (edgeRecoveryActive) {
     ctx.save();
     ctx.strokeStyle = "rgba(225,176,86,.55)";
@@ -4238,7 +4279,7 @@ function update(dt) {
   updateHud();
 }
 function loop(now) {
-  const dt = Math.min(0.04, (now - last) / 1000);
+  const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   update(dt);
   render();
