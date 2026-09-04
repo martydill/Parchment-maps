@@ -16,6 +16,7 @@ import {
   clearFleetRoute,
   decommissionFleetShip,
 } from "../core/fleet.js";
+import { drawShip } from "../rendering.js";
 
 let panelContext;
 let acceptContract,
@@ -1243,6 +1244,41 @@ function renderFleetTally(ship) {
   return tally;
 }
 
+// Portrait of the vessel for the top of the ship's register: the same
+// hand-inked drawing the chart uses, floated on the parchment with a pair of
+// chart-style wave marks.
+function drawShipRegisterArt(vesselClass) {
+  const canvas = document.getElementById("shipRegisterArt");
+  if (!canvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const width = 320;
+  const height = 110;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const c = canvas.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, width, height);
+
+  c.strokeStyle = "rgba(48,58,49,.4)";
+  c.lineWidth = 1.3;
+  c.lineCap = "round";
+  for (const [x, flip] of [
+    [width / 2 - 86, 1],
+    [width / 2 + 86, -1],
+  ]) {
+    c.beginPath();
+    c.arc(x - 7 * flip, height - 26, 7, Math.PI * 0.08, Math.PI * 0.92);
+    c.arc(x + 7 * flip, height - 26, 7, Math.PI * 0.08, Math.PI * 0.92);
+    c.stroke();
+  }
+
+  c.save();
+  c.translate(width / 2, height / 2 + 4);
+  c.scale(1.8, 1.8);
+  drawShip(c, 0, 0, -Math.PI / 2, -Math.PI / 2 + 0.6, 0.42, vesselClass, 1.8);
+  c.restore();
+}
+
 export function renderShipPanel() {
   syncPanelContext();
 
@@ -1255,6 +1291,8 @@ export function renderShipPanel() {
     activeClass.vesselName;
   document.getElementById("shipRegisterDescription").textContent =
     activeClass.name + " — " + activeClass.description;
+
+  drawShipRegisterArt(activeClass.id);
 
   document.getElementById("shipRegisterStats").innerHTML =
     "<strong>Fitting identity: " +

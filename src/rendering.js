@@ -49,14 +49,15 @@ const viewportCache = {
   dirty: true,
 
   update(cameraX, cameraY, viewportWidth, viewportHeight, zoom, worldWidth) {
-    if (this.dirty ||
-        Math.abs(this.lastCameraX - cameraX) > 1 ||
-        Math.abs(this.lastCameraY - cameraY) > 1 ||
-        Math.abs(this.lastZoom - zoom) > 0.01 ||
-        this.lastViewportWidth !== viewportWidth ||
-        this.lastViewportHeight !== viewportHeight ||
-        this.lastWorldWidth !== worldWidth) {
-
+    if (
+      this.dirty ||
+      Math.abs(this.lastCameraX - cameraX) > 1 ||
+      Math.abs(this.lastCameraY - cameraY) > 1 ||
+      Math.abs(this.lastZoom - zoom) > 0.01 ||
+      this.lastViewportWidth !== viewportWidth ||
+      this.lastViewportHeight !== viewportHeight ||
+      this.lastWorldWidth !== worldWidth
+    ) {
       this.lastCameraX = cameraX;
       this.lastCameraY = cameraY;
       this.lastZoom = zoom;
@@ -83,7 +84,7 @@ const viewportCache = {
       y + radius >= this.top &&
       y - radius <= this.bottom
     );
-  }
+  },
 };
 
 export function wrappedCircleIntersectsViewport(
@@ -97,7 +98,14 @@ export function wrappedCircleIntersectsViewport(
   zoom,
   worldWidth,
 ) {
-  viewportCache.update(cameraX, cameraY, viewportWidth, viewportHeight, zoom, worldWidth);
+  viewportCache.update(
+    cameraX,
+    cameraY,
+    viewportWidth,
+    viewportHeight,
+    zoom,
+    worldWidth,
+  );
   return viewportCache.checkCircle(x, y, radius, cameraX, worldWidth);
 }
 
@@ -145,80 +153,103 @@ function strokeHandDrawn(c, drawPath, color, width, z = 1) {
   c.restore();
 }
 
+// Ship silhouettes are the game's "woodcut fleet": every vessel class gets its
+// own rig, spar layout, and structural details so ships read as distinct
+// symbols, the way old sea charts catalogued fleets as separate little
+// vessels. Sails are parchment washes edged in the same hand-inked doubling
+// used for coastlines, mountains, and port icons.
 const SHIP_DRAW_PROFILES = Object.freeze({
   cutter: Object.freeze({
+    // Coastal trader: single mast, gaff mainsail with a small jib.
     shadow: [3, 5, 7, 16],
     bow: -14,
     stern: 16,
     beam: 6,
     waist: 5,
     deckY: 7,
-    mastY: -9,
     masts: [0],
-    sail: "gaff",
+    mastTop: -13,
+    rig: "gaff",
+    jib: true,
     pennantY: -5,
   }),
   sloop: Object.freeze({
+    // Courier: the narrowest hull under a very tall, lean working sail.
     shadow: [4, 5, 6, 18],
     bow: -18,
     stern: 15,
     beam: 4.4,
     waist: 3.8,
     deckY: 7,
-    mastY: -11,
     masts: [0],
-    sail: "tall",
+    mastTop: -16,
+    rig: "tall",
+    streamer: true,
     pennantY: -7,
   }),
   carrack: Object.freeze({
+    // Deepwater carrier: broad hull, fore and stern castles, square sails
+    // with topsails, a crow's nest, and deck guns.
     shadow: [4, 6, 10, 19],
     bow: -15,
     stern: 18,
     beam: 8.5,
     waist: 7.2,
     deckY: 6,
-    mastY: -9,
     masts: [-4, 4],
-    sail: "square",
+    mastTop: -13,
+    rig: "square",
+    topsail: true,
+    forecastle: true,
     sternCastle: true,
+    lookout: true,
+    guns: true,
     pennantY: -8,
   }),
   barque: Object.freeze({
+    // Survey vessel: the longest hull on three masts, square rig forward and
+    // a gaff mizzen, with an observation nest aloft.
     shadow: [4, 6, 7, 20],
     bow: -18,
     stern: 18,
     beam: 5.8,
     waist: 4.9,
     deckY: 8,
-    mastY: -12,
-    masts: [-3, 3],
-    sail: "split",
+    masts: [-4.5, -0.5, 3.5],
+    mastTop: -12,
+    rig: "barque",
     lookout: true,
     pennantY: -9,
   }),
   brig: Object.freeze({
+    // Armed merchantman: two stout square rigs and a visible row of gun
+    // ports along each rail beneath a square ensign.
     shadow: [4, 6, 8, 18],
     bow: -16,
     stern: 17,
     beam: 7,
     waist: 5.8,
     deckY: 7,
-    mastY: -10,
     masts: [-3, 4],
-    sail: "square",
-    guns: true,
+    mastTop: -13,
+    rig: "square",
+    gunPorts: true,
+    squareFlag: true,
     pennantY: -6,
   }),
   dhow: Object.freeze({
+    // Shallow-draft trader: raked high prow under a long lateen yard, with
+    // an outrigger.
     shadow: [4, 5, 8, 17],
     bow: -17,
     stern: 15,
     beam: 5.6,
     waist: 4.2,
     deckY: 7,
-    mastY: -10,
     masts: [0],
-    sail: "lateen",
+    mastTop: -11,
+    rig: "lateen",
+    highProw: true,
     outrigger: true,
     pennantY: -6,
   }),
@@ -226,7 +257,7 @@ const SHIP_DRAW_PROFILES = Object.freeze({
 
 const SHIP_PROFILE_IDS = Object.freeze(Object.keys(SHIP_DRAW_PROFILES));
 
-function shipDrawProfile(vesselClass, fallbackSeed = 0) {
+export function shipDrawProfile(vesselClass, fallbackSeed = 0) {
   if (SHIP_DRAW_PROFILES[vesselClass]) return SHIP_DRAW_PROFILES[vesselClass];
   const index = Math.abs(Math.floor(fallbackSeed)) % SHIP_PROFILE_IDS.length;
   return SHIP_DRAW_PROFILES[SHIP_PROFILE_IDS[index]];
@@ -242,20 +273,430 @@ function drawHullPath(c, profile) {
   c.closePath();
 }
 
+const SHIP_SAIL_FILL = "#ecd9a6";
+const SHIP_SAIL_SHADE = "rgba(118,84,46,.2)";
+const SHIP_SAIL_SEAM = "rgba(72,51,33,.42)";
+
+function mastHeadY(profile) {
+  return profile.topsail ? profile.mastTop - 9.5 : profile.mastTop - 2.5;
+}
+
+function drawSquareSail(c, x, profile, bx, by, z, scale = 1, lift = 0) {
+  const top = profile.mastTop + lift;
+  const halfW = 6 * scale;
+  const foot = top + 6.5 * scale;
+  const sail = () => {
+    c.beginPath();
+    c.moveTo(x - halfW, top + 0.5);
+    c.quadraticCurveTo(
+      x + 0.5 + bx * 0.5,
+      top + 1.6 + by * 0.5,
+      x + halfW + bx * 0.35,
+      top + 1 + by * 0.35,
+    );
+    c.quadraticCurveTo(
+      x + halfW + bx * 0.75,
+      top + 3.5 + by * 0.75,
+      x + halfW - 1.5 + bx,
+      foot + by,
+    );
+    c.lineTo(x - halfW + 0.5, foot - 0.5);
+    c.quadraticCurveTo(x - halfW - 0.7, top + 2.5, x - halfW, top + 0.5);
+    c.closePath();
+  };
+  c.fillStyle = SHIP_SAIL_FILL;
+  sail();
+  c.fill();
+  c.fillStyle = SHIP_SAIL_SHADE;
+  c.beginPath();
+  c.moveTo(x + halfW + bx * 0.35, top + 1 + by * 0.35);
+  c.quadraticCurveTo(
+    x + halfW + bx * 0.75,
+    top + 3.5 + by * 0.75,
+    x + halfW - 1.5 + bx,
+    foot + by,
+  );
+  c.quadraticCurveTo(
+    x + halfW - 2.6 + bx * 0.5,
+    top + 3.6 + by * 0.5,
+    x + halfW - 2.8,
+    top + 1.2,
+  );
+  c.closePath();
+  c.fill();
+  c.save();
+  c.strokeStyle = SHIP_SAIL_SEAM;
+  c.lineWidth = 0.55 / z;
+  c.beginPath();
+  for (const t of [0.36, 0.68]) {
+    const sx = x - halfW + 2 * halfW * t;
+    c.moveTo(sx, top + 1);
+    c.quadraticCurveTo(
+      sx + bx * t,
+      top + 3.4 + by * t,
+      sx + 0.4 + bx * t,
+      foot - 0.9 + by * t,
+    );
+  }
+  c.stroke();
+  c.restore();
+  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
+}
+
+function drawYard(c, x, y, bx, by, z, scale = 1) {
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(x - 6.8 * scale, y - 0.4);
+      c.quadraticCurveTo(
+        x + 0.5 + bx * 0.4,
+        y + 0.8 + by * 0.4,
+        x + 7 * scale + bx * 0.3,
+        y + 0.6 + by * 0.3,
+      );
+    },
+    "#3a2717",
+    1,
+    z,
+  );
+}
+
+function drawGaffSail(c, x, profile, bx, by, z) {
+  const top = profile.mastTop;
+  const peakX = x + 7.5 + bx * 0.4;
+  const peakY = top + 2.5 + by * 0.4;
+  const clewX = x + 5.5 + bx;
+  const clewY = 3.5 + by;
+  const sail = () => {
+    c.beginPath();
+    c.moveTo(x + 0.4, top + 1.5);
+    c.lineTo(peakX, peakY);
+    c.quadraticCurveTo(x + 5.5 + bx, top + 5, clewX, clewY);
+    c.lineTo(x + 0.4, 6);
+    c.closePath();
+  };
+  c.fillStyle = SHIP_SAIL_FILL;
+  sail();
+  c.fill();
+  c.fillStyle = SHIP_SAIL_SHADE;
+  c.beginPath();
+  c.moveTo(peakX, peakY);
+  c.quadraticCurveTo(x + 5.5 + bx, top + 5, clewX, clewY);
+  c.quadraticCurveTo(x + 3.4 + bx * 0.5, top + 4.4, x + 3.6, top + 2.2);
+  c.closePath();
+  c.fill();
+  c.save();
+  c.strokeStyle = SHIP_SAIL_SEAM;
+  c.lineWidth = 0.55 / z;
+  c.beginPath();
+  c.moveTo(x + 2.6, top + 1.6);
+  c.quadraticCurveTo(
+    x + 3.4 + bx * 0.5,
+    top + 4,
+    x + 3.6 + bx * 0.6,
+    clewY - 1 + by * 0.6,
+  );
+  c.stroke();
+  c.restore();
+  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(x + 0.4, top + 1);
+      c.lineTo(peakX, peakY);
+    },
+    "#3a2717",
+    1,
+    z,
+  );
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(x + 0.4, 6.4);
+      c.lineTo(clewX, clewY + 0.4);
+    },
+    "#3a2717",
+    1,
+    z,
+  );
+}
+
+function drawJib(c, x, profile, bx, by, z) {
+  const sail = () => {
+    c.beginPath();
+    c.moveTo(x + 0.4, profile.mastTop + 2);
+    c.quadraticCurveTo(
+      x + 1 + bx * 0.4,
+      profile.bow + 6 + by * 0.4,
+      profile.bow * 0.55,
+      -0.5 + by * 0.4,
+    );
+    c.quadraticCurveTo(x - 0.6, 2, x + 0.4, 4);
+    c.closePath();
+  };
+  c.fillStyle = SHIP_SAIL_FILL;
+  sail();
+  c.fill();
+  strokeHandDrawn(c, sail, "#4a3320", 0.7, z);
+}
+
+function drawTallSail(c, x, profile, bx, by, z) {
+  const top = profile.mastTop;
+  const clewX = x + 8.5 + bx;
+  const clewY = profile.deckY - 1.5 + by;
+  const sail = () => {
+    c.beginPath();
+    c.moveTo(x + 0.4, top);
+    c.quadraticCurveTo(x + 6 + bx * 0.6, top + 6 + by * 0.6, clewX, clewY);
+    c.quadraticCurveTo(
+      x + 4 + bx * 0.3,
+      profile.deckY + 0.5,
+      x + 0.4,
+      profile.deckY + 1,
+    );
+    c.closePath();
+  };
+  c.fillStyle = SHIP_SAIL_FILL;
+  sail();
+  c.fill();
+  c.fillStyle = SHIP_SAIL_SHADE;
+  c.beginPath();
+  c.moveTo(x + 0.4, top);
+  c.quadraticCurveTo(x + 6 + bx * 0.6, top + 6 + by * 0.6, clewX, clewY);
+  c.quadraticCurveTo(x + 5 + bx * 0.4, top + 9 + by * 0.4, x + 2.6, top + 8);
+  c.closePath();
+  c.fill();
+  c.save();
+  c.strokeStyle = SHIP_SAIL_SEAM;
+  c.lineWidth = 0.55 / z;
+  c.beginPath();
+  c.moveTo(x + 2.4, top + 1.4);
+  c.quadraticCurveTo(
+    x + 4.4 + bx * 0.4,
+    top + 6 + by * 0.4,
+    x + 5 + bx * 0.6,
+    clewY - 1.4 + by * 0.6,
+  );
+  c.stroke();
+  c.restore();
+  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
+}
+
+function drawLateenSail(c, x, profile, bx, by, z) {
+  const top = profile.mastTop;
+  const tipX = x + 10.5 + bx * 0.8;
+  const tipY = 1.5 + by * 0.8;
+  const sail = () => {
+    c.beginPath();
+    c.moveTo(x - 1.2, top + 1.2);
+    c.lineTo(tipX, tipY);
+    c.quadraticCurveTo(x + 4 + bx * 0.5, 5 + by * 0.5, x - 1.2, 6.5);
+    c.closePath();
+  };
+  c.fillStyle = SHIP_SAIL_FILL;
+  sail();
+  c.fill();
+  c.fillStyle = SHIP_SAIL_SHADE;
+  c.beginPath();
+  c.moveTo(x - 1.2, top + 1.2);
+  c.lineTo(tipX, tipY);
+  c.quadraticCurveTo(x + 2 + bx * 0.4, 4 + by * 0.4, x - 1.2, 6.5);
+  c.closePath();
+  c.fill();
+  c.save();
+  c.strokeStyle = SHIP_SAIL_SEAM;
+  c.lineWidth = 0.55 / z;
+  c.beginPath();
+  for (const t of [0.4, 0.72]) {
+    c.moveTo(
+      x - 1.2 + (tipX - x + 1.2) * t,
+      top + 1.2 + (tipY - top - 1.2) * t,
+    );
+    c.quadraticCurveTo(
+      x + (2 + bx * 0.5) * t,
+      (5 + by * 0.5) * t,
+      x - 1.2 + (tipX - x + 1.2) * t * 0.9,
+      top + 1.2 + (6.5 - top - 1.2) * t,
+    );
+  }
+  c.stroke();
+  c.restore();
+  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
+  strokeHandDrawn(
+    c,
+    () => {
+      c.beginPath();
+      c.moveTo(x - 2, top);
+      c.lineTo(tipX, tipY);
+    },
+    "#3a2717",
+    1,
+    z,
+  );
+}
+
+function drawRigging(c, profile, z) {
+  c.save();
+  c.strokeStyle = "rgba(43,26,16,.5)";
+  c.lineWidth = 0.55 / z;
+  c.beginPath();
+  const headY = mastHeadY(profile);
+  for (const mastX of profile.masts) {
+    c.moveTo(mastX, headY);
+    c.lineTo(0, profile.bow + 2.5);
+  }
+  c.moveTo(profile.masts[profile.masts.length - 1], headY);
+  c.lineTo(0, profile.stern - 4.5);
+  c.stroke();
+  c.restore();
+}
+
+function drawPennant(c, profile, color, bx, by, z) {
+  const y = profile.pennantY;
+  if (profile.streamer) {
+    c.fillStyle = color;
+    c.beginPath();
+    c.moveTo(1, y + 0.4);
+    c.quadraticCurveTo(
+      6 + bx * 0.3,
+      y + 1.8 + by * 0.3,
+      12.5 + bx * 0.6,
+      y + 1.2 + by * 0.6,
+    );
+    c.quadraticCurveTo(6.5 + bx * 0.35, y + 3.2 + by * 0.4, 1, y + 2.8);
+    c.closePath();
+    c.fill();
+    return;
+  }
+  const flag = () => {
+    c.beginPath();
+    if (profile.squareFlag) {
+      c.rect(1, y, 5.5, 4.5);
+    } else {
+      c.moveTo(1, y);
+      c.lineTo(8, y + 1.2);
+      c.lineTo(4.6, y + 3);
+      c.lineTo(8, y + 4.6);
+      c.lineTo(1, y + 6);
+      c.closePath();
+    }
+  };
+  c.fillStyle = color;
+  flag();
+  c.fill();
+  strokeHandDrawn(c, flag, "rgba(43,26,16,.6)", 0.55, z);
+}
+
 function drawShipShape(c, profile, color, z, bx = 0, by = 0) {
   c.fillStyle = "rgba(35,24,14,.2)";
   c.beginPath();
   c.ellipse(...profile.shadow, -0.08, 0, Math.PI * 2);
   c.fill();
 
-  c.fillStyle = "#704425";
+  // Hull: a parchment-toned wood wash with a pale highlight toward the bow,
+  // edged in the doubled ink strokes used for coastlines and mountains.
+  c.fillStyle = "#7c4e29";
   drawHullPath(c, profile);
   c.fill();
+  c.save();
+  drawHullPath(c, profile);
+  c.clip();
+  c.fillStyle = "rgba(233,204,146,.22)";
+  c.fillRect(
+    -profile.beam,
+    profile.bow,
+    profile.beam * 2,
+    (profile.stern - profile.bow) * 0.55,
+  );
+  c.restore();
   strokeHandDrawn(c, () => drawHullPath(c, profile), "#2b1a10", 1.25, z);
 
+  // Planking hatching keeps the hull from reading as a flat brown shape.
+  c.save();
+  c.strokeStyle = "rgba(43,26,16,.32)";
+  c.lineWidth = 0.6 / z;
+  c.beginPath();
+  c.moveTo(-profile.waist * 0.5, profile.bow * 0.45);
+  c.quadraticCurveTo(
+    0,
+    profile.bow * 0.45 + 3.5,
+    profile.waist * 0.55,
+    profile.stern * 0.42,
+  );
+  c.moveTo(-profile.waist * 0.42, profile.bow * 0.62);
+  c.quadraticCurveTo(
+    0,
+    profile.bow * 0.62 + 4,
+    profile.waist * 0.48,
+    profile.stern * 0.6,
+  );
+  c.stroke();
+  c.restore();
+
+  if (profile.highProw) {
+    strokeHandDrawn(
+      c,
+      () => {
+        c.beginPath();
+        c.moveTo(0, profile.bow + 2);
+        c.quadraticCurveTo(
+          profile.beam * 0.55,
+          profile.bow + 1,
+          profile.beam * 0.3,
+          profile.bow - 5,
+        );
+        c.moveTo(0, profile.bow + 2);
+        c.quadraticCurveTo(
+          -profile.beam * 0.3,
+          profile.bow + 4,
+          -profile.beam * 0.34,
+          profile.bow + 9,
+        );
+      },
+      "#2b1a10",
+      1,
+      z,
+    );
+  }
+
   if (profile.sternCastle) {
-    c.fillStyle = "rgba(47,29,17,.28)";
+    c.fillStyle = "rgba(47,29,17,.85)";
     c.fillRect(-profile.beam * 0.65, 8, profile.beam * 1.3, 5.5);
+    strokeHandDrawn(
+      c,
+      () => {
+        c.beginPath();
+        c.rect(-profile.beam * 0.65, 8, profile.beam * 1.3, 5.5);
+      },
+      "#2b1a10",
+      0.9,
+      z,
+    );
+  }
+  if (profile.forecastle) {
+    c.fillStyle = "rgba(47,29,17,.85)";
+    c.fillRect(-profile.beam * 0.46, profile.bow + 5, profile.beam * 0.92, 4.5);
+    strokeHandDrawn(
+      c,
+      () => {
+        c.beginPath();
+        c.rect(-profile.beam * 0.46, profile.bow + 5, profile.beam * 0.92, 4.5);
+      },
+      "#2b1a10",
+      0.9,
+      z,
+    );
+  }
+  if (profile.gunPorts) {
+    c.fillStyle = "#27180f";
+    for (const side of [-1, 1]) {
+      for (const gy of [profile.bow * 0.3, 1.5, profile.stern - 8]) {
+        c.fillRect(side * profile.beam * 0.62 - 0.7, gy - 0.7, 1.4, 1.4);
+      }
+    }
   }
   if (profile.outrigger) {
     strokeHandDrawn(
@@ -284,81 +725,72 @@ function drawShipShape(c, profile, color, z, bx = 0, by = 0) {
         profile.waist * 0.85,
         profile.deckY,
       );
-      for (const mastX of profile.masts) {
-        c.moveTo(mastX, profile.bow + 4);
-        c.lineTo(mastX, profile.stern - 7);
-      }
     },
     "#342116",
     0.9,
     z,
   );
 
-  c.fillStyle = "#ead9aa";
-  if (profile.sail === "lateen") {
-    c.beginPath();
-    c.moveTo(-1, profile.mastY - 3);
-    c.lineTo(11 + bx * 0.6, -2 + by * 0.6);
-    c.lineTo(-2, 7);
-    c.closePath();
-    c.fill();
-  } else if (profile.sail === "square") {
-    for (const mastX of profile.masts) {
-      c.beginPath();
-      c.moveTo(mastX - 6, profile.mastY);
-      c.lineTo(mastX + 7 + bx * 0.35, profile.mastY + 1 + by * 0.35);
-      c.lineTo(mastX + 5 + bx * 0.45, 4 + by * 0.45);
-      c.lineTo(mastX - 5, 5);
-      c.closePath();
-      c.fill();
-    }
-  } else if (profile.sail === "split") {
-    c.beginPath();
-    c.moveTo(-4, profile.mastY);
-    c.quadraticCurveTo(4 + bx * 0.5, -7 + by * 0.5, 9 + bx, 2 + by);
-    c.lineTo(-4, 5);
-    c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(3, -10);
-    c.quadraticCurveTo(10 + bx * 0.4, -5 + by * 0.4, 12 + bx, 5 + by);
-    c.lineTo(3, 7);
-    c.closePath();
-    c.fill();
-  } else {
-    c.beginPath();
-    c.moveTo(1, profile.mastY);
-    c.quadraticCurveTo(8 + bx * 0.65, -4 + by * 0.65, 10 + bx, 5 + by);
-    c.quadraticCurveTo(5 + bx * 0.35, 4 + by * 0.35, 1, 7);
-    c.closePath();
-    c.fill();
-  }
+  drawRigging(c, profile, z);
 
   strokeHandDrawn(
     c,
     () => {
       c.beginPath();
+      const headY = mastHeadY(profile);
       for (const mastX of profile.masts) {
-        c.moveTo(mastX - 5, profile.mastY + 1);
-        c.quadraticCurveTo(
-          mastX + 2 + bx * 0.35,
-          -3 + by * 0.35,
-          mastX + 6 + bx,
-          4 + by,
-        );
+        c.moveTo(mastX, headY);
+        c.lineTo(mastX, profile.deckY + 2);
       }
     },
-    "#483321",
-    0.85,
+    "#342116",
+    1,
     z,
   );
 
+  if (profile.rig === "square" || profile.rig === "barque") {
+    const squareMasts =
+      profile.rig === "square" ? profile.masts : profile.masts.slice(0, 2);
+    const aftMasts = profile.rig === "square" ? [] : profile.masts.slice(2);
+    for (const mastX of squareMasts) {
+      drawYard(c, mastX, profile.mastTop, bx, by, z);
+      drawSquareSail(c, mastX, profile, bx, by, z);
+      if (profile.topsail) {
+        drawYard(c, mastX, profile.mastTop - 7.5, bx, by, z, 0.62);
+        drawSquareSail(c, mastX, profile, bx, by, z, 0.62, -7.5);
+      }
+    }
+    for (const mastX of aftMasts) {
+      drawGaffSail(c, mastX, profile, bx, by, z);
+    }
+  } else if (profile.rig === "gaff") {
+    drawGaffSail(c, profile.masts[0], profile, bx, by, z);
+    if (profile.jib) drawJib(c, profile.masts[0], profile, bx, by, z);
+  } else if (profile.rig === "tall") {
+    drawTallSail(c, profile.masts[0], profile, bx, by, z);
+  } else if (profile.rig === "lateen") {
+    drawLateenSail(c, profile.masts[0], profile, bx, by, z);
+  }
+
   if (profile.lookout) {
+    const nestMast = profile.masts[profile.masts.length > 1 ? 1 : 0];
+    const nestY = mastHeadY(profile) - 1.4;
     c.fillStyle = "#4f321e";
     c.beginPath();
-    c.arc(0, profile.bow + 4, 2.1, 0, Math.PI * 2);
+    c.arc(nestMast, nestY, 1.9, 0, Math.PI * 2);
     c.fill();
+    strokeHandDrawn(
+      c,
+      () => {
+        c.beginPath();
+        c.arc(nestMast, nestY, 1.9, 0, Math.PI * 2);
+      },
+      "#2b1a10",
+      0.7,
+      z,
+    );
   }
+
   if (profile.guns) {
     c.fillStyle = "#27180f";
     for (const x of [-profile.beam * 0.55, profile.beam * 0.55]) {
@@ -369,13 +801,7 @@ function drawShipShape(c, profile, color, z, bx = 0, by = 0) {
     }
   }
 
-  c.fillStyle = color;
-  c.beginPath();
-  c.moveTo(1, profile.pennantY);
-  c.lineTo(7, profile.pennantY + 4);
-  c.lineTo(1, profile.pennantY + 6);
-  c.closePath();
-  c.fill();
+  drawPennant(c, profile, color, bx, by, z);
 }
 
 export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
@@ -461,9 +887,7 @@ function drawWeatherClouds(
     );
     // Per-cloud thickness: some dense and heavy, some thin and wispy.
     const thick = weatherRand(i, 9);
-    const alpha = clamp01(
-      (0.06 + thick * 0.24) * cloudAlphaFactor,
-    );
+    const alpha = clamp01((0.06 + thick * 0.24) * cloudAlphaFactor);
     // A cloud is a small cluster of overlapping puffs so its body varies in
     // colour and thickness instead of reading as a flat disc.
     const puffs = layer === 2 ? 4 : 3;
@@ -553,7 +977,7 @@ const dirFogCache = {
   lastCY: 0,
   lastDX: 0,
   lastDY: 0,
-  valid: false
+  valid: false,
 };
 
 function drawDirectionalFog(
@@ -571,14 +995,15 @@ function drawDirectionalFog(
   if (contrast <= 0.04) return;
 
   // Check cache validity
-  if (dirFogCache.valid &&
-      Math.abs(dirFogCache.lastAheadVis - aheadVisibilityKm) < 0.1 &&
-      Math.abs(dirFogCache.lastAsternVis - asternVisibilityKm) < 0.1 &&
-      Math.abs(dirFogCache.lastHeading - headingAngle) < 0.01 &&
-      dirFogCache.lastVW === vw &&
-      dirFogCache.lastVH === vh &&
-      Math.abs(dirFogCache.lastContrast - contrast) < 0.01) {
-
+  if (
+    dirFogCache.valid &&
+    Math.abs(dirFogCache.lastAheadVis - aheadVisibilityKm) < 0.1 &&
+    Math.abs(dirFogCache.lastAsternVis - asternVisibilityKm) < 0.1 &&
+    Math.abs(dirFogCache.lastHeading - headingAngle) < 0.01 &&
+    dirFogCache.lastVW === vw &&
+    dirFogCache.lastVH === vh &&
+    Math.abs(dirFogCache.lastContrast - contrast) < 0.01
+  ) {
     c.save();
     c.fillStyle = dirFogCache.lastGradient;
     c.fillRect(0, 0, vw, vh);
@@ -683,16 +1108,18 @@ function drawWeatherLightning(c, lightning, vw, vh, time) {
 
 // Cache for weather calculations to avoid redundant string operations and math
 const weatherCache = {
-  lastName: '',
+  lastName: "",
   lastRoughness: -1,
   lastVisibilityKm: -1,
   cachedResult: null,
 
   calculate(name, roughness, visibilityKm) {
-    if (this.cachedResult &&
-        this.lastName === name &&
-        Math.abs(this.lastRoughness - roughness) < 0.01 &&
-        Math.abs(this.lastVisibilityKm - visibilityKm) < 0.1) {
+    if (
+      this.cachedResult &&
+      this.lastName === name &&
+      Math.abs(this.lastRoughness - roughness) < 0.01 &&
+      Math.abs(this.lastVisibilityKm - visibilityKm) < 0.1
+    ) {
       return this.cachedResult;
     }
 
@@ -702,7 +1129,8 @@ const weatherCache = {
     if (/mist/.test(lower)) nameFog = 0.62;
     if (/fog/.test(lower)) nameFog = Math.max(nameFog, 0.82);
     if (/haze/.test(lower)) nameFog = Math.max(nameFog, 0.26);
-    const visFog = visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
+    const visFog =
+      visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
     const fog = Math.max(nameFog, visFog);
     const cloud = clamp01(
       (/(cloud|overcast|haze)/.test(lower) ? 0.5 : 0) + storm * 0.6,
@@ -716,7 +1144,7 @@ const weatherCache = {
     this.cachedResult = { storm, fog, cloud, rain, lightning };
 
     return this.cachedResult;
-  }
+  },
 };
 
 // Renders the full atmospheric stack for the current weather. `opts.roughness`

@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   createRoughSeaParticles,
   isLandPoint,
+  shipDrawProfile,
   wrappedCircleIntersectsViewport,
 } from "../src/rendering.js";
+import { SHIP_CLASSES } from "../src/core/upgrades.js";
 
 const seas = [
   { x: 100, y: 200, rx: 80, ry: 40, strength: 1, angle: 0.3 },
@@ -105,5 +107,28 @@ test("wrapped viewport checks cull off-screen objects while respecting seams", (
   assert.equal(
     wrappedCircleIntersectsViewport(95, 145, 20, 100, 50, 200, 120, 1, 1000),
     false,
+  );
+});
+
+test("every ship class maps to a visually distinct drawing profile", () => {
+  const classIds = Object.keys(SHIP_CLASSES);
+  const profiles = classIds.map((id) => shipDrawProfile(id));
+
+  assert.equal(
+    new Set(profiles.map((profile) => JSON.stringify(profile))).size,
+    classIds.length,
+  );
+  for (const profile of profiles) {
+    assert.ok(profile.rig);
+    assert.ok(Array.isArray(profile.masts) && profile.masts.length > 0);
+    assert.ok(profile.bow < profile.deckY && profile.deckY < profile.stern);
+  }
+});
+
+test("unknown vessel classes fall back to a stable drawing profile", () => {
+  assert.equal(shipDrawProfile("cutter"), shipDrawProfile("cutter", 12));
+  assert.deepEqual(
+    shipDrawProfile("sea-monster", 3),
+    shipDrawProfile("sea-monster", 9),
   );
 });
