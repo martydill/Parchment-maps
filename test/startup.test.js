@@ -6,6 +6,7 @@ import {
   beginAtHomePort,
   bindBeginButton,
   recoverNavigablePosition,
+  shouldShowStartupModal,
 } from "../src/core/startup.js";
 
 test("the Begin button starts the supplied home-port transition", () => {
@@ -138,4 +139,11 @@ test("blocked restored positions fall back when no nearby water is open", () => 
     }),
     { x: 10, y: 20 },
   );
+});
+
+test("the startup modal appears only before a started voyage exists", () => {
+  assert.equal(shouldShowStartupModal(), true);
+  assert.equal(shouldShowStartupModal({}), true);
+  assert.equal(shouldShowStartupModal({ hasStartedVoyage: false }), true);
+  assert.equal(shouldShowStartupModal({ hasStartedVoyage: true }), false);
 });

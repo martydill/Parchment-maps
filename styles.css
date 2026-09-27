@@ -530,15 +530,6 @@ button.parchment {
   margin: 0;
   white-space: nowrap;
 }
-.start-continue-label {
-  display: none;
-}
-.has-saved-voyage .start-new-label {
-  display: none;
-}
-.has-saved-voyage .start-continue-label {
-  display: inline;
-}
 #beginButton {
   box-shadow:
     0 8px 24px rgba(48, 27, 10, 0.48),
