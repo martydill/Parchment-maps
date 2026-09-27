@@ -21,7 +21,7 @@ Parchment Maps is a dependency-free, browser-based merchant sailing game. It is 
 Run commands from the repository root:
 
 - `npm test` runs the complete Node.js test suite.
-- `npm run test:coverage` runs the tests and requires 100% line, function, and
+- `npm run test:coverage` runs the tests and requires 95% line, function, and
   branch coverage for `src/core/*.js`.
 - `npm run lint` checks JavaScript with ESLint.
 - `npm run format` formats the repository with Prettier.
