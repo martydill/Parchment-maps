@@ -59,6 +59,7 @@ import {
   beginAtHomePort,
   bindBeginButton,
   recoverNavigablePosition,
+  shouldShowStartupModal,
 } from "./core/startup.js";
 import {
   ageCargo,
@@ -3295,7 +3296,6 @@ function applyNarrativeNames() {
     `Begin at ${PORT_NAMES.orvessaQuay}`;
 }
 applyNarrativeNames();
-let restoredVoyageAwaitingStart = false;
 
 function revealStartedGame({
   message = null,
@@ -3317,15 +3317,6 @@ function revealStartedGame({
 }
 
 function beginGame() {
-  if (restoredVoyageAwaitingStart) {
-    restoredVoyageAwaitingStart = false;
-    revealStartedGame({
-      message: "Voyage restored from this browser.",
-      openChart: false,
-    });
-    return;
-  }
-
   nearPort = beginAtHomePort({
     camera,
     homePort: HOME_PORT,
@@ -3347,16 +3338,15 @@ function beginGame() {
   });
 }
 
-function prepareRestoredVoyageStartup() {
-  restoredVoyageAwaitingStart = true;
-  document.documentElement.classList.add("has-saved-voyage");
+function resumeSavedVoyage() {
   nearPort =
     ports.find(
       (port) => wrappedDistance(ship.x, ship.y, port.x, port.y) < 95,
     ) || null;
-  ui.dock.style.display = nearPort ? "block" : "none";
-  ui.town.style.display = nearPort ? "block" : "none";
-  revealCurrentView(true);
+  revealStartedGame({
+    message: "Voyage restored from this browser.",
+    openChart: false,
+  });
 }
 
 bindBeginButton(beginButton, beginGame);
@@ -5889,10 +5879,7 @@ document.getElementById("saveGameButton").addEventListener("click", () => {
 document.getElementById("loadGameButton").addEventListener("click", () => {
   if (loadGameState()) {
     updateHud();
-    if (gameStarted) {
-      prepareRestoredVoyageStartup();
-      intro.style.display = "grid";
-    }
+    if (gameStarted) resumeSavedVoyage();
     menuPanel.style.display = "none";
   }
 });
@@ -5972,8 +5959,13 @@ buildVisibilityPolygon(true);
 camera.x = ship.x;
 camera.y = ship.y;
 updateHud();
-if (restoredSavedGame && gameStarted) {
-  prepareRestoredVoyageStartup();
+// The startup modal appears only once, before any voyage has been started;
+// returning to the page with a saved voyage resumes directly into the game.
+const showStartupModal = shouldShowStartupModal({
+  hasStartedVoyage: restoredSavedGame && gameStarted,
+});
+if (!showStartupModal) {
+  resumeSavedVoyage();
 } else if (new URLSearchParams(location.search).has("autostart")) {
   requestAnimationFrame(() => beginButton.click());
 }
