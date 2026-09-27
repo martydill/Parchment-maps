@@ -506,7 +506,8 @@ export function drawWeatherEffects(c, opts) {
     vh,
   );
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
-  drawWeatherLightning(c, lightning, vw, vh, time);
+  // A frozen animation clock must not leave a lightning flash stuck on screen.
+  drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
 }
 
 export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
@@ -1141,13 +1142,38 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   function drawParchmentBase(c) {
     c.clearRect(0, 0, WORLD.w, WORLD.h);
     const base = c.createLinearGradient(0, 0, 0, WORLD.h);
-    base.addColorStop(0, "#dec58f");
-    base.addColorStop(0.5, "#c9aa70");
-    base.addColorStop(1, "#b98f51");
+    // Desaturated verdigris pigment, with the same paper grain and engraved
+    // marks as the land. The sea reads as a watercolor wash on the atlas.
+    base.addColorStop(0, "#b9c7af");
+    base.addColorStop(0.5, "#93afa2");
+    base.addColorStop(1, "#78998e");
     c.fillStyle = base;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
     const rnd = seeded(9917);
     c.save();
+    for (let i = 0; i < 110; i++) {
+      const x = rnd() * WORLD.w;
+      const y = rnd() * WORLD.h;
+      const radius = 120 + rnd() * 280;
+      // Repeat pigment blooms over the seam, just like the land contours.
+      for (const offset of [-WORLD.w, 0, WORLD.w]) {
+        const wash = c.createRadialGradient(
+          x + offset,
+          y,
+          0,
+          x + offset,
+          y,
+          radius,
+        );
+        wash.addColorStop(
+          0,
+          i % 3 ? "rgba(31,91,91,.10)" : "rgba(245,228,172,.16)",
+        );
+        wash.addColorStop(1, "rgba(134,169,148,0)");
+        c.fillStyle = wash;
+        c.fillRect(x + offset - radius, y - radius, radius * 2, radius * 2);
+      }
+    }
     for (let i = 0; i < 85; i++) {
       const x = rnd() * WORLD.w,
         y = rnd() * WORLD.h,
@@ -1342,6 +1368,30 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
 
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
+      // Layered shallow-water pigment and an ivory tide line sit underneath
+      // the engraved coast and raised cliffs. Built once, not each frame.
+      for (const [width, color] of [
+        [62, "rgba(50,110,100,.08)"],
+        [42, "rgba(195,210,164,.16)"],
+        [25, "rgba(220,224,178,.24)"],
+        [12, "rgba(249,234,188,.45)"],
+      ]) {
+        drawWrappedPolyPath(
+          m,
+          l.poly,
+          (poly) => {
+            m.save();
+            m.translate(0, 38 * MAP_TILT_TAN);
+            polyPath(m, poly);
+            m.lineJoin = "round";
+            m.strokeStyle = color;
+            m.lineWidth = width;
+            m.stroke();
+            m.restore();
+          },
+          70,
+        );
+      }
       for (const off of [22, 14, 7]) {
         drawWrappedPolyPath(m, expandPolygon(l.poly, off), (poly) => {
           polyPath(m, poly);
