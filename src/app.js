@@ -19,6 +19,7 @@ import {
   polygonCentroid,
   raySegmentDistance,
 } from "./core/geometry.js";
+import { MAP_TILT_COS, unprojectMapPoint } from "./core/projection.js";
 import {
   edgeInwardVector,
   limitOutwardWind,
@@ -459,6 +460,8 @@ const visibility = {
   horizonKm: 3.57 * Math.sqrt(12),
   radius: 0,
   polygon: [],
+  terrainPolygon: [],
+  nearShoreLandIndices: [],
   rays: 192,
   lastX: Infinity,
   lastY: Infinity,
@@ -2661,6 +2664,8 @@ function buildVisibilityPolygon(force = false) {
     return;
   visibility.radius = radius;
   visibility.polygon.length = 0;
+  visibility.terrainPolygon.length = 0;
+  const nearShoreLandIndices = new Set();
   for (let i = 0; i < visibility.rays; i++) {
     const a = (i / visibility.rays) * Math.PI * 2;
     const dx = Math.cos(a),
@@ -2675,7 +2680,8 @@ function buildVisibilityPolygon(force = false) {
       worldUnitsPerKm: visibility.worldUnitsPerKm,
     });
     let hit = localRadius;
-    for (const land of lands) {
+    let hitLandIndex = -1;
+    for (const [landIndex, land] of lands.entries()) {
       const cent = polygonCentroid(land.poly);
       const nearestOffset = Math.round((ship.x - cent.x) / WORLD.w) * WORLD.w;
       for (const offset of [
@@ -2698,13 +2704,27 @@ function buildVisibilityPolygon(force = false) {
             b0[1],
             hit,
           );
-          if (d !== null && d < hit) hit = d;
+          if (d !== null && d < hit) {
+            hit = d;
+            hitLandIndex = landIndex;
+          }
         }
       }
     }
-    hit = Math.min(localRadius, hit + 5);
-    visibility.polygon.push({ x: ship.x + dx * hit, y: ship.y + dy * hit });
+    const nearShore = hitLandIndex >= 0 && hit < 200;
+    if (nearShore) nearShoreLandIndices.add(hitLandIndex);
+    const visibleHit = Math.min(localRadius, hit + 5);
+    const terrainHit = Math.min(localRadius, hit + (nearShore ? 170 : 5));
+    visibility.polygon.push({
+      x: ship.x + dx * visibleHit,
+      y: ship.y + dy * visibleHit,
+    });
+    visibility.terrainPolygon.push({
+      x: ship.x + dx * terrainHit,
+      y: ship.y + dy * terrainHit,
+    });
   }
+  visibility.nearShoreLandIndices = [...nearShoreLandIndices];
   visibility.lastX = ship.x;
   visibility.lastY = ship.y;
   visibility.lastRadius = radius;
@@ -2983,6 +3003,36 @@ function punchCurrentVisibility(
   }
 }
 
+function punchNearShoreTerrain(c) {
+  if (!visibility.nearShoreLandIndices.length) return;
+  c.save();
+  c.globalAlpha = 0.38;
+  c.fillStyle = "#000";
+  for (const landIndex of visibility.nearShoreLandIndices) {
+    const land = lands[landIndex];
+    const center = polygonCentroid(land.poly);
+    const nearestOffset = Math.round((ship.x - center.x) / WORLD.w) * WORLD.w;
+    for (const offset of [
+      nearestOffset - WORLD.w,
+      nearestOffset,
+      nearestOffset + WORLD.w,
+    ]) {
+      c.save();
+      c.beginPath();
+      land.poly.forEach(([x, y], index) => {
+        if (index) c.lineTo(x + offset, y);
+        else c.moveTo(x + offset, y);
+      });
+      c.closePath();
+      c.clip();
+      polygonPath(c, visibility.terrainPolygon, 1, 1, offset);
+      c.fill();
+      c.restore();
+    }
+  }
+  c.restore();
+}
+
 function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
   return wrappedCircleIntersectsViewport(
     x,
@@ -2992,7 +3042,7 @@ function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
     camera.y,
     vw,
     vh,
-    z,
+    z * MAP_TILT_COS,
     WORLD.w,
   );
 }
@@ -3012,14 +3062,15 @@ function drawAnimatedRoughSeas(c, time, z) {
     if (!particles || particles.length === 0) continue;
 
     // Pre-calculate common values
-    const baseColor1 = [249,232,184];
-    const baseColor2 = [57,61,47];
+    const baseColor1 = [249, 232, 184];
+    const baseColor2 = [57, 61, 47];
 
     for (let i = 0; i < particles.length; i++) {
       const particle = particles[i];
       const phase = time * particle.speed + particle.phaseOffset;
       const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
-      const y = sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
+      const y =
+        sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
       const crest = (Math.sin(phase) + 1) * 0.5;
 
       c.save();
@@ -3609,10 +3660,15 @@ function closeTownDetails() {
 }
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  return {
-    x: (clientX - rect.left - rect.width / 2) / camera.zoom + camera.x,
-    y: (clientY - rect.top - rect.height / 2) / camera.zoom + camera.y,
-  };
+  return unprojectMapPoint(
+    clientX - rect.left,
+    clientY - rect.top,
+    camera.x,
+    camera.y,
+    camera.zoom,
+    rect.width,
+    rect.height,
+  );
 }
 
 // Cache for fog rendering state to avoid unnecessary redraws
@@ -3623,17 +3679,17 @@ const fogRenderState = {
   lastVH: 0,
   needsFullRedraw: true,
   mistParticles: [],
-  initMistParticles: function() {
+  initMistParticles: function () {
     this.mistParticles = [];
     for (let i = 0; i < 11; i++) {
       this.mistParticles.push({
         index: i,
         rx: 150 + (i % 4) * 38,
         squash: 0.24 + (i % 3) * 0.055,
-        rotation: ((i % 5) - 2) * 0.08
+        rotation: ((i % 5) - 2) * 0.08,
       });
     }
-  }
+  },
 };
 fogRenderState.initMistParticles();
 
@@ -3679,20 +3735,21 @@ function renderFog() {
   f.save();
   const z = camera.zoom;
   f.translate(vw / 2, vh / 2);
-  f.scale(z, z);
+  f.scale(z, z * MAP_TILT_COS);
   f.translate(-camera.x, -camera.y);
   f.globalAlpha = 0.48;
   for (const offset of worldCopiesNear(camera.x))
     f.drawImage(exploredMask, offset, 0, WORLD.w, WORLD.h);
   f.globalAlpha = 1;
   punchCurrentVisibility(f, 1, 1);
+  punchNearShoreTerrain(f);
   f.restore();
   f.globalCompositeOperation = "source-over";
 
   // A pale, blurred boundary suggests the wall of mist at the visual horizon.
   f.save();
   f.translate(vw / 2, vh / 2);
-  f.scale(camera.zoom, camera.zoom);
+  f.scale(camera.zoom, camera.zoom * MAP_TILT_COS);
   f.translate(-camera.x, -camera.y);
   polygonPath(f, visibility.polygon);
   f.strokeStyle = "rgba(235,229,208,.13)";
@@ -3901,7 +3958,7 @@ function render() {
   const worldTransform = () => {
     ctx.save();
     ctx.translate(vw / 2, vh / 2);
-    ctx.scale(z, z);
+    ctx.scale(z, z * MAP_TILT_COS);
     ctx.translate(-camera.x, -camera.y);
   };
 
@@ -4768,6 +4825,248 @@ function removeCombatCargo(profile) {
   return lot;
 }
 
+function combatSceneRandom(seed) {
+  let value = (Math.floor(seed) || 1) >>> 0;
+  return () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    return value / 4294967296;
+  };
+}
+
+function drawCombatRidge(c, width, horizon, peaks, fill, ink) {
+  c.beginPath();
+  c.moveTo(0, horizon);
+  peaks.forEach(([x, y]) => c.lineTo(x * width, y));
+  c.lineTo(width, horizon);
+  c.closePath();
+  c.fillStyle = fill;
+  c.fill();
+  c.strokeStyle = ink;
+  c.lineWidth = 1.4;
+  c.stroke();
+}
+
+function drawCombatCoastline(c, width, height, climate, seed) {
+  const random = combatSceneRandom(seed + 73);
+  const horizon = height * 0.43;
+  const peaks = [];
+  for (let index = 0; index <= 24; index++) {
+    const x = index / 24;
+    const summit = 0.24 + random() * 0.15;
+    peaks.push([x, horizon - (Math.sin(x * Math.PI) * summit + random() * 5)]);
+  }
+  const tones =
+    climate === "ice"
+      ? ["#a7b9ae", "#768a82", "rgba(224,231,214,.75)"]
+      : climate === "marsh"
+        ? ["#9a9a68", "#667653", "rgba(67,91,56,.78)"]
+        : ["#ae9b70", "#777650", "rgba(67,78,49,.78)"];
+  drawCombatRidge(c, width, horizon, peaks, tones[0], "rgba(59,49,31,.52)");
+  const nearPeaks = peaks.map(([x, y], index) => [
+    x,
+    Math.min(horizon + 5, y + 15 + Math.sin(index * 1.9) * 7),
+  ]);
+  drawCombatRidge(
+    c,
+    width,
+    horizon + 9,
+    nearPeaks,
+    tones[1],
+    "rgba(53,48,29,.62)",
+  );
+
+  // A foreground headland bends into the water and leaves a small sheltered cove.
+  c.beginPath();
+  c.moveTo(width * 0.76, horizon + 5);
+  c.bezierCurveTo(
+    width * 0.71,
+    height * 0.52,
+    width * 0.82,
+    height * 0.55,
+    width * 0.78,
+    height * 0.61,
+  );
+  c.bezierCurveTo(
+    width * 0.75,
+    height * 0.66,
+    width * 0.9,
+    height * 0.68,
+    width * 0.88,
+    height * 0.76,
+  );
+  c.bezierCurveTo(
+    width * 0.86,
+    height * 0.84,
+    width * 0.94,
+    height * 0.86,
+    width,
+    height * 0.82,
+  );
+  c.lineTo(width, height);
+  c.lineTo(width * 0.7, height);
+  c.closePath();
+  c.fillStyle = tones[2];
+  c.fill();
+  c.strokeStyle = "rgba(58,43,27,.82)";
+  c.lineWidth = 2;
+  c.stroke();
+
+  // Warm exposed rock and short ink hachures give the shore a readable edge.
+  c.beginPath();
+  c.moveTo(width * 0.76, horizon + 5);
+  c.bezierCurveTo(
+    width * 0.71,
+    height * 0.52,
+    width * 0.82,
+    height * 0.55,
+    width * 0.78,
+    height * 0.61,
+  );
+  c.bezierCurveTo(
+    width * 0.75,
+    height * 0.66,
+    width * 0.9,
+    height * 0.68,
+    width * 0.88,
+    height * 0.76,
+  );
+  c.strokeStyle = "rgba(220,196,145,.9)";
+  c.lineWidth = 4;
+  c.stroke();
+  c.strokeStyle = "rgba(49,42,27,.34)";
+  c.lineWidth = 1;
+  for (let index = 0; index < 13; index++) {
+    const x = width * (0.84 + random() * 0.14);
+    const y = height * (0.72 + random() * 0.23);
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + 7 + random() * 11, y - 3 - random() * 7);
+    c.stroke();
+  }
+}
+
+function renderCombatScene(canvas, climate, enemyClass, seed, weatherName) {
+  const bounds = canvas.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(bounds.width * pixelRatio);
+  canvas.height = Math.round(bounds.height * pixelRatio);
+  const c = canvas.getContext("2d");
+  c.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  const width = bounds.width;
+  const height = bounds.height;
+  const horizon = height * 0.43;
+  const random = combatSceneRandom(seed + weatherName.length * 37);
+
+  const sky = c.createLinearGradient(0, 0, 0, horizon + 20);
+  const stormy = climate === "storm" || /squall|gale|storm/i.test(weatherName);
+  sky.addColorStop(0, stormy ? "#64777b" : "#91b4b6");
+  sky.addColorStop(0.65, stormy ? "#9b927d" : "#d1bd91");
+  sky.addColorStop(1, "#d7c79e");
+  c.fillStyle = sky;
+  c.fillRect(0, 0, width, height);
+  const light = c.createRadialGradient(
+    width * 0.2,
+    height * 0.18,
+    2,
+    width * 0.2,
+    height * 0.18,
+    height * 0.44,
+  );
+  light.addColorStop(0, "rgba(247,226,173,.54)");
+  light.addColorStop(1, "rgba(247,226,173,0)");
+  c.fillStyle = light;
+  c.fillRect(0, 0, width, height);
+  const sea = c.createLinearGradient(0, horizon, 0, height);
+  sea.addColorStop(0, stormy ? "#52777b" : "#668c8a");
+  sea.addColorStop(0.42, stormy ? "#345f68" : "#3c7279");
+  sea.addColorStop(1, stormy ? "#203f4c" : "#244f59");
+  c.fillStyle = sea;
+  c.fillRect(0, horizon, width, height - horizon);
+  drawCombatCoastline(c, width, height, climate, seed);
+
+  // Receding, broken wave crests tighten toward the horizon and broaden nearby.
+  c.lineCap = "round";
+  for (let index = 0; index < 62; index++) {
+    const depth = (index + random() * 0.7) / 62;
+    const y = horizon + 10 + depth * depth * (height - horizon - 8);
+    const x = random() * width;
+    const span = 8 + depth * 45 + random() * 27;
+    c.beginPath();
+    c.moveTo(x - span * 0.5, y);
+    c.quadraticCurveTo(x, y - 1.5 - depth * 2, x + span * 0.5, y + 0.3);
+    c.strokeStyle =
+      index % 4 === 0
+        ? `rgba(219,220,190,${0.09 + depth * 0.16})`
+        : `rgba(19,51,55,${0.12 + depth * 0.13})`;
+    c.lineWidth = 0.6 + depth * 1.1;
+    c.stroke();
+  }
+  drawCombatCoastline(c, width, height, climate, seed);
+  // Pale wash and foam curl along the headland's shallow water.
+  c.beginPath();
+  c.moveTo(width * 0.755, horizon + 7);
+  c.bezierCurveTo(
+    width * 0.72,
+    height * 0.53,
+    width * 0.84,
+    height * 0.56,
+    width * 0.79,
+    height * 0.62,
+  );
+  c.bezierCurveTo(
+    width * 0.76,
+    height * 0.68,
+    width * 0.91,
+    height * 0.69,
+    width * 0.89,
+    height * 0.77,
+  );
+  c.strokeStyle = "rgba(225,224,196,.78)";
+  c.lineWidth = 2.4;
+  c.shadowColor = "rgba(235,229,200,.55)";
+  c.shadowBlur = 5;
+  c.stroke();
+  c.shadowBlur = 0;
+
+  // Reuse the same faceted, projected ship meshes used on the main chart.
+  const playerScale = 3.55;
+  c.save();
+  c.translate(width * 0.32, height * 0.69);
+  c.scale(playerScale, playerScale);
+  drawMerchantShip(
+    c,
+    {
+      x: 0,
+      y: 0,
+      angle: 0.03,
+      vesselClass: game.shipUpgrades.activeClass,
+      idNum: seed,
+      color: "#9c3d2c",
+    },
+    playerScale,
+  );
+  c.restore();
+
+  const enemyScale = enemyClass === "carrack" ? 2.7 : 3.05;
+  c.save();
+  c.translate(width * 0.65, height * 0.59);
+  c.scale(enemyScale, enemyScale);
+  drawMerchantShip(
+    c,
+    {
+      x: 0,
+      y: 0,
+      angle: Math.PI - 0.04,
+      vesselClass: enemyClass,
+      idNum: seed + 53,
+      color: "#71352a",
+    },
+    enemyScale,
+  );
+  c.restore();
+}
+
 function combatBackdropClass() {
   const weather = currentWeather(ship.angle);
   const land = currentPort?.land || "open-sea";
@@ -4805,22 +5104,41 @@ function openCombatEncounter(encounter, stats) {
     `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
   document.getElementById("combatEnemy").textContent =
     `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3 · ${profile.label}`;
+  document.getElementById("combatPanel").style.display = "grid";
   renderCombatVisual(strengthLabels[encounter.attackStrength], profile);
   renderCombatActions();
-  document.getElementById("combatPanel").style.display = "grid";
 }
 
 function renderCombatVisual(enemyLabel, profile) {
   const visual = document.getElementById("combatVisual");
-  visual.className = combatBackdropClass();
+  const backdrop = combatBackdropClass();
+  visual.className = backdrop;
   document.getElementById("combatLocation").textContent =
     `${currentPort.land} waters`;
-  document.getElementById("combatWaters").textContent = currentWeather(
-    ship.angle,
-  ).name;
+  const weatherName = currentWeather(ship.angle).name;
+  document.getElementById("combatWaters").textContent = weatherName;
   document.getElementById("combatEnemyVisualLabel").textContent = enemyLabel;
   document.getElementById("combatProfileLabel").textContent = profile.label;
+  const enemyClasses = ["cutter", "cutter", "brig", "carrack"];
+  renderCombatScene(
+    visual.querySelector(".combat-scene"),
+    backdrop.split(" ").at(-1),
+    enemyClasses[pendingCombat.encounter.attackStrength],
+    pendingCombat.seed,
+    weatherName,
+  );
 }
+
+addEventListener("resize", () => {
+  if (
+    !pendingCombat ||
+    document.getElementById("combatPanel").style.display !== "grid"
+  )
+    return;
+  const strength = pendingCombat.encounter.attackStrength;
+  const labels = ["", "Light raider", "Armed corsair", "Heavy boarding ship"];
+  renderCombatVisual(labels[strength], pendingCombat.profile);
+});
 
 function previewCombatAction(action) {
   return resolveCombatAction({

@@ -6,10 +6,16 @@ import {
 } from "./core/geometry.js";
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
+import { MAP_TILT_TAN } from "./core/projection.js";
+import { planLandTerrain } from "./core/terrain.js";
+export {
+  drawMerchantShip,
+  drawShip,
+  shipDrawProfile,
+} from "./ship-rendering.js";
 import {
   forests,
   lands,
-  mountains,
   ports,
   roughSeas,
   seaRegionLabels,
@@ -136,692 +142,6 @@ export function createRoughSeaParticles(seas, isOnLand) {
     return particles;
   });
 }
-
-function strokeHandDrawn(c, drawPath, color, width, z = 1) {
-  c.save();
-  c.strokeStyle = color;
-  c.lineCap = "round";
-  c.lineJoin = "round";
-  c.lineWidth = width / z;
-  drawPath();
-  c.stroke();
-  c.globalAlpha = 0.34;
-  c.translate(0.55 / z, -0.35 / z);
-  c.lineWidth = Math.max(0.65 / z, (width * 0.55) / z);
-  drawPath();
-  c.stroke();
-  c.restore();
-}
-
-// Ship silhouettes are the game's "woodcut fleet": every vessel class gets its
-// own rig, spar layout, and structural details so ships read as distinct
-// symbols, the way old sea charts catalogued fleets as separate little
-// vessels. Sails are parchment washes edged in the same hand-inked doubling
-// used for coastlines, mountains, and port icons.
-const SHIP_DRAW_PROFILES = Object.freeze({
-  cutter: Object.freeze({
-    // Coastal trader: single mast, gaff mainsail with a small jib.
-    shadow: [3, 5, 7, 16],
-    bow: -14,
-    stern: 16,
-    beam: 6,
-    waist: 5,
-    deckY: 7,
-    masts: [0],
-    mastTop: -13,
-    rig: "gaff",
-    jib: true,
-    pennantY: -5,
-  }),
-  sloop: Object.freeze({
-    // Courier: the narrowest hull under a very tall, lean working sail.
-    shadow: [4, 5, 6, 18],
-    bow: -18,
-    stern: 15,
-    beam: 4.4,
-    waist: 3.8,
-    deckY: 7,
-    masts: [0],
-    mastTop: -16,
-    rig: "tall",
-    streamer: true,
-    pennantY: -7,
-  }),
-  carrack: Object.freeze({
-    // Deepwater carrier: broad hull, fore and stern castles, square sails
-    // with topsails, a crow's nest, and deck guns.
-    shadow: [4, 6, 10, 19],
-    bow: -15,
-    stern: 18,
-    beam: 8.5,
-    waist: 7.2,
-    deckY: 6,
-    masts: [-4, 4],
-    mastTop: -13,
-    rig: "square",
-    topsail: true,
-    forecastle: true,
-    sternCastle: true,
-    lookout: true,
-    guns: true,
-    pennantY: -8,
-  }),
-  barque: Object.freeze({
-    // Survey vessel: the longest hull on three masts, square rig forward and
-    // a gaff mizzen, with an observation nest aloft.
-    shadow: [4, 6, 7, 20],
-    bow: -18,
-    stern: 18,
-    beam: 5.8,
-    waist: 4.9,
-    deckY: 8,
-    masts: [-4.5, -0.5, 3.5],
-    mastTop: -12,
-    rig: "barque",
-    lookout: true,
-    pennantY: -9,
-  }),
-  brig: Object.freeze({
-    // Armed merchantman: two stout square rigs and a visible row of gun
-    // ports along each rail beneath a square ensign.
-    shadow: [4, 6, 8, 18],
-    bow: -16,
-    stern: 17,
-    beam: 7,
-    waist: 5.8,
-    deckY: 7,
-    masts: [-3, 4],
-    mastTop: -13,
-    rig: "square",
-    gunPorts: true,
-    squareFlag: true,
-    pennantY: -6,
-  }),
-  dhow: Object.freeze({
-    // Shallow-draft trader: raked high prow under a long lateen yard, with
-    // an outrigger.
-    shadow: [4, 5, 8, 17],
-    bow: -17,
-    stern: 15,
-    beam: 5.6,
-    waist: 4.2,
-    deckY: 7,
-    masts: [0],
-    mastTop: -11,
-    rig: "lateen",
-    highProw: true,
-    outrigger: true,
-    pennantY: -6,
-  }),
-});
-
-const SHIP_PROFILE_IDS = Object.freeze(Object.keys(SHIP_DRAW_PROFILES));
-
-export function shipDrawProfile(vesselClass, fallbackSeed = 0) {
-  if (SHIP_DRAW_PROFILES[vesselClass]) return SHIP_DRAW_PROFILES[vesselClass];
-  const index = Math.abs(Math.floor(fallbackSeed)) % SHIP_PROFILE_IDS.length;
-  return SHIP_DRAW_PROFILES[SHIP_PROFILE_IDS[index]];
-}
-
-function drawHullPath(c, profile) {
-  c.beginPath();
-  c.moveTo(0, profile.bow);
-  c.quadraticCurveTo(profile.beam, profile.bow * 0.35, profile.waist, 9);
-  c.quadraticCurveTo(profile.beam * 0.75, profile.stern - 3, 0, profile.stern);
-  c.quadraticCurveTo(-profile.beam * 0.8, profile.stern - 3, -profile.waist, 8);
-  c.quadraticCurveTo(-profile.beam, profile.bow * 0.35, 0, profile.bow);
-  c.closePath();
-}
-
-const SHIP_SAIL_FILL = "#ecd9a6";
-const SHIP_SAIL_SHADE = "rgba(118,84,46,.2)";
-const SHIP_SAIL_SEAM = "rgba(72,51,33,.42)";
-
-function mastHeadY(profile) {
-  return profile.topsail ? profile.mastTop - 9.5 : profile.mastTop - 2.5;
-}
-
-function drawSquareSail(c, x, profile, bx, by, z, scale = 1, lift = 0) {
-  const top = profile.mastTop + lift;
-  const halfW = 6 * scale;
-  const foot = top + 6.5 * scale;
-  const sail = () => {
-    c.beginPath();
-    c.moveTo(x - halfW, top + 0.5);
-    c.quadraticCurveTo(
-      x + 0.5 + bx * 0.5,
-      top + 1.6 + by * 0.5,
-      x + halfW + bx * 0.35,
-      top + 1 + by * 0.35,
-    );
-    c.quadraticCurveTo(
-      x + halfW + bx * 0.75,
-      top + 3.5 + by * 0.75,
-      x + halfW - 1.5 + bx,
-      foot + by,
-    );
-    c.lineTo(x - halfW + 0.5, foot - 0.5);
-    c.quadraticCurveTo(x - halfW - 0.7, top + 2.5, x - halfW, top + 0.5);
-    c.closePath();
-  };
-  c.fillStyle = SHIP_SAIL_FILL;
-  sail();
-  c.fill();
-  c.fillStyle = SHIP_SAIL_SHADE;
-  c.beginPath();
-  c.moveTo(x + halfW + bx * 0.35, top + 1 + by * 0.35);
-  c.quadraticCurveTo(
-    x + halfW + bx * 0.75,
-    top + 3.5 + by * 0.75,
-    x + halfW - 1.5 + bx,
-    foot + by,
-  );
-  c.quadraticCurveTo(
-    x + halfW - 2.6 + bx * 0.5,
-    top + 3.6 + by * 0.5,
-    x + halfW - 2.8,
-    top + 1.2,
-  );
-  c.closePath();
-  c.fill();
-  c.save();
-  c.strokeStyle = SHIP_SAIL_SEAM;
-  c.lineWidth = 0.55 / z;
-  c.beginPath();
-  for (const t of [0.36, 0.68]) {
-    const sx = x - halfW + 2 * halfW * t;
-    c.moveTo(sx, top + 1);
-    c.quadraticCurveTo(
-      sx + bx * t,
-      top + 3.4 + by * t,
-      sx + 0.4 + bx * t,
-      foot - 0.9 + by * t,
-    );
-  }
-  c.stroke();
-  c.restore();
-  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
-}
-
-function drawYard(c, x, y, bx, by, z, scale = 1) {
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(x - 6.8 * scale, y - 0.4);
-      c.quadraticCurveTo(
-        x + 0.5 + bx * 0.4,
-        y + 0.8 + by * 0.4,
-        x + 7 * scale + bx * 0.3,
-        y + 0.6 + by * 0.3,
-      );
-    },
-    "#3a2717",
-    1,
-    z,
-  );
-}
-
-function drawGaffSail(c, x, profile, bx, by, z) {
-  const top = profile.mastTop;
-  const peakX = x + 7.5 + bx * 0.4;
-  const peakY = top + 2.5 + by * 0.4;
-  const clewX = x + 5.5 + bx;
-  const clewY = 3.5 + by;
-  const sail = () => {
-    c.beginPath();
-    c.moveTo(x + 0.4, top + 1.5);
-    c.lineTo(peakX, peakY);
-    c.quadraticCurveTo(x + 5.5 + bx, top + 5, clewX, clewY);
-    c.lineTo(x + 0.4, 6);
-    c.closePath();
-  };
-  c.fillStyle = SHIP_SAIL_FILL;
-  sail();
-  c.fill();
-  c.fillStyle = SHIP_SAIL_SHADE;
-  c.beginPath();
-  c.moveTo(peakX, peakY);
-  c.quadraticCurveTo(x + 5.5 + bx, top + 5, clewX, clewY);
-  c.quadraticCurveTo(x + 3.4 + bx * 0.5, top + 4.4, x + 3.6, top + 2.2);
-  c.closePath();
-  c.fill();
-  c.save();
-  c.strokeStyle = SHIP_SAIL_SEAM;
-  c.lineWidth = 0.55 / z;
-  c.beginPath();
-  c.moveTo(x + 2.6, top + 1.6);
-  c.quadraticCurveTo(
-    x + 3.4 + bx * 0.5,
-    top + 4,
-    x + 3.6 + bx * 0.6,
-    clewY - 1 + by * 0.6,
-  );
-  c.stroke();
-  c.restore();
-  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(x + 0.4, top + 1);
-      c.lineTo(peakX, peakY);
-    },
-    "#3a2717",
-    1,
-    z,
-  );
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(x + 0.4, 6.4);
-      c.lineTo(clewX, clewY + 0.4);
-    },
-    "#3a2717",
-    1,
-    z,
-  );
-}
-
-function drawJib(c, x, profile, bx, by, z) {
-  const sail = () => {
-    c.beginPath();
-    c.moveTo(x + 0.4, profile.mastTop + 2);
-    c.quadraticCurveTo(
-      x + 1 + bx * 0.4,
-      profile.bow + 6 + by * 0.4,
-      profile.bow * 0.55,
-      -0.5 + by * 0.4,
-    );
-    c.quadraticCurveTo(x - 0.6, 2, x + 0.4, 4);
-    c.closePath();
-  };
-  c.fillStyle = SHIP_SAIL_FILL;
-  sail();
-  c.fill();
-  strokeHandDrawn(c, sail, "#4a3320", 0.7, z);
-}
-
-function drawTallSail(c, x, profile, bx, by, z) {
-  const top = profile.mastTop;
-  const clewX = x + 8.5 + bx;
-  const clewY = profile.deckY - 1.5 + by;
-  const sail = () => {
-    c.beginPath();
-    c.moveTo(x + 0.4, top);
-    c.quadraticCurveTo(x + 6 + bx * 0.6, top + 6 + by * 0.6, clewX, clewY);
-    c.quadraticCurveTo(
-      x + 4 + bx * 0.3,
-      profile.deckY + 0.5,
-      x + 0.4,
-      profile.deckY + 1,
-    );
-    c.closePath();
-  };
-  c.fillStyle = SHIP_SAIL_FILL;
-  sail();
-  c.fill();
-  c.fillStyle = SHIP_SAIL_SHADE;
-  c.beginPath();
-  c.moveTo(x + 0.4, top);
-  c.quadraticCurveTo(x + 6 + bx * 0.6, top + 6 + by * 0.6, clewX, clewY);
-  c.quadraticCurveTo(x + 5 + bx * 0.4, top + 9 + by * 0.4, x + 2.6, top + 8);
-  c.closePath();
-  c.fill();
-  c.save();
-  c.strokeStyle = SHIP_SAIL_SEAM;
-  c.lineWidth = 0.55 / z;
-  c.beginPath();
-  c.moveTo(x + 2.4, top + 1.4);
-  c.quadraticCurveTo(
-    x + 4.4 + bx * 0.4,
-    top + 6 + by * 0.4,
-    x + 5 + bx * 0.6,
-    clewY - 1.4 + by * 0.6,
-  );
-  c.stroke();
-  c.restore();
-  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
-}
-
-function drawLateenSail(c, x, profile, bx, by, z) {
-  const top = profile.mastTop;
-  const tipX = x + 10.5 + bx * 0.8;
-  const tipY = 1.5 + by * 0.8;
-  const sail = () => {
-    c.beginPath();
-    c.moveTo(x - 1.2, top + 1.2);
-    c.lineTo(tipX, tipY);
-    c.quadraticCurveTo(x + 4 + bx * 0.5, 5 + by * 0.5, x - 1.2, 6.5);
-    c.closePath();
-  };
-  c.fillStyle = SHIP_SAIL_FILL;
-  sail();
-  c.fill();
-  c.fillStyle = SHIP_SAIL_SHADE;
-  c.beginPath();
-  c.moveTo(x - 1.2, top + 1.2);
-  c.lineTo(tipX, tipY);
-  c.quadraticCurveTo(x + 2 + bx * 0.4, 4 + by * 0.4, x - 1.2, 6.5);
-  c.closePath();
-  c.fill();
-  c.save();
-  c.strokeStyle = SHIP_SAIL_SEAM;
-  c.lineWidth = 0.55 / z;
-  c.beginPath();
-  for (const t of [0.4, 0.72]) {
-    c.moveTo(
-      x - 1.2 + (tipX - x + 1.2) * t,
-      top + 1.2 + (tipY - top - 1.2) * t,
-    );
-    c.quadraticCurveTo(
-      x + (2 + bx * 0.5) * t,
-      (5 + by * 0.5) * t,
-      x - 1.2 + (tipX - x + 1.2) * t * 0.9,
-      top + 1.2 + (6.5 - top - 1.2) * t,
-    );
-  }
-  c.stroke();
-  c.restore();
-  strokeHandDrawn(c, sail, "#4a3320", 0.85, z);
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(x - 2, top);
-      c.lineTo(tipX, tipY);
-    },
-    "#3a2717",
-    1,
-    z,
-  );
-}
-
-function drawRigging(c, profile, z) {
-  c.save();
-  c.strokeStyle = "rgba(43,26,16,.5)";
-  c.lineWidth = 0.55 / z;
-  c.beginPath();
-  const headY = mastHeadY(profile);
-  for (const mastX of profile.masts) {
-    c.moveTo(mastX, headY);
-    c.lineTo(0, profile.bow + 2.5);
-  }
-  c.moveTo(profile.masts[profile.masts.length - 1], headY);
-  c.lineTo(0, profile.stern - 4.5);
-  c.stroke();
-  c.restore();
-}
-
-function drawPennant(c, profile, color, bx, by, z) {
-  const y = profile.pennantY;
-  if (profile.streamer) {
-    c.fillStyle = color;
-    c.beginPath();
-    c.moveTo(1, y + 0.4);
-    c.quadraticCurveTo(
-      6 + bx * 0.3,
-      y + 1.8 + by * 0.3,
-      12.5 + bx * 0.6,
-      y + 1.2 + by * 0.6,
-    );
-    c.quadraticCurveTo(6.5 + bx * 0.35, y + 3.2 + by * 0.4, 1, y + 2.8);
-    c.closePath();
-    c.fill();
-    return;
-  }
-  const flag = () => {
-    c.beginPath();
-    if (profile.squareFlag) {
-      c.rect(1, y, 5.5, 4.5);
-    } else {
-      c.moveTo(1, y);
-      c.lineTo(8, y + 1.2);
-      c.lineTo(4.6, y + 3);
-      c.lineTo(8, y + 4.6);
-      c.lineTo(1, y + 6);
-      c.closePath();
-    }
-  };
-  c.fillStyle = color;
-  flag();
-  c.fill();
-  strokeHandDrawn(c, flag, "rgba(43,26,16,.6)", 0.55, z);
-}
-
-function drawShipShape(c, profile, color, z, bx = 0, by = 0) {
-  c.fillStyle = "rgba(35,24,14,.2)";
-  c.beginPath();
-  c.ellipse(...profile.shadow, -0.08, 0, Math.PI * 2);
-  c.fill();
-
-  // Hull: a parchment-toned wood wash with a pale highlight toward the bow,
-  // edged in the doubled ink strokes used for coastlines and mountains.
-  c.fillStyle = "#7c4e29";
-  drawHullPath(c, profile);
-  c.fill();
-  c.save();
-  drawHullPath(c, profile);
-  c.clip();
-  c.fillStyle = "rgba(233,204,146,.22)";
-  c.fillRect(
-    -profile.beam,
-    profile.bow,
-    profile.beam * 2,
-    (profile.stern - profile.bow) * 0.55,
-  );
-  c.restore();
-  strokeHandDrawn(c, () => drawHullPath(c, profile), "#2b1a10", 1.25, z);
-
-  // Planking hatching keeps the hull from reading as a flat brown shape.
-  c.save();
-  c.strokeStyle = "rgba(43,26,16,.32)";
-  c.lineWidth = 0.6 / z;
-  c.beginPath();
-  c.moveTo(-profile.waist * 0.5, profile.bow * 0.45);
-  c.quadraticCurveTo(
-    0,
-    profile.bow * 0.45 + 3.5,
-    profile.waist * 0.55,
-    profile.stern * 0.42,
-  );
-  c.moveTo(-profile.waist * 0.42, profile.bow * 0.62);
-  c.quadraticCurveTo(
-    0,
-    profile.bow * 0.62 + 4,
-    profile.waist * 0.48,
-    profile.stern * 0.6,
-  );
-  c.stroke();
-  c.restore();
-
-  if (profile.highProw) {
-    strokeHandDrawn(
-      c,
-      () => {
-        c.beginPath();
-        c.moveTo(0, profile.bow + 2);
-        c.quadraticCurveTo(
-          profile.beam * 0.55,
-          profile.bow + 1,
-          profile.beam * 0.3,
-          profile.bow - 5,
-        );
-        c.moveTo(0, profile.bow + 2);
-        c.quadraticCurveTo(
-          -profile.beam * 0.3,
-          profile.bow + 4,
-          -profile.beam * 0.34,
-          profile.bow + 9,
-        );
-      },
-      "#2b1a10",
-      1,
-      z,
-    );
-  }
-
-  if (profile.sternCastle) {
-    c.fillStyle = "rgba(47,29,17,.85)";
-    c.fillRect(-profile.beam * 0.65, 8, profile.beam * 1.3, 5.5);
-    strokeHandDrawn(
-      c,
-      () => {
-        c.beginPath();
-        c.rect(-profile.beam * 0.65, 8, profile.beam * 1.3, 5.5);
-      },
-      "#2b1a10",
-      0.9,
-      z,
-    );
-  }
-  if (profile.forecastle) {
-    c.fillStyle = "rgba(47,29,17,.85)";
-    c.fillRect(-profile.beam * 0.46, profile.bow + 5, profile.beam * 0.92, 4.5);
-    strokeHandDrawn(
-      c,
-      () => {
-        c.beginPath();
-        c.rect(-profile.beam * 0.46, profile.bow + 5, profile.beam * 0.92, 4.5);
-      },
-      "#2b1a10",
-      0.9,
-      z,
-    );
-  }
-  if (profile.gunPorts) {
-    c.fillStyle = "#27180f";
-    for (const side of [-1, 1]) {
-      for (const gy of [profile.bow * 0.3, 1.5, profile.stern - 8]) {
-        c.fillRect(side * profile.beam * 0.62 - 0.7, gy - 0.7, 1.4, 1.4);
-      }
-    }
-  }
-  if (profile.outrigger) {
-    strokeHandDrawn(
-      c,
-      () => {
-        c.beginPath();
-        c.moveTo(-profile.beam - 4, -2);
-        c.quadraticCurveTo(-profile.beam - 7, 5, -profile.beam - 5, 13);
-        c.moveTo(-profile.beam - 1, 2);
-        c.lineTo(-profile.beam - 5, 8);
-      },
-      "#342116",
-      0.8,
-      z,
-    );
-  }
-
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      c.moveTo(-profile.waist * 0.75, profile.deckY);
-      c.quadraticCurveTo(
-        0,
-        profile.deckY + 3,
-        profile.waist * 0.85,
-        profile.deckY,
-      );
-    },
-    "#342116",
-    0.9,
-    z,
-  );
-
-  drawRigging(c, profile, z);
-
-  strokeHandDrawn(
-    c,
-    () => {
-      c.beginPath();
-      const headY = mastHeadY(profile);
-      for (const mastX of profile.masts) {
-        c.moveTo(mastX, headY);
-        c.lineTo(mastX, profile.deckY + 2);
-      }
-    },
-    "#342116",
-    1,
-    z,
-  );
-
-  if (profile.rig === "square" || profile.rig === "barque") {
-    const squareMasts =
-      profile.rig === "square" ? profile.masts : profile.masts.slice(0, 2);
-    const aftMasts = profile.rig === "square" ? [] : profile.masts.slice(2);
-    for (const mastX of squareMasts) {
-      drawYard(c, mastX, profile.mastTop, bx, by, z);
-      drawSquareSail(c, mastX, profile, bx, by, z);
-      if (profile.topsail) {
-        drawYard(c, mastX, profile.mastTop - 7.5, bx, by, z, 0.62);
-        drawSquareSail(c, mastX, profile, bx, by, z, 0.62, -7.5);
-      }
-    }
-    for (const mastX of aftMasts) {
-      drawGaffSail(c, mastX, profile, bx, by, z);
-    }
-  } else if (profile.rig === "gaff") {
-    drawGaffSail(c, profile.masts[0], profile, bx, by, z);
-    if (profile.jib) drawJib(c, profile.masts[0], profile, bx, by, z);
-  } else if (profile.rig === "tall") {
-    drawTallSail(c, profile.masts[0], profile, bx, by, z);
-  } else if (profile.rig === "lateen") {
-    drawLateenSail(c, profile.masts[0], profile, bx, by, z);
-  }
-
-  if (profile.lookout) {
-    const nestMast = profile.masts[profile.masts.length > 1 ? 1 : 0];
-    const nestY = mastHeadY(profile) - 1.4;
-    c.fillStyle = "#4f321e";
-    c.beginPath();
-    c.arc(nestMast, nestY, 1.9, 0, Math.PI * 2);
-    c.fill();
-    strokeHandDrawn(
-      c,
-      () => {
-        c.beginPath();
-        c.arc(nestMast, nestY, 1.9, 0, Math.PI * 2);
-      },
-      "#2b1a10",
-      0.7,
-      z,
-    );
-  }
-
-  if (profile.guns) {
-    c.fillStyle = "#27180f";
-    for (const x of [-profile.beam * 0.55, profile.beam * 0.55]) {
-      c.beginPath();
-      c.arc(x, 7, 1, 0, Math.PI * 2);
-      c.arc(x, 12, 1, 0, Math.PI * 2);
-      c.fill();
-    }
-  }
-
-  drawPennant(c, profile, color, bx, by, z);
-}
-
-export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
-  c.save();
-  c.translate(renderX, merchant.y);
-  c.rotate(merchant.angle + Math.PI / 2);
-  drawShipShape(
-    c,
-    shipDrawProfile(merchant.vesselClass, merchant.idNum),
-    merchant.color,
-    z,
-  );
-  c.restore();
-}
-
-// --- Weather atmosphere -----------------------------------------------------
-// Driven by the continuously interpolated weather (roughness + visibility).
-// Drawn in screen space over the world and the player's ship so that haze,
-// fog, rain, and storms read as something the ship is *inside* rather than
-// something painted behind it.
 
 function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
@@ -1189,37 +509,6 @@ export function drawWeatherEffects(c, opts) {
   drawWeatherLightning(c, lightning, vw, vh, time);
 }
 
-export function drawShip(
-  c,
-  x,
-  y,
-  a,
-  windAngle = 0,
-  windStrength = 0,
-  vesselClass = "cutter",
-  z = 1,
-) {
-  c.save();
-  c.translate(x, y);
-  c.rotate(a + Math.PI / 2);
-
-  const localWind = windAngle - a;
-  const billow = windStrength * 8;
-  const flutter = Math.sin(performance.now() / 150) * (windStrength * 2);
-  const bx = Math.cos(localWind) * (billow + flutter);
-  const by = Math.sin(localWind) * (billow + flutter);
-  c.scale(1.7, 1.7);
-  drawShipShape(
-    c,
-    shipDrawProfile(vesselClass),
-    "#9c3d2c",
-    z / 1.7,
-    bx / 1.7,
-    by / 1.7,
-  );
-  c.restore();
-}
-
 export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   const onLand = (x, y) => isLandPoint(x, y, WORLD.w);
   const wrappedDistance = (x1, y1, x2, y2) => {
@@ -1279,36 +568,213 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   function drawMountain(c, x, y, s) {
     c.save();
     c.translate(x, y);
-    c.strokeStyle = "rgba(43,33,21,.9)";
-    c.lineWidth = Math.max(1.5, s * 0.065);
-    c.fillStyle = "rgba(111,93,57,.28)";
+    const summit = Math.sin(x * 0.17 + y * 0.11) * s * 0.16;
+    c.fillStyle = "rgba(35,29,22,.16)";
+    c.beginPath();
+    c.ellipse(s * 0.2, s * 0.52, s, s * 0.27, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(209,190,140,.42)";
     c.beginPath();
     c.moveTo(-s, s * 0.58);
-    c.lineTo(0, -s);
-    c.lineTo(s, s * 0.58);
+    c.lineTo(-s * 0.61, s * 0.03);
+    c.lineTo(-s * 0.4, -s * 0.24);
+    c.lineTo(summit, -s);
+    c.lineTo(s * 0.13, -s * 0.08);
+    c.lineTo(s * 0.08, s * 0.58);
     c.closePath();
     c.fill();
+    c.fillStyle = "rgba(64,54,37,.48)";
+    c.beginPath();
+    c.moveTo(summit, -s);
+    c.lineTo(s * 0.4, -s * 0.25);
+    c.lineTo(s * 0.52, -s * 0.33);
+    c.lineTo(s, s * 0.58);
+    c.lineTo(s * 0.08, s * 0.58);
+    c.lineTo(s * 0.13, -s * 0.08);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = "rgba(43,33,21,.72)";
+    c.lineWidth = Math.max(1.2, s * 0.045);
+    c.beginPath();
+    c.moveTo(-s, s * 0.58);
+    c.lineTo(-s * 0.61, s * 0.03);
+    c.lineTo(-s * 0.4, -s * 0.24);
+    c.lineTo(summit, -s);
+    c.lineTo(s * 0.4, -s * 0.25);
+    c.lineTo(s * 0.52, -s * 0.33);
+    c.lineTo(s, s * 0.58);
     c.stroke();
     c.beginPath();
-    c.moveTo(-s * 0.38, -s * 0.39);
-    c.lineTo(0, -s);
-    c.lineTo(s * 0.34, -s * 0.43);
-    c.lineTo(s * 0.1, -s * 0.54);
-    c.lineTo(-s * 0.04, -s * 0.34);
-    c.closePath();
+    c.moveTo(summit, -s);
+    c.lineTo(s * 0.13, -s * 0.08);
+    c.lineTo(s * 0.08, s * 0.58);
     c.stroke();
-    c.lineWidth = Math.max(1, s * 0.035);
+    c.strokeStyle = "rgba(238,223,180,.62)";
+    c.beginPath();
+    c.moveTo(-s * 0.25, -s * 0.43);
+    c.lineTo(summit, -s);
+    c.lineTo(s * 0.25, -s * 0.43);
+    c.stroke();
+    c.strokeStyle = "rgba(38,31,22,.35)";
+    c.lineWidth = 0.8;
     for (let i = 0; i < 4; i++) {
       c.beginPath();
-      c.moveTo(-s * 0.82 + i * s * 0.16, s * 0.48);
-      c.lineTo(-s * 0.22 + i * s * 0.08, -s * 0.13);
-      c.stroke();
-      c.beginPath();
-      c.moveTo(s * 0.82 - i * s * 0.15, s * 0.48);
-      c.lineTo(s * 0.24 - i * s * 0.07, -s * 0.08);
+      c.moveTo(s * (0.18 + i * 0.05), s * (-0.02 + i * 0.12));
+      c.lineTo(s * (0.45 + i * 0.12), s * (0.16 + i * 0.12));
       c.stroke();
     }
     c.restore();
+  }
+  function terrainPath(c, points) {
+    c.beginPath();
+    c.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length - 1; i++) {
+      const midpoint = {
+        x: (points[i].x + points[i + 1].x) / 2,
+        y: (points[i].y + points[i + 1].y) / 2,
+      };
+      c.quadraticCurveTo(points[i].x, points[i].y, midpoint.x, midpoint.y);
+    }
+    c.lineTo(points.at(-1).x, points.at(-1).y);
+  }
+  function terrainWash(c, x, y, rx, ry, angle, color, opacity) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(angle);
+    c.scale(rx, ry);
+    const wash = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    wash.addColorStop(0, `rgba(${color},${opacity})`);
+    wash.addColorStop(0.5, `rgba(${color},${opacity * 0.45})`);
+    wash.addColorStop(1, `rgba(${color},0)`);
+    c.fillStyle = wash;
+    c.fillRect(-1, -1, 2, 2);
+    c.restore();
+  }
+  function drawTerrain(c, terrain) {
+    for (const plain of terrain.plains) {
+      terrainWash(
+        c,
+        plain.x,
+        plain.y,
+        60,
+        35,
+        plain.angle,
+        "227,202,135",
+        0.12,
+      );
+      c.save();
+      c.translate(plain.x, plain.y);
+      c.rotate(plain.angle);
+      c.strokeStyle = "rgba(61,53,32,.25)";
+      c.lineWidth = 0.9;
+      for (let i = -1; i <= 1; i++) {
+        c.beginPath();
+        c.moveTo(i * 5 - 4, 3);
+        c.quadraticCurveTo(i * 5, -2, i * 5 + 5, 1);
+        c.stroke();
+      }
+      c.restore();
+    }
+    for (const hill of terrain.hills) {
+      terrainWash(
+        c,
+        hill.x + hill.size * 0.2,
+        hill.y + hill.size * 0.15,
+        hill.size * 1.5,
+        hill.size * 0.8,
+        -0.2,
+        "54,46,28",
+        0.2,
+      );
+      terrainWash(
+        c,
+        hill.x - hill.size * 0.15,
+        hill.y - hill.size * 0.2,
+        hill.size,
+        hill.size * 0.6,
+        -0.2,
+        "235,215,159",
+        0.24,
+      );
+      c.strokeStyle = "rgba(63,50,31,.27)";
+      c.lineWidth = 1;
+      c.save();
+      c.translate(hill.x, hill.y);
+      c.scale(hill.size, hill.size);
+      c.lineWidth = 1 / hill.size;
+      c.beginPath();
+      c.moveTo(-1, 0.2);
+      c.bezierCurveTo(-0.5, -0.6, 0.15, -0.85, 0.95, 0.12);
+      c.stroke();
+      c.strokeStyle = "rgba(63,50,31,.15)";
+      c.beginPath();
+      c.moveTo(-0.65, 0.45);
+      c.bezierCurveTo(-0.1, 0.15, 0.65, 0.2, 1.2, 0.48);
+      c.stroke();
+      c.restore();
+    }
+    for (const range of terrain.ranges) {
+      for (const peak of range.peaks) {
+        terrainWash(
+          c,
+          peak.x + 12,
+          peak.y + 14,
+          peak.size * 2.4,
+          peak.size * 1.7,
+          range.angle,
+          "47,38,24",
+          0.24,
+        );
+        terrainWash(
+          c,
+          peak.x - 9,
+          peak.y - 8,
+          peak.size * 1.7,
+          peak.size * 1.4,
+          range.angle,
+          "218,196,139",
+          0.16,
+        );
+      }
+    }
+    for (const river of terrain.rivers) {
+      for (let i = 0; i < river.length - 1; i++) {
+        const a = river[i],
+          b = river[i + 1];
+        terrainWash(
+          c,
+          (a.x + b.x) / 2,
+          (a.y + b.y) / 2,
+          Math.hypot(b.x - a.x, b.y - a.y) + 24,
+          30,
+          Math.atan2(b.y - a.y, b.x - a.x),
+          "216,211,146",
+          0.19,
+        );
+      }
+    }
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    for (const river of terrain.tributaries) {
+      terrainPath(c, river);
+      c.strokeStyle = "rgba(51,78,72,.6)";
+      c.lineWidth = 1.6;
+      c.stroke();
+    }
+    for (const river of terrain.rivers) {
+      terrainPath(c, river);
+      c.strokeStyle = "rgba(45,64,60,.65)";
+      c.lineWidth = 3.8;
+      c.stroke();
+      terrainPath(c, river);
+      c.strokeStyle = "rgba(154,180,163,.7)";
+      c.lineWidth = 1.8;
+      c.stroke();
+    }
+    for (const range of terrain.ranges) {
+      for (const peak of [...range.peaks].sort((a, b) => a.y - b.y))
+        drawMountain(c, peak.x, peak.y, peak.size);
+    }
   }
   function drawPortIcon(c, p) {
     c.save();
@@ -1411,15 +877,15 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   function translatedPoly(poly, offsetX) {
     return poly.map(([x, y]) => [x + offsetX, y]);
   }
-  function polygonWorldOffsets(poly) {
+  function polygonWorldOffsets(poly, margin = 0) {
     const xs = poly.map(([x]) => x);
     const offsets = [0];
-    if (Math.min(...xs) < 0) offsets.push(WORLD.w);
-    if (Math.max(...xs) > WORLD.w) offsets.push(-WORLD.w);
+    if (Math.min(...xs) < margin) offsets.push(WORLD.w);
+    if (Math.max(...xs) > WORLD.w - margin) offsets.push(-WORLD.w);
     return offsets;
   }
-  function drawWrappedPolyPath(c, poly, drawPath) {
-    for (const offset of polygonWorldOffsets(poly)) {
+  function drawWrappedPolyPath(c, poly, drawPath, margin = 0) {
+    for (const offset of polygonWorldOffsets(poly, margin)) {
       drawPath(translatedPoly(poly, offset));
     }
   }
@@ -1858,6 +1324,22 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     m.stroke();
     m.restore();
 
+    const mountainLands = new Set([
+      LAND_NAMES.thrymmSpires,
+      LAND_NAMES.drazhmark,
+      LAND_NAMES.veyrAshreach,
+      LAND_NAMES.sivvynIsle,
+      LAND_NAMES.thornvayle,
+      LAND_NAMES.sythrenCoast,
+      LAND_NAMES.orynthSteppe,
+      LAND_NAMES.aurelmarch,
+      LAND_NAMES.solvyrMarch,
+      LAND_NAMES.verdantate,
+      LAND_NAMES.stormvaneCrown,
+      PORT_NAMES.ossuwhale,
+      LAND_NAMES.rimevault,
+    ]);
+
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
       for (const off of [22, 14, 7]) {
@@ -1868,6 +1350,46 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
           m.stroke();
         });
       }
+      // Each coast has a vertical face projected from the raised top edge to
+      // the sea plane. Back faces are hidden by the land surface drawn next.
+      const coastDepth = 38 * MAP_TILT_TAN;
+      drawWrappedPolyPath(
+        m,
+        l.poly,
+        (poly) => {
+          m.save();
+          m.shadowColor = "rgba(35,22,10,.46)";
+          m.shadowBlur = 12;
+          m.shadowOffsetY = 4;
+          m.translate(0, coastDepth);
+          polyPath(m, poly);
+          m.fillStyle = "#5e4629";
+          m.fill();
+          m.restore();
+
+          let area = 0;
+          for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            area += a[0] * b[1] - b[0] * a[1];
+          }
+          const facing = Math.sign(area) || 1;
+          for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            if ((b[0] - a[0]) * facing >= 0) continue;
+            m.beginPath();
+            m.moveTo(a[0], a[1]);
+            m.lineTo(b[0], b[1]);
+            m.lineTo(b[0], b[1] + coastDepth);
+            m.lineTo(a[0], a[1] + coastDepth);
+            m.closePath();
+            m.fillStyle = b[1] > a[1] ? "#a38354" : "#80613e";
+            m.fill();
+          }
+        },
+        40,
+      );
       drawWrappedPolyPath(m, l.poly, (poly) => {
         polyPath(m, poly);
         m.fillStyle = l.color;
@@ -1907,6 +1429,22 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       }
       m.restore();
 
+      const terrain = planLandTerrain(
+        l.poly,
+        1349 + li * 97,
+        mountainLands.has(l.name),
+      );
+      m.save();
+      wrappedClipPath(m, l.poly);
+      m.clip();
+      for (const offset of polygonWorldOffsets(l.poly)) {
+        m.save();
+        m.translate(offset, 0);
+        drawTerrain(m, terrain);
+        m.restore();
+      }
+      m.restore();
+
       // Short, irregular hachures give the shore the engraved depth of a
       // navigator's hand-inked chart without obscuring ports or terrain.
       m.save();
@@ -1929,19 +1467,10 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
         }
       }
       m.restore();
-
-      if (l.name) {
-        const cent = polygonCentroid(l.poly);
-        m.fillStyle = "rgba(46,34,20,.58)";
-        m.font = "italic 29px Georgia";
-        m.textAlign = "center";
-        m.fillText(l.name, cent.x, cent.y);
-      }
     });
 
-    // original landmarks plus denser procedural groves and ranges
+    // Wooded areas sit above the broad relief.
     forests.forEach((v) => drawTree(m, ...v));
-    mountains.forEach((v) => drawMountain(m, ...v));
     const detailRnd = seeded(774);
     const forestLands = [
       LAND_NAMES.orravelle,
@@ -1961,21 +1490,6 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       LAND_NAMES.orrawardIsle,
       LAND_NAMES.kavrelChain,
     ];
-    const mountainLands = [
-      LAND_NAMES.thrymmSpires,
-      LAND_NAMES.drazhmark,
-      LAND_NAMES.veyrAshreach,
-      LAND_NAMES.sivvynIsle,
-      LAND_NAMES.thornvayle,
-      LAND_NAMES.sythrenCoast,
-      LAND_NAMES.orynthSteppe,
-      LAND_NAMES.aurelmarch,
-      LAND_NAMES.solvyrMarch,
-      LAND_NAMES.verdantate,
-      LAND_NAMES.stormvaneCrown,
-      PORT_NAMES.ossuwhale,
-      LAND_NAMES.rimevault,
-    ];
     lands.forEach((l) => {
       if (forestLands.includes(l.name)) {
         for (let i = 0; i < 22; i++) {
@@ -1991,20 +1505,23 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
             drawTree(m, x, y, 9 + detailRnd() * 10);
         }
       }
-      if (mountainLands.includes(l.name)) {
-        for (let i = 0; i < 10; i++) {
-          let x,
-            y,
-            g = 0;
-          do {
-            x = l.poly[0][0] + detailRnd() * 820;
-            y = l.poly[0][1] + detailRnd() * 620;
-            g++;
-          } while (!pointInWrappedPolygon(x, y, l.poly, WORLD.w) && g < 80);
-          if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
-            drawMountain(m, x, y, 12 + detailRnd() * 15);
-        }
+    });
+
+    lands.forEach((land) => {
+      if (!land.name) return;
+      const center = polygonCentroid(land.poly);
+      m.save();
+      m.fillStyle = "rgba(46,34,20,.58)";
+      m.strokeStyle = "rgba(204,186,133,.48)";
+      m.lineWidth = 2.5;
+      m.lineJoin = "round";
+      m.font = "italic 29px Georgia";
+      m.textAlign = "center";
+      for (const offset of polygonWorldOffsets(land.poly)) {
+        m.strokeText(land.name, center.x + offset, center.y);
+        m.fillText(land.name, center.x + offset, center.y);
       }
+      m.restore();
     });
 
     ports.forEach((p) => drawPortIcon(m, p));

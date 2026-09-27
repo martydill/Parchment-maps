@@ -1976,132 +1976,37 @@ button.parchment.secondary {
 .combat-visual {
   position: relative;
   overflow: hidden;
-  min-height: 210px;
+  height: clamp(210px, 31vw, 290px);
   margin: 14px 0 16px;
   border: 1px solid rgba(78, 45, 24, 0.35);
   border-radius: 14px;
-  background: linear-gradient(#8eb5c3 0 48%, #316f83 49% 100%);
+  background: #315d62;
   box-shadow: inset 0 0 34px rgba(32, 18, 9, 0.34);
 }
-.combat-sky,
-.combat-land,
-.combat-sea {
+.combat-scene {
   position: absolute;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
-.combat-sky {
-  background:
-    radial-gradient(
-      circle at 18% 18%,
-      rgba(255, 238, 171, 0.92),
-      transparent 9%
-    ),
-    linear-gradient(#88b8c8, #d8bc83 48%, transparent 49%);
-}
-.combat-sea {
-  top: 48%;
-  background:
-    repeating-linear-gradient(
-      172deg,
-      rgba(255, 255, 255, 0.24) 0 2px,
-      transparent 2px 19px
-    ),
-    linear-gradient(180deg, rgba(42, 100, 121, 0.95), rgba(20, 72, 91, 0.98));
-}
-.combat-land {
-  top: 32%;
-  height: 42%;
-  background: radial-gradient(
-    ellipse at 50% 100%,
-    #7c6b3e 0 34%,
-    transparent 35%
-  );
-  opacity: 0.88;
-}
-.combat-visual.isles .combat-land {
-  background:
-    radial-gradient(ellipse at 24% 95%, #7d8047 0 17%, transparent 18%),
-    radial-gradient(ellipse at 62% 92%, #6f7842 0 24%, transparent 25%),
-    radial-gradient(ellipse at 88% 98%, #867a49 0 12%, transparent 13%);
-}
-.combat-visual.marsh .combat-land {
-  background: radial-gradient(
-    ellipse at 48% 100%,
-    #4f7a4c 0 35%,
-    transparent 36%
-  );
-}
-.combat-visual.ice .combat-land {
-  background: radial-gradient(
-    ellipse at 50% 96%,
-    #cce0df 0 30%,
-    transparent 31%
-  );
-}
-.combat-visual.storm .combat-sky {
-  background: linear-gradient(#35434c, #6c675c 48%, transparent 49%);
-}
-.combat-visual.storm .combat-sea {
-  background:
-    repeating-linear-gradient(
-      164deg,
-      rgba(255, 255, 255, 0.28) 0 3px,
-      transparent 3px 17px
-    ),
-    linear-gradient(180deg, #234d61, #153d4d);
-}
-.combat-ship {
+.combat-ship-label {
   position: absolute;
-  bottom: 34px;
-  width: 116px;
-  height: 58px;
-  filter: drop-shadow(0 10px 8px rgba(14, 9, 5, 0.4));
-}
-.combat-ship::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 4px;
-  height: 19px;
-  border-radius: 0 0 48px 48px;
-  background: #5b321e;
-}
-.combat-ship::after {
-  content: "";
-  position: absolute;
-  left: 48px;
-  bottom: 20px;
-  width: 0;
-  height: 0;
-  border-left: 18px solid transparent;
-  border-right: 18px solid transparent;
-  border-bottom: 44px solid rgba(247, 232, 184, 0.96);
-}
-.combat-ship span {
-  position: absolute;
-  left: 50%;
-  bottom: -18px;
-  transform: translateX(-50%);
   white-space: nowrap;
   font-size: 11px;
   font-weight: 700;
   color: #f9e8b6;
   text-shadow: 0 1px 2px #1d120a;
 }
-.player-ship {
-  left: 11%;
-  transform: scale(1.1);
+.player-ship-label {
+  left: 32%;
+  bottom: 17%;
+  transform: translateX(-50%);
 }
-.enemy-ship {
-  right: 10%;
-  transform: scaleX(-1) scale(0.96);
-}
-.enemy-ship::before {
-  background: #3f221a;
-}
-.enemy-ship span {
-  transform: translateX(-50%) scaleX(-1);
+.enemy-ship-label {
+  left: 65%;
+  bottom: 28%;
+  transform: translateX(-50%);
 }
 .combat-location,
 .combat-profile {

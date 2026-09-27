@@ -807,14 +807,14 @@
         <div class="town-kicker">Hostile sail intercepted</div>
         <h2 id="combatTitle">Raiders close from windward</h2>
         <p id="combatDescription"></p>
-        <div id="combatVisual" class="combat-visual coast" aria-hidden="true">
-          <div class="combat-sky"></div>
-          <div class="combat-land"></div>
-          <div class="combat-sea"></div>
-          <div class="combat-ship player-ship"><span>Your ship</span></div>
-          <div class="combat-ship enemy-ship">
-            <span id="combatEnemyVisualLabel">Raider</span>
-          </div>
+        <div id="combatVisual" class="combat-visual coast">
+          <canvas class="combat-scene" aria-hidden="true"></canvas>
+          <span class="combat-ship-label player-ship-label">Your ship</span>
+          <span
+            class="combat-ship-label enemy-ship-label"
+            id="combatEnemyVisualLabel"
+            >Raider</span
+          >
           <div class="combat-location">
             <span id="combatLocation">Coastal waters</span>
             <b id="combatWaters">Weather</b>
