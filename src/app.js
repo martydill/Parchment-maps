@@ -288,9 +288,15 @@ import {
   drawShip,
   drawWeatherEffects,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=2";
+} from "./rendering.js?v=3";
 import { sceneLighting } from "./core/lighting.js";
-import { renderChartPanel } from "./ui/chart-panel.js?v=2";
+import {
+  drawHarborBoats,
+  drawPortActivity,
+  hasPortMiniature,
+} from "./port-miniatures.js";
+import { planPortIllustration } from "./core/port-illustrations.js";
+import { renderChartPanel } from "./ui/chart-panel.js?v=3";
 import {
   configureUiPanels,
   openExploration,
@@ -299,7 +305,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=2";
+} from "./ui/panels.js?v=3";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
 
@@ -1227,6 +1233,12 @@ if (landCrossings > 0 && typeof console !== "undefined") {
   console.warn(`${landCrossings} sea-lane segments still cross land`);
 }
 
+const portMiniaturePlacements = new Map(
+  ports
+    .filter((port) => hasPortMiniature(port.name))
+    .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
+);
+
 const {
   exploredCtx,
   exploredMask,
@@ -1236,7 +1248,12 @@ const {
   mapLayer,
   minimapFog,
   minimapFogCtx,
-} = createMapRendering({ WORLD, game, merchantRoutePaths });
+} = createMapRendering({
+  WORLD,
+  game,
+  merchantRoutePaths,
+  portMiniaturePlacements,
+});
 
 const merchantNames = RIVAL_SHIP_NAMES;
 const merchantColors = [
@@ -3768,6 +3785,47 @@ function renderFog(time) {
 
 function drawDynamicTradeWorld(c, z, time, lighting) {
   c.save();
+  if (z >= 1.08) {
+    for (const port of ports) {
+      const placement = portMiniaturePlacements.get(port.name);
+      if (!placement) continue;
+      if (
+        isWorldCircleInViewport(placement.x, placement.y, 52, z) &&
+        isWorldPointExplored(placement.x, placement.y)
+      ) {
+        c.save();
+        c.translate(nearestWrappedX(placement.x, camera.x), placement.y);
+        c.scale(placement.scale, placement.scale);
+        drawPortActivity(
+          c,
+          port.name,
+          reducedMotion.matches ? 0 : time,
+          z,
+          game.windAngle,
+          placement.heading,
+        );
+        c.restore();
+      }
+      if (!isWorldCircleInViewport(port.x, port.y, 40, z)) continue;
+      if (!pointCurrentlyVisible(port.x, port.y)) continue;
+      const seaX = port.x - placement.x;
+      const seaY = port.y - placement.y;
+      const seaDistance = Math.hypot(seaX, seaY) || 1;
+      c.save();
+      c.translate(nearestWrappedX(port.x, camera.x), port.y);
+      drawHarborBoats(
+        c,
+        port.name,
+        reducedMotion.matches ? 0 : time,
+        z,
+        game.windAngle,
+        seaX / seaDistance,
+        seaY / seaDistance,
+        placement.heading,
+      );
+      c.restore();
+    }
+  }
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {
     const bearing = courseBearing(ship, courseDestination, WORLD.w);
@@ -6304,8 +6362,11 @@ const showStartupModal = shouldShowStartupModal({
 });
 if (!showStartupModal) {
   resumeSavedVoyage();
-} else if (new URLSearchParams(location.search).has("autostart")) {
-  requestAnimationFrame(() => beginButton.click());
+} else {
+  intro.style.display = "grid";
+  if (new URLSearchParams(location.search).has("autostart")) {
+    requestAnimationFrame(() => beginButton.click());
+  }
 }
 
 window.setInterval(saveGameState, 5000);

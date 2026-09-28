@@ -1,5 +1,5 @@
 import { chartedCityIndicators } from "../core/chart.js";
-import { drawShip } from "../rendering.js?v=2";
+import { drawShip } from "../rendering.js?v=3";
 
 export function renderChartPanel({
   activeRumorLeads,

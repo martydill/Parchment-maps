@@ -464,6 +464,9 @@ body {
 #intro {
   display: grid;
 }
+.has-saved-voyage #intro {
+  display: none;
+}
 #intro .scroll {
   padding-bottom: 88px;
 }
