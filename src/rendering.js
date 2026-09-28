@@ -518,8 +518,15 @@ export function drawWeatherEffects(c, opts) {
 
 export function drawSceneLightWash(c, lighting, width, height) {
   c.save();
-  if (lighting.dusk > 0.01) {
-    c.fillStyle = `rgba(171,100,43,${lighting.dusk * 0.11})`;
+  if (lighting.daylight > 0.01) {
+    c.globalCompositeOperation = "screen";
+    c.fillStyle = `rgba(191,226,246,${lighting.daylight * (1 - lighting.storm) * 0.075})`;
+    c.fillRect(0, 0, width, height);
+    c.globalCompositeOperation = "source-over";
+  }
+  const twilight = Math.max(lighting.sunrise || 0, lighting.sunset || 0);
+  if (twilight > 0.01) {
+    c.fillStyle = `rgba(225,116,58,${twilight * 0.16})`;
     c.fillRect(0, 0, width, height);
   }
   if (lighting.storm > 0.01) {

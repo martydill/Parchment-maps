@@ -53,6 +53,7 @@ export function createGameState() {
     regionalCrises: createCrisisState(),
     merchantSightings: {},
     voyageDistance: 0,
+    timeOfDay: 0.5,
     voyageDayProgress: 0,
     voyageDaysElapsed: 0,
     firstMeridianCrossed: false,
