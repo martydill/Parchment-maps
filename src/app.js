@@ -284,11 +284,13 @@ import {
   createMapRendering,
   createRoughSeaParticles,
   drawMerchantShip,
+  drawSceneLightWash,
   drawShip,
   drawWeatherEffects,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js";
-import { renderChartPanel } from "./ui/chart-panel.js";
+} from "./rendering.js?v=2";
+import { sceneLighting } from "./core/lighting.js";
+import { renderChartPanel } from "./ui/chart-panel.js?v=2";
 import {
   configureUiPanels,
   openExploration,
@@ -297,7 +299,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js";
+} from "./ui/panels.js?v=2";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
 
@@ -3764,11 +3766,17 @@ function renderFog(time) {
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
 }
 
-function drawDynamicTradeWorld(c, z, time) {
+function drawDynamicTradeWorld(c, z, time, lighting) {
   c.save();
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {
     const bearing = courseBearing(ship, courseDestination, WORLD.w);
+    c.strokeStyle = "rgba(25,52,52,.75)";
+    c.lineWidth = 5 / z;
+    c.beginPath();
+    c.moveTo(ship.x, ship.y);
+    c.lineTo(bearing.destinationX, courseDestination.y);
+    c.stroke();
     c.strokeStyle = "rgba(102, 200, 181, .9)";
     c.lineWidth = 3 / z;
     c.setLineDash([12 / z, 8 / z]);
@@ -3910,11 +3918,15 @@ function drawDynamicTradeWorld(c, z, time) {
       windAngle: game.windAngle,
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
+      lighting,
     });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
       c.fillStyle = "rgba(47,29,15,.8)";
       c.font = 11 / z + "px Georgia";
+      c.strokeStyle = "rgba(241,225,185,.9)";
+      c.lineWidth = 2.8 / z;
+      c.strokeText(merchant.name, x, merchant.y - 19 / z);
       c.fillText(merchant.name, x, merchant.y - 19 / z);
     }
   }
@@ -3943,6 +3955,7 @@ function drawDynamicTradeWorld(c, z, time) {
         windAngle: game.windAngle,
         windStrength: game.windStrength,
         reducedMotion: reducedMotion.matches,
+        lighting,
       },
     );
     c.fillStyle = "#8c261b";
@@ -3986,11 +3999,15 @@ function drawDynamicTradeWorld(c, z, time) {
       windAngle: game.windAngle,
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
+      lighting,
     });
-    c.fillStyle = "rgba(34,150,82,.96)";
+    c.fillStyle = "#ddf1d9";
     c.font = "bold " + 11 / z + "px Georgia";
     c.textAlign = "center";
     c.textBaseline = "alphabetic";
+    c.strokeStyle = "rgba(30,67,47,.95)";
+    c.lineWidth = 3 / z;
+    c.strokeText(ship.name, x, render.y - 19 / z);
     c.fillText(ship.name, x, render.y - 19 / z);
   }
   c.restore();
@@ -4043,6 +4060,37 @@ function drawNavigationalHazards(c, z) {
   }
   c.restore();
 }
+
+function drawHarborLights(c, lighting, z) {
+  if (lighting.dusk < 0.12) return;
+  const strength = lighting.dusk * (1 - lighting.storm * 0.2);
+  c.save();
+  for (const port of ports) {
+    if (!pointCurrentlyVisible(port.x, port.y)) continue;
+    if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
+    c.save();
+    c.translate(nearestWrappedX(port.x, camera.x), port.y);
+    for (const [x, y] of [
+      [-22, -14],
+      [-10, -21],
+      [15, -15],
+    ]) {
+      const glow = c.createRadialGradient(x, y, 0, x, y, 11 / z);
+      glow.addColorStop(0, `rgba(255,219,139,${strength * 0.42})`);
+      glow.addColorStop(1, "rgba(255,186,86,0)");
+      c.fillStyle = glow;
+      c.beginPath();
+      c.arc(x, y, 11 / z, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = `rgba(255,229,160,${strength * 0.88})`;
+      c.beginPath();
+      c.arc(x, y, 1.35 / z, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+  c.restore();
+}
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, vw, vh);
@@ -4050,6 +4098,7 @@ function render() {
   const time = performance.now();
   const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
+  const lighting = sceneLighting(game.voyageDayProgress, weather.roughness);
   const moving =
     !ship.anchored &&
     !currentPort &&
@@ -4103,7 +4152,7 @@ function render() {
   drawAnimatedRoughSeas(ctx, visualTime, z);
   drawNavigationalHazards(ctx, z);
   seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
-  drawDynamicTradeWorld(ctx, z, time);
+  drawDynamicTradeWorld(ctx, z, time, lighting);
 
   // Batch trail and wind rendering
   ctx.save();
@@ -4127,6 +4176,7 @@ function render() {
   ctx.restore(); // Restore world transform
 
   renderFog(visualTime);
+  drawSceneLightWash(ctx, lighting, vw, vh);
 
   // The ship and immediate docking cue remain readable above the fog layer.
   worldTransform();
@@ -4145,6 +4195,7 @@ function render() {
       speed: moving ? ship.speed : 0,
       anchored: ship.anchored,
       reducedMotion: reducedMotion.matches,
+      lighting,
     },
   );
   if (nearPort) {
@@ -4184,6 +4235,20 @@ function render() {
       reducedMotion: reducedMotion.matches,
     });
   }
+
+  // Lamps and the docking ring sit above the weather wash, so ports and the
+  // immediate approach remain discoverable as the scene darkens.
+  worldTransform();
+  drawHarborLights(ctx, lighting, z);
+  if (nearPort) {
+    const px = nearestWrappedX(nearPort.x, ship.x);
+    ctx.strokeStyle = "rgba(255,225,159,.86)";
+    ctx.lineWidth = 1.4 / z;
+    ctx.beginPath();
+    ctx.arc(px, nearPort.y, 42 + Math.sin(time / 220) * 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 
   // vignette
   ctx.fillStyle = vignetteGradient;

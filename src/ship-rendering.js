@@ -1,6 +1,7 @@
 import { sampleShipMotion } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
+import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
 
 export { getShipModelProfile as shipDrawProfile } from "./core/ship-models.js";
 
@@ -174,21 +175,32 @@ function boxFaces(x1, x2, y1, y2, z1, z2, colors = {}) {
   ];
 }
 
-function lightInk(color, normal) {
+function lightInk(color, normal, lighting) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
-  const light =
-    0.86 +
-    Math.max(0, -normal[0] * 0.45 - normal[1] * 0.3 + normal[2] * 0.84) * 0.23;
-  const channels = [1, 3, 5].map((offset) =>
+  const facingLight = Math.max(
+    0,
+    normal[0] * LIGHT_DIRECTION.x +
+      normal[1] * LIGHT_DIRECTION.y +
+      normal[2] * LIGHT_DIRECTION.z,
+  );
+  const light = 0.79 + facingLight * 0.28 * lighting.strength;
+  const tint = [
+    1 + lighting.dusk * 0.06 - lighting.storm * 0.08,
+    1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
+    1 - lighting.dusk * 0.07 + lighting.storm * 0.06,
+  ];
+  const channels = [1, 3, 5].map((offset, index) =>
     Math.min(
       255,
-      Math.round(parseInt(color.slice(offset, offset + 2), 16) * light),
+      Math.round(
+        parseInt(color.slice(offset, offset + 2), 16) * light * tint[index],
+      ),
     ),
   );
   return `rgb(${channels.join(",")})`;
 }
 
-function worldFace(face, heading, order, motion) {
+function worldFace(face, heading, order, motion, lighting) {
   const vertices = face.vertices.map((vertex) =>
     rotatePoint(vertex, heading, motion),
   );
@@ -213,7 +225,7 @@ function worldFace(face, heading, order, motion) {
     ) / vertices.length;
   return {
     ...face,
-    fill: lightInk(face.fill, normal),
+    fill: lightInk(face.fill, normal, lighting),
     projected: vertices.map((point) => [
       point.x,
       point.y - point.z * MAP_TILT_TAN,
@@ -383,7 +395,7 @@ function shipDeckLines(c, profile, heading, z, motion) {
   c.restore();
 }
 
-function drawHullDetails(c, profile, heading, z, motion) {
+function drawHullDetails(c, profile, heading, z, motion, lighting) {
   const facingSide = Math.sin(heading) >= 0 ? 1 : -1;
   if (profile.guns) {
     c.fillStyle = "#241810";
@@ -473,7 +485,7 @@ function drawHullDetails(c, profile, heading, z, motion) {
     paintFaces(
       c,
       faces
-        .map((face, order) => worldFace(face, heading, order, motion))
+        .map((face, order) => worldFace(face, heading, order, motion, lighting))
         .filter(Boolean),
       z,
     );
@@ -492,6 +504,7 @@ function drawShipModel(
   windX = 0,
   windY = 0,
   motion = sampleShipMotion(),
+  lighting = sceneLighting(),
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
   c.save();
@@ -529,7 +542,7 @@ function drawShipModel(
   }
   c.restore();
   // Soft contact shadow stays on the water as the hull rises and falls.
-  // Align its long axis with the keel, under the shared northwest light.
+  // The contact shadow falls southeast of the shared northwest light.
   for (const [spread, alpha] of [
     [1.35, 0.035],
     [1.16, 0.06],
@@ -538,8 +551,8 @@ function drawShipModel(
     c.fillStyle = `rgba(29,52,42,${alpha})`;
     c.beginPath();
     c.ellipse(
-      2.5,
-      4,
+      -LIGHT_DIRECTION.x * 5,
+      -LIGHT_DIRECTION.y * 8,
       profile.beam * spread,
       profile.length * 0.43 * spread,
       heading,
@@ -583,7 +596,7 @@ function drawShipModel(
       sailFaces(mast, profile, windX, windY, index),
     ),
   ]
-    .map((face, order) => worldFace(face, heading, order, motion))
+    .map((face, order) => worldFace(face, heading, order, motion, lighting))
     .filter(Boolean);
   paintFaces(c, faces, z);
 
@@ -617,7 +630,7 @@ function drawShipModel(
     }
   }
   shipDeckLines(c, profile, heading, z, motion);
-  drawHullDetails(c, profile, heading, z, motion);
+  drawHullDetails(c, profile, heading, z, motion, lighting);
 
   // Standing rigging and bowsprit give the model a readable three dimensional
   // silhouette. Sails are faceted cloth panels with seams and a wind belly.
@@ -763,6 +776,7 @@ export function drawMerchantShip(
     seed: merchant.idNum || 0,
   });
   const relativeWind = (environment.windAngle || 0) - angle;
+  const lighting = environment.lighting || sceneLighting();
   drawShipModel(
     c,
     merchant.vesselClass,
@@ -775,6 +789,7 @@ export function drawMerchantShip(
     Math.cos(relativeWind) * motion.billow,
     Math.sin(relativeWind) * motion.billow,
     motion,
+    lighting,
   );
 }
 
@@ -795,6 +810,7 @@ export function drawShip(
     ...environment,
     windStrength,
   });
+  const lighting = environment.lighting || sceneLighting();
   c.save();
   c.translate(x, y);
   c.scale(1.7, 1.7);
@@ -810,6 +826,7 @@ export function drawShip(
     Math.cos(relativeWind) * motion.billow,
     Math.sin(relativeWind) * motion.billow,
     motion,
+    lighting,
   );
   c.restore();
 }
