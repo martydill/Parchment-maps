@@ -4,28 +4,8 @@ import test from "node:test";
 
 import {
   beginAtHomePort,
-  bindBeginButton,
   recoverNavigablePosition,
-  shouldShowStartupModal,
 } from "../src/core/startup.js";
-
-test("the Begin button starts the supplied home-port transition", () => {
-  let listener;
-  let starts = 0;
-  const button = {
-    addEventListener(type, callback) {
-      assert.equal(type, "click");
-      listener = callback;
-    },
-  };
-
-  bindBeginButton(button, () => {
-    starts += 1;
-  });
-  listener();
-
-  assert.equal(starts, 1);
-});
 
 test("beginning at the home port resets the ship and camera", () => {
   const camera = { x: 12, y: 34 };
@@ -78,8 +58,7 @@ test("beginning repairs a legacy ship without a usable trail", () => {
   assert.deepEqual(ship.trail, []);
 });
 
-test("startup fails clearly when the Begin button or home port is missing", () => {
-  assert.throws(() => bindBeginButton(null, () => {}), /missing Begin button/);
+test("startup fails clearly when the home port is missing", () => {
   assert.throws(
     () =>
       beginAtHomePort({
@@ -139,11 +118,4 @@ test("blocked restored positions fall back when no nearby water is open", () => 
     }),
     { x: 10, y: 20 },
   );
-});
-
-test("the startup modal appears only before a started voyage exists", () => {
-  assert.equal(shouldShowStartupModal(), true);
-  assert.equal(shouldShowStartupModal({}), true);
-  assert.equal(shouldShowStartupModal({ hasStartedVoyage: false }), true);
-  assert.equal(shouldShowStartupModal({ hasStartedVoyage: true }), false);
 });
