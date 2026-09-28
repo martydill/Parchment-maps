@@ -1,3 +1,5 @@
+import { LIGHT_DIRECTION } from "./core/lighting.js";
+
 const palettes = {
   temperate: {
     paper: "#b2ac78",
@@ -73,8 +75,8 @@ function drawRidge(c, { a, b, width }) {
   c.beginPath();
   c.moveTo(a.x, a.y - a.size * 0.55);
   c.lineTo(b.x, b.y - b.size * 0.55);
-  c.lineTo(b.x + width, b.y + width);
-  c.lineTo(a.x + width, a.y + width);
+  c.lineTo(b.x - LIGHT_DIRECTION.x * width, b.y - LIGHT_DIRECTION.y * width);
+  c.lineTo(a.x - LIGHT_DIRECTION.x * width, a.y - LIGHT_DIRECTION.y * width);
   c.closePath();
   c.fillStyle = "rgba(66,53,32,.18)";
   c.fill();
@@ -85,8 +87,11 @@ function drawRidge(c, { a, b, width }) {
     const x = a.x + dx * t,
       y = a.y + dy * t;
     c.beginPath();
-    c.moveTo(x + 3, y - 4);
-    c.lineTo(x + width * 0.9, y + width * 0.9);
+    c.moveTo(x + LIGHT_DIRECTION.x * 4, y + LIGHT_DIRECTION.y * 4);
+    c.lineTo(
+      x - LIGHT_DIRECTION.x * width * 0.9,
+      y - LIGHT_DIRECTION.y * width * 0.9,
+    );
     c.stroke();
   }
 }
@@ -98,7 +103,15 @@ function drawTree(c, tree, biome) {
   c.translate(x, y);
   c.fillStyle = "rgba(38,43,27,.14)";
   c.beginPath();
-  c.ellipse(s * 0.28, s * 0.22, s * 0.68, s * 0.23, 0, 0, Math.PI * 2);
+  c.ellipse(
+    -LIGHT_DIRECTION.x * s * 0.5,
+    -LIGHT_DIRECTION.y * s * 0.5,
+    s * 0.68,
+    s * 0.23,
+    0,
+    0,
+    Math.PI * 2,
+  );
   c.fill();
   c.strokeStyle = "rgba(46,43,28,.78)";
   c.lineWidth = 0.8;
@@ -180,7 +193,15 @@ function drawMountain(c, x, y, s, biome) {
   const summit = -s * 0.08;
   c.fillStyle = "rgba(35,29,22,.16)";
   c.beginPath();
-  c.ellipse(s * 0.2, s * 0.52, s, s * 0.27, 0, 0, Math.PI * 2);
+  c.ellipse(
+    -LIGHT_DIRECTION.x * s * 0.65,
+    -LIGHT_DIRECTION.y * s * 0.9,
+    s,
+    s * 0.27,
+    0,
+    0,
+    Math.PI * 2,
+  );
   c.fill();
   c.fillStyle = "rgba(209,190,140,.42)";
   c.beginPath();
@@ -326,8 +347,8 @@ export function drawTerrainIllustration(c, terrain) {
   for (const hill of terrain.hills) {
     terrainWash(
       c,
-      hill.x + hill.size * 0.2,
-      hill.y + hill.size * 0.15,
+      hill.x - LIGHT_DIRECTION.x * hill.size * 0.4,
+      hill.y - LIGHT_DIRECTION.y * hill.size * 0.4,
       hill.size * 1.5,
       hill.size * 0.8,
       -0.2,
@@ -336,8 +357,8 @@ export function drawTerrainIllustration(c, terrain) {
     );
     terrainWash(
       c,
-      hill.x - hill.size * 0.15,
-      hill.y - hill.size * 0.2,
+      hill.x + LIGHT_DIRECTION.x * hill.size * 0.4,
+      hill.y + LIGHT_DIRECTION.y * hill.size * 0.4,
       hill.size,
       hill.size * 0.6,
       -0.2,
@@ -365,8 +386,8 @@ export function drawTerrainIllustration(c, terrain) {
     for (const peak of range.peaks) {
       terrainWash(
         c,
-        peak.x + 12,
-        peak.y + 14,
+        peak.x - LIGHT_DIRECTION.x * 24,
+        peak.y - LIGHT_DIRECTION.y * 24,
         peak.size * 2.4,
         peak.size * 1.7,
         range.angle,
@@ -375,8 +396,8 @@ export function drawTerrainIllustration(c, terrain) {
       );
       terrainWash(
         c,
-        peak.x - 9,
-        peak.y - 8,
+        peak.x + LIGHT_DIRECTION.x * 20,
+        peak.y + LIGHT_DIRECTION.y * 20,
         peak.size * 1.7,
         peak.size * 1.4,
         range.angle,

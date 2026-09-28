@@ -34,7 +34,7 @@ test("reduced motion retains storm atmosphere without a frozen lightning flash",
   assert.ok(fills.some((fill) => String(fill).startsWith("rgba(222,230,255,")));
   fills.length = 0;
   drawWeatherEffects(c, { ...weather, time: 0, reducedMotion: true });
-  assert.ok(fills.some((fill) => String(fill).startsWith("rgba(20,26,38,")));
+  assert.ok(fills.some((fill) => String(fill).startsWith("rgba(49,72,98,")));
   assert.ok(
     !fills.some((fill) => String(fill).startsWith("rgba(222,230,255,")),
   );
