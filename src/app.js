@@ -437,7 +437,12 @@ let vw = 0,
 const camera = { x: 0, y: 0, zoom: 1 };
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const wakeTrail = [];
-const seaRendering = createSeaRendering({ WORLD, lands });
+const seaRendering = createSeaRendering({
+  WORLD,
+  lands,
+  currents: worldCurrents,
+  creatures: worldMonsters,
+});
 let viewportZoom = 1;
 let userZoom = 1;
 const keys = new Set();
@@ -1246,6 +1251,7 @@ const {
   fogCanvas,
   fogCtx,
   mapLayer,
+  riverPaths,
   minimapFog,
   minimapFogCtx,
 } = createMapRendering({
@@ -1254,6 +1260,7 @@ const {
   merchantRoutePaths,
   portMiniaturePlacements,
 });
+seaRendering.setRivers(riverPaths);
 
 const merchantNames = RIVAL_SHIP_NAMES;
 const merchantColors = [
@@ -3740,9 +3747,9 @@ function renderFog(time) {
   f.setTransform(DPR, 0, 0, DPR, 0, 0);
   f.clearRect(0, 0, vw, vh);
   const wash = f.createLinearGradient(0, 0, 0, vh);
-  wash.addColorStop(0, "rgba(77,94,86,.97)");
-  wash.addColorStop(0.55, "rgba(93,105,91,.96)");
-  wash.addColorStop(1, "rgba(74,85,74,.97)");
+  wash.addColorStop(0, "rgba(105,119,104,.96)");
+  wash.addColorStop(0.55, "rgba(126,132,109,.95)");
+  wash.addColorStop(1, "rgba(96,108,93,.96)");
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
 

@@ -1,6 +1,50 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sampleShipMotion, buildWakeRibbon } from "../src/core/seascape.js";
+import {
+  sampleShipMotion,
+  buildWakeRibbon,
+  coastFaceDepth,
+  sampleCoastalBird,
+  sampleCreatureAppearance,
+} from "../src/core/seascape.js";
+
+test("coast faces vary by island and keep small satellites low", () => {
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, index) => coastFaceDepth(index)),
+    [31, 36, 41, 46, 51, 56],
+  );
+  assert.equal(coastFaceDepth(6), coastFaceDepth(0));
+  assert.equal(coastFaceDepth(3, true), 22);
+  assert.ok(coastFaceDepth(3, true) < coastFaceDepth(3));
+});
+
+test("coastal birds keep a bounded formation while circling", () => {
+  const still = sampleCoastalBird(0, 2, 0);
+  assert.deepEqual(sampleCoastalBird(0, 2, 0), still);
+  assert.notDeepEqual(sampleCoastalBird(1, 2, 0), still);
+  for (let time = -30; time <= 30; time += 0.5) {
+    for (let bird = 0; bird < 5; bird++) {
+      const pose = sampleCoastalBird(time, 3, bird);
+      assert.ok(Object.values(pose).every(Number.isFinite));
+      assert.ok(Math.abs(pose.x) <= 45);
+      assert.ok(Math.abs(pose.y) <= 25);
+      assert.ok(Math.abs(pose.wing) <= 1);
+      assert.ok(pose.size >= 6.6 && pose.size <= 8);
+    }
+  }
+  assert.ok(sampleCoastalBird(0, 2, 1).y < sampleCoastalBird(0, 2, 2).y);
+});
+
+test("creatures surface briefly on a repeatable staggered cycle", () => {
+  const first = sampleCreatureAppearance(0, 0);
+  assert.ok(first.rise > 0 && first.rise <= 1);
+  assert.deepEqual(sampleCreatureAppearance(18000, 0), first);
+  assert.deepEqual(sampleCreatureAppearance(-18000, 0), first);
+  assert.equal(sampleCreatureAppearance(4000, 0).rise, 0);
+  assert.notEqual(sampleCreatureAppearance(0, 1).phase, first.phase);
+  for (let time = -18000; time <= 18000; time += 250)
+    assert.ok(sampleCreatureAppearance(time, 2).rise >= 0);
+});
 
 test("ship motion is deterministic, bounded and independent of frame rate", () => {
   assert.deepEqual(sampleShipMotion(), sampleShipMotion({ time: 0 }));

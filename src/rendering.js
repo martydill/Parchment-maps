@@ -7,6 +7,7 @@ import {
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
+import { coastFaceDepth } from "./core/seascape.js";
 import { LIGHT_DIRECTION } from "./core/lighting.js";
 import { drawPortMiniature } from "./port-miniatures.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
@@ -544,6 +545,7 @@ export function createMapRendering({
   mapLayer.width = WORLD.w;
   mapLayer.height = WORLD.h;
   const m = mapLayer.getContext("2d");
+  const riverPaths = [];
 
   // A lower-resolution persistent exploration mask keeps fog rendering fast on
   // mobile while retaining a soft, hand-painted edge on the parchment chart.
@@ -1089,6 +1091,46 @@ export function createMapRendering({
     drawParchmentBase(m);
     const rnd = seeded(91);
 
+    // Broad, translucent soundings make the open sea read as a set of basins
+    // instead of a single flat wash. Repeat fields at the meridian seam.
+    seaRegionLabels.forEach(([, x, y], index) => {
+      const radius = 300 + ((index * 79) % 190);
+      const verticalScale = 0.58 + (index % 3) * 0.09;
+      const offsets = [0];
+      if (x - radius < 0) offsets.push(WORLD.w);
+      if (x + radius > WORLD.w) offsets.push(-WORLD.w);
+      for (const offset of offsets) {
+        m.save();
+        m.translate(x + offset, y);
+        m.scale(1, verticalScale);
+        const wash = m.createRadialGradient(0, 0, 10, 0, 0, radius);
+        wash.addColorStop(0, "rgba(28,75,86,.17)");
+        wash.addColorStop(0.48, "rgba(40,94,97,.08)");
+        wash.addColorStop(1, "rgba(40,94,97,0)");
+        m.fillStyle = wash;
+        m.beginPath();
+        m.arc(0, 0, radius, 0, Math.PI * 2);
+        m.fill();
+        m.strokeStyle = "rgba(38,79,82,.11)";
+        m.lineWidth = 1.4;
+        m.setLineDash([14, 11, 3, 12]);
+        for (const ring of [0.55, 0.78]) {
+          m.beginPath();
+          m.ellipse(
+            0,
+            0,
+            radius * ring,
+            radius * ring,
+            index * 0.13,
+            0,
+            Math.PI * 2,
+          );
+          m.stroke();
+        }
+        m.restore();
+      }
+    });
+
     // sea glyphs and tiny ink specks
     for (let y = 55; y < WORLD.h - 40; y += 31) {
       for (
@@ -1204,9 +1246,12 @@ export function createMapRendering({
 
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
+      const coastDepth = coastFaceDepth(li, l.satellite) * MAP_TILT_TAN;
       // Layered shallow-water pigment and an ivory tide line sit underneath
       // the engraved coast and raised cliffs. Built once, not each frame.
       for (const [width, color] of [
+        [155, "rgba(40,86,91,.055)"],
+        [107, "rgba(43,107,106,.085)"],
         [62, "rgba(50,110,100,.08)"],
         [42, "rgba(195,210,164,.16)"],
         [25, "rgba(220,224,178,.24)"],
@@ -1217,7 +1262,7 @@ export function createMapRendering({
           l.poly,
           (poly) => {
             m.save();
-            m.translate(0, 38 * MAP_TILT_TAN);
+            m.translate(0, coastDepth);
             polyPath(m, poly);
             m.lineJoin = "round";
             m.strokeStyle = color;
@@ -1238,7 +1283,6 @@ export function createMapRendering({
       }
       // Each coast has a vertical face projected from the raised top edge to
       // the sea plane. Back faces are hidden by the land surface drawn next.
-      const coastDepth = 38 * MAP_TILT_TAN;
       drawWrappedPolyPath(
         m,
         l.poly,
@@ -1362,6 +1406,7 @@ export function createMapRendering({
         biome: terrainBiome(l.name),
         clearings,
       });
+      riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
       m.save();
       wrappedClipPath(m, l.poly);
       m.clip();
@@ -1455,6 +1500,7 @@ export function createMapRendering({
     fogCanvas,
     fogCtx,
     mapLayer,
+    riverPaths,
     minimapFog,
     minimapFogCtx,
   };
