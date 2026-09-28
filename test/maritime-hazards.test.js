@@ -4,10 +4,13 @@ import test from "node:test";
 import {
   createMaritimeHazardState,
   currentAtPosition,
+  hazardAhead,
   markHazardEncounter,
   normalizeMaritimeHazardState,
   resolveShoalAction,
   resolveStormAction,
+  resolveUnderwayHazard,
+  roughSeaAtPosition,
   shoalAtPosition,
   shouldTriggerStorm,
   stormCycle,
@@ -40,6 +43,81 @@ test("maritime hazard state normalizes legacy and malformed saves", () => {
     normalizeMaritimeHazardState({}),
     createMaritimeHazardState(),
   );
+});
+
+test("rough sea exposure follows visible zones across the world seam", () => {
+  const seas = [
+    { x: 990, y: 100, rx: 80, ry: 40, strength: 1.2 },
+    { x: 15, y: 100, rx: 20, ry: 20 },
+  ];
+  assert.deepEqual(roughSeaAtPosition({ x: 10, y: 100 }, seas, 1000), {
+    index: 0,
+    exposure: 0.75,
+    strength: 1.2,
+  });
+  assert.equal(roughSeaAtPosition({ x: 400, y: 400 }, seas, 1000), null);
+});
+
+test("lookouts warn about the first hazard on the current heading", () => {
+  const options = {
+    position: { x: 0, y: 100 },
+    heading: 0,
+    distance: 200,
+    shoals: [[160, 100, 30, 30, "Needle Bank"]],
+    roughSeas: [{ x: 90, y: 100, rx: 40, ry: 40 }],
+    worldWidth: 1000,
+  };
+  assert.deepEqual(hazardAhead(options), {
+    type: "storm",
+    name: "Squall waters",
+    distance: 75,
+  });
+  assert.deepEqual(hazardAhead({ ...options, roughSeas: [] }), {
+    type: "shoal",
+    name: "Needle Bank",
+    distance: 150,
+  });
+  assert.equal(hazardAhead({ ...options, heading: Math.PI }), null);
+});
+
+test("slowing or steering clear avoids underway damage", () => {
+  assert.equal(
+    resolveUnderwayHazard({ type: "shoal", exposure: 0.9, speed: 45 }),
+    null,
+  );
+  assert.equal(
+    resolveUnderwayHazard({ type: "shoal", exposure: 0.39, speed: 175 }),
+    null,
+  );
+  assert.equal(
+    resolveUnderwayHazard({ type: "storm", exposure: 0.9, speed: 95 }),
+    null,
+  );
+  assert.equal(
+    resolveUnderwayHazard({ type: "storm", exposure: 0.54, speed: 175 }),
+    null,
+  );
+  assert.equal(
+    resolveUnderwayHazard({ type: "unknown", exposure: 1, speed: 175 }),
+    null,
+  );
+  const grounded = resolveUnderwayHazard({
+    type: "shoal",
+    exposure: 0.9,
+    speed: 130,
+  });
+  assert.ok(grounded.componentDamage.hull > 0);
+  assert.ok(grounded.componentDamage.rudder > 0);
+  assert.ok(grounded.speedMultiplier < 1);
+  const squall = resolveUnderwayHazard({
+    type: "storm",
+    exposure: 0.8,
+    speed: 150,
+    stormResistance: 1.4,
+    seamanship: 0.5,
+  });
+  assert.ok(squall.componentDamage.rigging > 0);
+  assert.ok(squall.speedMultiplier < 1);
 });
 
 test("currents blend nearby vectors and wrap across the world seam", () => {

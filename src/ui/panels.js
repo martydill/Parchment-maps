@@ -16,7 +16,7 @@ import {
   clearFleetRoute,
   decommissionFleetShip,
 } from "../core/fleet.js";
-import { drawShip } from "../rendering.js";
+import { drawShip } from "../rendering.js?v=3";
 
 let panelContext;
 let acceptContract,

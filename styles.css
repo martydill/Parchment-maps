@@ -152,6 +152,34 @@ body {
 #message.show {
   opacity: 1;
 }
+#seaWarning {
+  position: absolute;
+  left: 50%;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(88vw, 560px);
+  padding: 8px 13px;
+  border: 1px solid rgba(241, 192, 105, 0.84);
+  border-radius: 9px;
+  background: rgba(63, 35, 22, 0.92);
+  color: #fff0c5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font:
+    700 12px Georgia,
+    serif;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: 0 1px #000;
+}
+#seaWarning[hidden] {
+  display: none;
+}
+@media (max-width: 520px) {
+  #seaWarning {
+    bottom: calc(210px + env(safe-area-inset-bottom));
+  }
+}
 #townButton,
 #dockButton,
 #exploreButton,
@@ -1919,58 +1947,6 @@ button.parchment.secondary {
   backdrop-filter: blur(4px);
   z-index: 40;
 }
-#hazardPanel {
-  pointer-events: auto;
-  position: fixed;
-  inset: 0;
-  display: none;
-  place-items: center;
-  padding: 16px;
-  background:
-    radial-gradient(circle at 50% 35%, rgba(44, 84, 94, 0.3), transparent 44%),
-    rgba(8, 15, 18, 0.84);
-  backdrop-filter: blur(4px);
-  z-index: 42;
-}
-.hazard-scroll {
-  width: min(92vw, 660px);
-  border-color: rgba(53, 100, 111, 0.72);
-}
-#hazardPanel .detail-card {
-  margin-bottom: 16px;
-}
-.hazard-actions {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-}
-.hazard-action {
-  display: flex;
-  justify-content: center;
-}
-.hazard-action button.parchment {
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-  margin: 0;
-  min-height: 58px;
-  line-height: 1.2;
-}
-.hazard-actions .danger {
-  border-color: #843b2b;
-}
-.hazard-action-label {
-  display: block;
-}
-.hazard-consequence {
-  display: block;
-  max-width: 46ch;
-  text-align: center;
-  font-size: 12.5px;
-  letter-spacing: 0.02em;
-  font-style: italic;
-  opacity: 0.8;
-}
 .combat-scroll {
   width: min(92vw, 660px);
   border-color: rgba(119, 43, 28, 0.72);
@@ -2003,12 +1979,12 @@ button.parchment.secondary {
 }
 .player-ship-label {
   left: 32%;
-  bottom: 17%;
+  bottom: 13%;
   transform: translateX(-50%);
 }
 .enemy-ship-label {
-  left: 65%;
-  bottom: 28%;
+  left: 61%;
+  bottom: 29%;
   transform: translateX(-50%);
 }
 .combat-location,

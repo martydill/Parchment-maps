@@ -13,12 +13,12 @@ import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
   terrainPalette,
-} from "./terrain-rendering.js";
+} from "./terrain-rendering.js?v=2";
 export {
   drawMerchantShip,
   drawShip,
   shipDrawProfile,
-} from "./ship-rendering.js";
+} from "./ship-rendering.js?v=2";
 import {
   lands,
   ports,
