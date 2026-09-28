@@ -1045,6 +1045,45 @@ export function drawPortActivity(
     c.beginPath();
     c.ellipse(x, y, 11, 4, 0, 0, Math.PI * 2);
     c.fill();
+    for (let spark = 0; spark < 5; spark++) {
+      const rise = (seconds * (8 + spark * 1.4) + spark * 9) % 28;
+      c.fillStyle = `rgba(255,183,86,${(1 - rise / 28) * 0.7})`;
+      c.beginPath();
+      c.arc(
+        x + Math.sin(spark * 2.7) * rise * 0.55,
+        y - rise,
+        1.1,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+    }
+  }
+  if (scene.kind === "quays") {
+    const [x, y] = point(45, 8, 29);
+    const sway = Math.sin(seconds * 0.8) * 3;
+    c.strokeStyle = "rgba(59,43,30,.75)";
+    c.lineWidth = 0.8;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + sway, y + 17);
+    c.stroke();
+    c.fillStyle = "#8d633c";
+    c.strokeStyle = "#493423";
+    c.fillRect(x + sway - 4, y + 16, 8, 6);
+    c.strokeRect(x + sway - 4, y + 16, 8, 6);
+  }
+  if (scene.kind === "terraces") {
+    const [x, y] = point(22, 11, 19);
+    const flutter = Math.sin(seconds * 2.1) * 1.6;
+    c.fillStyle = "rgba(171,81,52,.8)";
+    c.beginPath();
+    c.moveTo(x - 13, y);
+    c.lineTo(x + 13, y);
+    c.lineTo(x + 10, y + 7 + flutter);
+    c.lineTo(x - 10, y + 7 - flutter);
+    c.closePath();
+    c.fill();
   }
   const [fu, fv, fz] = scene.flag;
   const [fx, fy] = point(fu, fv, fz);

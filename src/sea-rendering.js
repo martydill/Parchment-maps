@@ -7,6 +7,11 @@ import {
   sampleCreatureAppearance,
 } from "./core/seascape.js";
 
+function wakeNoise(index, salt) {
+  const value = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
+  return value - Math.floor(value);
+}
+
 // All expensive coastline work is done once. Per-frame work is limited to the
 // visible part of the chart, with no extra world-sized animation canvases.
 export function createSeaRendering({
@@ -317,9 +322,53 @@ export function createSeaRendering({
     c.restore();
   }
 
+  function drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH) {
+    const daylight = lighting?.daylight ?? 1;
+    const dusk = Math.max(lighting?.sunrise ?? 0, lighting?.sunset ?? 0);
+    const storm = lighting?.storm ?? 0;
+    const strength = (daylight * 0.1 + dusk * 0.055) * (1 - storm * 0.8);
+    if (strength < 0.003) return;
+    const columns = Math.ceil(WORLD.w / 360);
+    const spacing = WORLD.w / columns;
+    const left = Math.floor((camera.x - halfW - 220) / spacing);
+    const right = Math.ceil((camera.x + halfW + 220) / spacing);
+    const top = Math.floor((camera.y - halfH - 60) / 170);
+    const bottom = Math.ceil((camera.y + halfH + 60) / 170);
+    c.save();
+    c.globalCompositeOperation = "screen";
+    for (let row = top; row <= bottom; row++) {
+      for (let column = left; column <= right; column++) {
+        const canonical = ((column % columns) + columns) % columns;
+        const phase = canonical * 2.17 + row * 3.31;
+        const x =
+          column * spacing +
+          Math.sin(phase) * 75 +
+          Math.sin(t * 0.12 + phase) * 14;
+        const y = row * 170 + Math.cos(phase * 1.4) * 36;
+        const width = 145 + (Math.sin(phase * 2.3) + 1) * 50;
+        c.save();
+        c.translate(x, y);
+        c.rotate(windAngle * 0.18 + Math.sin(phase) * 0.12);
+        c.scale(1, 0.23);
+        const glow = c.createRadialGradient(0, 0, 5, 0, 0, width);
+        const alpha =
+          strength * (0.55 + (Math.sin(t * 0.7 + phase) + 1) * 0.22);
+        glow.addColorStop(0, `rgba(255,235,181,${alpha})`);
+        glow.addColorStop(0.55, `rgba(244,227,181,${alpha * 0.4})`);
+        glow.addColorStop(1, "rgba(244,227,181,0)");
+        c.fillStyle = glow;
+        c.beginPath();
+        c.arc(0, 0, width, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+      }
+    }
+    c.restore();
+  }
+
   function drawSurface(
     c,
-    { camera, vw, vh, time, roughness, windAngle, reducedMotion },
+    { camera, vw, vh, time, roughness, windAngle, reducedMotion, lighting },
   ) {
     const visible = visibleCoasts(camera, vw, vh);
     c.save();
@@ -329,6 +378,7 @@ export function createSeaRendering({
     const z = camera.zoom;
     const halfW = vw / (2 * z) + 100;
     const halfH = vh / (2 * z * MAP_TILT_COS) + 60;
+    drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
     // Periodic longitude coordinates keep phase and spacing continuous at the
     // world seam. Broad swells carry finer broken ivory glints.
     const columns = Math.ceil(WORLD.w / 95);
@@ -362,7 +412,9 @@ export function createSeaRendering({
         c.moveTo(-length, 3);
         c.bezierCurveTo(-length * 0.3, -2, length * 0.4, 7, length, 1);
         c.stroke();
-        c.strokeStyle = `rgba(247,237,197,${0.06 + pulse ** 3 * (0.22 + roughness * 0.12)})`;
+        const light =
+          (lighting?.daylight ?? 1) * (1 - (lighting?.storm ?? 0) * 0.45);
+        c.strokeStyle = `rgba(247,237,197,${(0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) * (0.42 + light * 0.58)})`;
         c.lineWidth = 0.8 / z;
         c.beginPath();
         c.moveTo(-length * 0.8, 0);
@@ -456,22 +508,69 @@ export function createSeaRendering({
     for (let i = 1; i < sections.length; i++) {
       const a = sections[i - 1],
         b = sections[i];
-      const angle = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2;
-      const nx = Math.cos(angle),
-        ny = Math.sin(angle);
-      c.strokeStyle = `rgba(226,233,198,${b.alpha * 0.3})`;
-      c.lineWidth = b.width * 2;
-      c.beginPath();
-      c.moveTo(a.x, a.y);
-      c.lineTo(b.x, b.y);
-      c.stroke();
-      c.strokeStyle = `rgba(255,243,201,${b.alpha})`;
-      c.lineWidth = 1.2 / camera.zoom;
-      for (const side of [-1, 1]) {
+      if (b.alpha < 0.006) continue;
+      const seed = b.seed;
+      const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const dx = (b.x - a.x) / length;
+      const dy = (b.y - a.y) / length;
+      const nx = -dy;
+      const ny = dx;
+
+      // Layered translucent water has soft shoulders instead of a hard ribbon.
+      for (const [spread, opacity] of [
+        [3.1, 0.07],
+        [2.15, 0.1],
+        [1.15, 0.13],
+      ]) {
+        c.strokeStyle = `rgba(31,78,76,${b.alpha * opacity})`;
+        c.lineWidth = b.width * spread;
         c.beginPath();
-        c.moveTo(a.x + nx * a.width * side, a.y + ny * a.width * side);
-        c.lineTo(b.x + nx * b.width * side, b.y + ny * b.width * side);
+        c.moveTo(a.x, a.y);
+        c.lineTo(b.x, b.y);
         c.stroke();
+      }
+
+      // Occasional outer crests catch the light as the disturbed water spreads.
+      for (const side of [-1, 1]) {
+        const crest = wakeNoise(seed, side + 4);
+        if (crest < 0.78) continue;
+        const along = 0.17 + wakeNoise(seed, side + 7) * 0.56;
+        const lateral = (a.width + b.width) * (0.35 + crest * 0.23);
+        const x = a.x + dx * length * along + nx * lateral * side;
+        const y = a.y + dy * length * along + ny * lateral * side;
+        c.strokeStyle = `rgba(250,244,211,${b.alpha * (0.38 + crest * 0.18)})`;
+        c.lineWidth = (1 + b.alpha * 0.8) / camera.zoom;
+        c.beginPath();
+        c.moveTo(x - dx * 4, y - dy * 4);
+        c.quadraticCurveTo(
+          x + nx * side * 5,
+          y + ny * side * 5,
+          x + dx * (6 + crest * 3) + nx * side * 6,
+          y + dy * (6 + crest * 3) + ny * side * 6,
+        );
+        c.stroke();
+      }
+
+      // Specks of foam collect unevenly through the centre, then dissolve.
+      for (let fleck = 0; fleck < 4; fleck++) {
+        const scatter = wakeNoise(seed, fleck + 11);
+        if (scatter < 0.23) continue;
+        const along = wakeNoise(seed, fleck + 17);
+        const cross = (wakeNoise(seed, fleck + 23) - 0.5) * b.width * 1.5;
+        const x = a.x + dx * length * along + nx * cross;
+        const y = a.y + dy * length * along + ny * cross;
+        c.fillStyle = `rgba(255,249,221,${b.alpha * (0.25 + scatter * 0.42)})`;
+        c.beginPath();
+        c.ellipse(
+          x,
+          y,
+          0.8 + scatter * 1.7,
+          0.5 + scatter * 1.1,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        c.fill();
       }
     }
     c.restore();

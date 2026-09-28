@@ -158,3 +158,25 @@ test("wake follows turns through either world seam, including later cycles", () 
     );
   }
 });
+
+test("wake width and foam strength follow vessel speed with safe defaults", () => {
+  const trail = [
+    { x: 10, y: 0, time: 10000, strength: 1 },
+    { x: 8, y: 0, time: 9000, strength: 0.5 },
+    { x: 6, y: 0, time: 8000, strength: -1 },
+    { x: 4, y: 0, time: 7000, strength: 2 },
+    { x: 2, y: 0, time: 6000, strength: Number.NaN },
+  ];
+  const sections = buildWakeRibbon(trail, 10000, 100);
+  assert.equal(sections[0].width, 2);
+  assert.deepEqual(
+    sections.map(({ seed }) => seed),
+    [10, 9, 8, 7, 6],
+  );
+  assert.ok(sections[1].width < (2 + 5.5) * 1);
+  assert.ok(sections[1].alpha < 0.48);
+  assert.equal(sections[2].alpha, 0);
+  assert.equal(sections[3].width, 2 + 3 * 5.5);
+  assert.equal(sections[4].width, 2 + 4 * 5.5);
+  assert.ok(sections.every(({ width, alpha }) => width > 0 && alpha >= 0));
+});

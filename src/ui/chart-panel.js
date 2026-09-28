@@ -1,4 +1,5 @@
 import { chartedCityIndicators } from "../core/chart.js";
+import { layoutMapLabels } from "../core/label-layout.js";
 import { drawShip } from "../rendering.js?v=3";
 
 export function renderChartPanel({
@@ -59,6 +60,7 @@ export function renderChartPanel({
   f.restore();
   f.globalCompositeOperation = "source-over";
   c.drawImage(minimapFog, 0, 0);
+  drawChartPortLabels(c, ports, isWorldPointExplored, sx, sy, w, h);
   drawAmberConvoyRoute(c, sx, sy, game);
   drawActiveContracts(c, sx, sy, game, getPortByName);
   drawObjective(c, sx, sy, {
@@ -94,6 +96,35 @@ export function renderChartPanel({
     ports,
     world,
   });
+}
+
+function drawChartPortLabels(c, ports, isWorldPointExplored, sx, sy, w, h) {
+  c.save();
+  c.font = "700 12px Georgia";
+  const labels = ports
+    .filter((port) => isWorldPointExplored(port.x, port.y))
+    .map((port) => ({
+      id: port.name,
+      x: port.x * sx,
+      y: port.y * sy,
+      width: Math.ceil(c.measureText(port.name).width) + 12,
+      height: 21,
+      priority: port.home ? 2 : 1,
+    }));
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  for (const label of layoutMapLabels(labels, [], w, h)) {
+    c.fillStyle = "rgba(239,220,175,.9)";
+    c.strokeStyle = "rgba(88,61,34,.7)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.roundRect(label.x, label.y, label.width, label.height, 4);
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#302318";
+    c.fillText(label.id, label.x + label.width / 2, label.y + label.height / 2);
+  }
+  c.restore();
 }
 
 function drawAmberConvoyRoute(c, sx, sy, game) {

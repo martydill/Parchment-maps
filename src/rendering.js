@@ -243,6 +243,50 @@ function drawWeatherClouds(
   c.restore();
 }
 
+function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
+  if (cloud < 0.1) return;
+  const direction = Math.cos(windAngle) >= 0 ? 1 : -1;
+  c.save();
+  for (let index = 0; index < 7; index++) {
+    const span = vw + 600;
+    const drift = (time * (0.012 + index * 0.001) * direction) % span;
+    const x = ((weatherRand(index, 30) * span + drift + span) % span) - 300;
+    const y = weatherRand(index, 31) * (vh + 250) - 125;
+    const radius = 170 + weatherRand(index, 32) * 120;
+    c.save();
+    c.translate(x, y);
+    c.rotate(windAngle * 0.2);
+    c.scale(1, 0.55);
+    const shadow = c.createRadialGradient(0, 0, 0, 0, 0, radius);
+    shadow.addColorStop(0, `rgba(28,47,58,${cloud * (0.035 + storm * 0.085)})`);
+    shadow.addColorStop(1, "rgba(28,47,58,0)");
+    c.fillStyle = shadow;
+    c.beginPath();
+    c.arc(0, 0, radius, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  }
+  c.restore();
+}
+
+function drawRainImpacts(c, rain, vw, vh, time) {
+  if (rain < 0.15) return;
+  c.save();
+  c.strokeStyle = `rgba(225,237,228,${rain * 0.2})`;
+  c.lineWidth = 0.9;
+  const count = Math.round(12 + rain * 35);
+  for (let index = 0; index < count; index++) {
+    const phase = (time * 0.0017 + weatherRand(index, 40)) % 1;
+    const x = weatherRand(index, 41) * vw;
+    const y = weatherRand(index, 42) * vh;
+    c.globalAlpha = Math.sin(phase * Math.PI);
+    c.beginPath();
+    c.ellipse(x, y, 1 + phase * 8, (1 + phase * 8) * 0.35, 0, 0, Math.PI * 2);
+    c.stroke();
+  }
+  c.restore();
+}
+
 function drawWeatherFog(c, fog, vw, vh, time) {
   if (fog <= 0.01) return;
   c.save();
@@ -501,6 +545,7 @@ export function drawWeatherEffects(c, opts) {
     c.restore();
   }
 
+  drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time);
   drawWeatherClouds(c, cloud, storm, windAngle, windStrength, vw, vh, time);
   drawWeatherFog(c, fog, vw, vh, time);
   drawDirectionalFog(
@@ -512,6 +557,7 @@ export function drawWeatherEffects(c, opts) {
     vh,
   );
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
+  drawRainImpacts(c, rain, vw, vh, time);
   // A frozen animation clock must not leave a lightning flash stuck on screen.
   drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
 }
@@ -695,19 +741,6 @@ export function createMapRendering({
       c.lineTo(-10, -35);
       c.lineTo(-6, -29);
       c.stroke();
-    }
-    c.fillStyle = "#2a1b10";
-    c.font = "700 20px Georgia";
-    c.textAlign = "center";
-    c.strokeStyle = "rgba(244,225,179,.8)";
-    c.lineWidth = 3;
-    c.strokeText(p.name, 0, 29);
-    c.fillText(p.name, 0, 29);
-    if (p.home) {
-      c.font = "700 12px Georgia";
-      c.fillStyle = "rgba(53,31,16,.82)";
-      c.strokeText("HOME PORT", 0, 46);
-      c.fillText("HOME PORT", 0, 46);
     }
     c.restore();
   }
