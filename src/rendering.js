@@ -7,6 +7,7 @@ import {
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
+import { LIGHT_DIRECTION } from "./core/lighting.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
@@ -490,10 +491,10 @@ export function drawWeatherEffects(c, opts) {
 
   if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
 
-  // Stormy gloom washes the whole scene in cold shadow.
+  // A cool wash unifies the weather while leaving chart ink legible.
   if (storm > 0.01) {
     c.save();
-    c.fillStyle = `rgba(20,26,38,${storm * 0.36})`;
+    c.fillStyle = `rgba(49,72,98,${storm * 0.18})`;
     c.fillRect(0, 0, vw, vh);
     c.restore();
   }
@@ -511,6 +512,19 @@ export function drawWeatherEffects(c, opts) {
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
   // A frozen animation clock must not leave a lightning flash stuck on screen.
   drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
+}
+
+export function drawSceneLightWash(c, lighting, width, height) {
+  c.save();
+  if (lighting.dusk > 0.01) {
+    c.fillStyle = `rgba(171,100,43,${lighting.dusk * 0.11})`;
+    c.fillRect(0, 0, width, height);
+  }
+  if (lighting.storm > 0.01) {
+    c.fillStyle = `rgba(63,96,128,${lighting.storm * 0.11})`;
+    c.fillRect(0, 0, width, height);
+  }
+  c.restore();
 }
 
 export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
@@ -544,6 +558,18 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     c.translate(p.x, p.y);
     const regional = game.regionalEconomy[p.name];
     const evolution = regional ? portEvolution(regional) : {};
+    c.fillStyle = "rgba(41,35,28,.16)";
+    c.beginPath();
+    c.ellipse(
+      -LIGHT_DIRECTION.x * 15,
+      -LIGHT_DIRECTION.y * 12,
+      34,
+      8,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
     c.strokeStyle = "#291b10";
     c.fillStyle = "#a83f2f";
     c.lineWidth = 3;
@@ -555,6 +581,8 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       c.fillStyle = "rgba(111,66,31,.78)";
       c.fillRect(7, -21, 20, 14);
       c.strokeRect(7, -21, 20, 14);
+      c.fillStyle = "rgba(44,31,23,.28)";
+      c.fillRect(22, -20, 5, 12);
       c.beginPath();
       c.moveTo(5, -21);
       c.lineTo(17, -29);
@@ -607,6 +635,8 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     c.strokeRect(-25, -18, 8, 12);
     c.fillRect(-15, -25, 10, 19);
     c.strokeRect(-15, -25, 10, 19);
+    c.fillStyle = "rgba(36,29,22,.26)";
+    c.fillRect(-8, -24, 3, 18);
     c.beginPath();
     c.moveTo(-28, -18);
     c.lineTo(-21, -27);
@@ -617,13 +647,27 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
     c.lineTo(-10, -35);
     c.lineTo(-3, -25);
     c.stroke();
+    c.strokeStyle = "rgba(244,211,148,.74)";
+    c.lineWidth = 1.3;
+    c.beginPath();
+    c.moveTo(-28, -18);
+    c.lineTo(-21, -27);
+    c.lineTo(-17, -22);
+    c.moveTo(-17, -25);
+    c.lineTo(-10, -35);
+    c.lineTo(-6, -29);
+    c.stroke();
     c.fillStyle = "#2a1b10";
     c.font = "700 20px Georgia";
     c.textAlign = "center";
+    c.strokeStyle = "rgba(244,225,179,.8)";
+    c.lineWidth = 3;
+    c.strokeText(p.name, 0, 29);
     c.fillText(p.name, 0, 29);
     if (p.home) {
       c.font = "700 12px Georgia";
       c.fillStyle = "rgba(53,31,16,.82)";
+      c.strokeText("HOME PORT", 0, 46);
       c.fillText("HOME PORT", 0, 46);
     }
     c.restore();
