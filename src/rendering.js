@@ -7,14 +7,17 @@ import {
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
-import { planLandTerrain } from "./core/terrain.js";
+import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
+import {
+  drawTerrainIllustration,
+  terrainPalette,
+} from "./terrain-rendering.js";
 export {
   drawMerchantShip,
   drawShip,
   shipDrawProfile,
 } from "./ship-rendering.js";
 import {
-  forests,
   lands,
   ports,
   roughSeas,
@@ -506,7 +509,8 @@ export function drawWeatherEffects(c, opts) {
     vh,
   );
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
-  drawWeatherLightning(c, lightning, vw, vh, time);
+  // A frozen animation clock must not leave a lightning flash stuck on screen.
+  drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
 }
 
 export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
@@ -535,247 +539,6 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   minimapFog.height = 800;
   const minimapFogCtx = minimapFog.getContext("2d");
 
-  function drawTree(c, x, y, s) {
-    c.save();
-    c.translate(x, y);
-    c.strokeStyle = "rgba(39,31,20,.9)";
-    c.fillStyle = "rgba(63,67,37,.72)";
-    c.lineWidth = Math.max(1.4, s * 0.07);
-    const trunks = [
-      [-0.34, 0.06, 0.72],
-      [0, -0.02, 1],
-      [0.33, 0.08, 0.7],
-    ];
-    trunks.forEach(([ox, oy, sc]) => {
-      c.beginPath();
-      c.moveTo(ox * s, oy * s + s * 0.42 * sc);
-      c.lineTo(ox * s, oy * s - s * 0.42 * sc);
-      c.stroke();
-      for (let tier = 0; tier < 3; tier++) {
-        const yy = oy * s - s * (0.36 - tier * 0.2) * sc,
-          w = s * (0.28 + tier * 0.08) * sc;
-        c.beginPath();
-        c.moveTo(ox * s, yy - s * 0.22 * sc);
-        c.lineTo(ox * s - w, yy + s * 0.18 * sc);
-        c.lineTo(ox * s + w, yy + s * 0.18 * sc);
-        c.closePath();
-        c.fill();
-        c.stroke();
-      }
-    });
-    c.restore();
-  }
-  function drawMountain(c, x, y, s) {
-    c.save();
-    c.translate(x, y);
-    const summit = Math.sin(x * 0.17 + y * 0.11) * s * 0.16;
-    c.fillStyle = "rgba(35,29,22,.16)";
-    c.beginPath();
-    c.ellipse(s * 0.2, s * 0.52, s, s * 0.27, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "rgba(209,190,140,.42)";
-    c.beginPath();
-    c.moveTo(-s, s * 0.58);
-    c.lineTo(-s * 0.61, s * 0.03);
-    c.lineTo(-s * 0.4, -s * 0.24);
-    c.lineTo(summit, -s);
-    c.lineTo(s * 0.13, -s * 0.08);
-    c.lineTo(s * 0.08, s * 0.58);
-    c.closePath();
-    c.fill();
-    c.fillStyle = "rgba(64,54,37,.48)";
-    c.beginPath();
-    c.moveTo(summit, -s);
-    c.lineTo(s * 0.4, -s * 0.25);
-    c.lineTo(s * 0.52, -s * 0.33);
-    c.lineTo(s, s * 0.58);
-    c.lineTo(s * 0.08, s * 0.58);
-    c.lineTo(s * 0.13, -s * 0.08);
-    c.closePath();
-    c.fill();
-    c.strokeStyle = "rgba(43,33,21,.72)";
-    c.lineWidth = Math.max(1.2, s * 0.045);
-    c.beginPath();
-    c.moveTo(-s, s * 0.58);
-    c.lineTo(-s * 0.61, s * 0.03);
-    c.lineTo(-s * 0.4, -s * 0.24);
-    c.lineTo(summit, -s);
-    c.lineTo(s * 0.4, -s * 0.25);
-    c.lineTo(s * 0.52, -s * 0.33);
-    c.lineTo(s, s * 0.58);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(summit, -s);
-    c.lineTo(s * 0.13, -s * 0.08);
-    c.lineTo(s * 0.08, s * 0.58);
-    c.stroke();
-    c.strokeStyle = "rgba(238,223,180,.62)";
-    c.beginPath();
-    c.moveTo(-s * 0.25, -s * 0.43);
-    c.lineTo(summit, -s);
-    c.lineTo(s * 0.25, -s * 0.43);
-    c.stroke();
-    c.strokeStyle = "rgba(38,31,22,.35)";
-    c.lineWidth = 0.8;
-    for (let i = 0; i < 4; i++) {
-      c.beginPath();
-      c.moveTo(s * (0.18 + i * 0.05), s * (-0.02 + i * 0.12));
-      c.lineTo(s * (0.45 + i * 0.12), s * (0.16 + i * 0.12));
-      c.stroke();
-    }
-    c.restore();
-  }
-  function terrainPath(c, points) {
-    c.beginPath();
-    c.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length - 1; i++) {
-      const midpoint = {
-        x: (points[i].x + points[i + 1].x) / 2,
-        y: (points[i].y + points[i + 1].y) / 2,
-      };
-      c.quadraticCurveTo(points[i].x, points[i].y, midpoint.x, midpoint.y);
-    }
-    c.lineTo(points.at(-1).x, points.at(-1).y);
-  }
-  function terrainWash(c, x, y, rx, ry, angle, color, opacity) {
-    c.save();
-    c.translate(x, y);
-    c.rotate(angle);
-    c.scale(rx, ry);
-    const wash = c.createRadialGradient(0, 0, 0, 0, 0, 1);
-    wash.addColorStop(0, `rgba(${color},${opacity})`);
-    wash.addColorStop(0.5, `rgba(${color},${opacity * 0.45})`);
-    wash.addColorStop(1, `rgba(${color},0)`);
-    c.fillStyle = wash;
-    c.fillRect(-1, -1, 2, 2);
-    c.restore();
-  }
-  function drawTerrain(c, terrain) {
-    for (const plain of terrain.plains) {
-      terrainWash(
-        c,
-        plain.x,
-        plain.y,
-        60,
-        35,
-        plain.angle,
-        "227,202,135",
-        0.12,
-      );
-      c.save();
-      c.translate(plain.x, plain.y);
-      c.rotate(plain.angle);
-      c.strokeStyle = "rgba(61,53,32,.25)";
-      c.lineWidth = 0.9;
-      for (let i = -1; i <= 1; i++) {
-        c.beginPath();
-        c.moveTo(i * 5 - 4, 3);
-        c.quadraticCurveTo(i * 5, -2, i * 5 + 5, 1);
-        c.stroke();
-      }
-      c.restore();
-    }
-    for (const hill of terrain.hills) {
-      terrainWash(
-        c,
-        hill.x + hill.size * 0.2,
-        hill.y + hill.size * 0.15,
-        hill.size * 1.5,
-        hill.size * 0.8,
-        -0.2,
-        "54,46,28",
-        0.2,
-      );
-      terrainWash(
-        c,
-        hill.x - hill.size * 0.15,
-        hill.y - hill.size * 0.2,
-        hill.size,
-        hill.size * 0.6,
-        -0.2,
-        "235,215,159",
-        0.24,
-      );
-      c.strokeStyle = "rgba(63,50,31,.27)";
-      c.lineWidth = 1;
-      c.save();
-      c.translate(hill.x, hill.y);
-      c.scale(hill.size, hill.size);
-      c.lineWidth = 1 / hill.size;
-      c.beginPath();
-      c.moveTo(-1, 0.2);
-      c.bezierCurveTo(-0.5, -0.6, 0.15, -0.85, 0.95, 0.12);
-      c.stroke();
-      c.strokeStyle = "rgba(63,50,31,.15)";
-      c.beginPath();
-      c.moveTo(-0.65, 0.45);
-      c.bezierCurveTo(-0.1, 0.15, 0.65, 0.2, 1.2, 0.48);
-      c.stroke();
-      c.restore();
-    }
-    for (const range of terrain.ranges) {
-      for (const peak of range.peaks) {
-        terrainWash(
-          c,
-          peak.x + 12,
-          peak.y + 14,
-          peak.size * 2.4,
-          peak.size * 1.7,
-          range.angle,
-          "47,38,24",
-          0.24,
-        );
-        terrainWash(
-          c,
-          peak.x - 9,
-          peak.y - 8,
-          peak.size * 1.7,
-          peak.size * 1.4,
-          range.angle,
-          "218,196,139",
-          0.16,
-        );
-      }
-    }
-    for (const river of terrain.rivers) {
-      for (let i = 0; i < river.length - 1; i++) {
-        const a = river[i],
-          b = river[i + 1];
-        terrainWash(
-          c,
-          (a.x + b.x) / 2,
-          (a.y + b.y) / 2,
-          Math.hypot(b.x - a.x, b.y - a.y) + 24,
-          30,
-          Math.atan2(b.y - a.y, b.x - a.x),
-          "216,211,146",
-          0.19,
-        );
-      }
-    }
-    c.lineCap = "round";
-    c.lineJoin = "round";
-    for (const river of terrain.tributaries) {
-      terrainPath(c, river);
-      c.strokeStyle = "rgba(51,78,72,.6)";
-      c.lineWidth = 1.6;
-      c.stroke();
-    }
-    for (const river of terrain.rivers) {
-      terrainPath(c, river);
-      c.strokeStyle = "rgba(45,64,60,.65)";
-      c.lineWidth = 3.8;
-      c.stroke();
-      terrainPath(c, river);
-      c.strokeStyle = "rgba(154,180,163,.7)";
-      c.lineWidth = 1.8;
-      c.stroke();
-    }
-    for (const range of terrain.ranges) {
-      for (const peak of [...range.peaks].sort((a, b) => a.y - b.y))
-        drawMountain(c, peak.x, peak.y, peak.size);
-    }
-  }
   function drawPortIcon(c, p) {
     c.save();
     c.translate(p.x, p.y);
@@ -1141,13 +904,38 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
   function drawParchmentBase(c) {
     c.clearRect(0, 0, WORLD.w, WORLD.h);
     const base = c.createLinearGradient(0, 0, 0, WORLD.h);
-    base.addColorStop(0, "#dec58f");
-    base.addColorStop(0.5, "#c9aa70");
-    base.addColorStop(1, "#b98f51");
+    // Desaturated verdigris pigment, with the same paper grain and engraved
+    // marks as the land. The sea reads as a watercolor wash on the atlas.
+    base.addColorStop(0, "#b9c7af");
+    base.addColorStop(0.5, "#93afa2");
+    base.addColorStop(1, "#78998e");
     c.fillStyle = base;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
     const rnd = seeded(9917);
     c.save();
+    for (let i = 0; i < 110; i++) {
+      const x = rnd() * WORLD.w;
+      const y = rnd() * WORLD.h;
+      const radius = 120 + rnd() * 280;
+      // Repeat pigment blooms over the seam, just like the land contours.
+      for (const offset of [-WORLD.w, 0, WORLD.w]) {
+        const wash = c.createRadialGradient(
+          x + offset,
+          y,
+          0,
+          x + offset,
+          y,
+          radius,
+        );
+        wash.addColorStop(
+          0,
+          i % 3 ? "rgba(31,91,91,.10)" : "rgba(245,228,172,.16)",
+        );
+        wash.addColorStop(1, "rgba(134,169,148,0)");
+        c.fillStyle = wash;
+        c.fillRect(x + offset - radius, y - radius, radius * 2, radius * 2);
+      }
+    }
     for (let i = 0; i < 85; i++) {
       const x = rnd() * WORLD.w,
         y = rnd() * WORLD.h,
@@ -1342,6 +1130,30 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
 
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
+      // Layered shallow-water pigment and an ivory tide line sit underneath
+      // the engraved coast and raised cliffs. Built once, not each frame.
+      for (const [width, color] of [
+        [62, "rgba(50,110,100,.08)"],
+        [42, "rgba(195,210,164,.16)"],
+        [25, "rgba(220,224,178,.24)"],
+        [12, "rgba(249,234,188,.45)"],
+      ]) {
+        drawWrappedPolyPath(
+          m,
+          l.poly,
+          (poly) => {
+            m.save();
+            m.translate(0, 38 * MAP_TILT_TAN);
+            polyPath(m, poly);
+            m.lineJoin = "round";
+            m.strokeStyle = color;
+            m.lineWidth = width;
+            m.stroke();
+            m.restore();
+          },
+          70,
+        );
+      }
       for (const off of [22, 14, 7]) {
         drawWrappedPolyPath(m, expandPolygon(l.poly, off), (poly) => {
           polyPath(m, poly);
@@ -1386,13 +1198,41 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
             m.closePath();
             m.fillStyle = b[1] > a[1] ? "#a38354" : "#80613e";
             m.fill();
+            m.save();
+            m.clip();
+            const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            m.strokeStyle = "rgba(235,211,164,.24)";
+            m.lineWidth = 0.9;
+            for (const layer of [0.28, 0.67]) {
+              m.beginPath();
+              m.moveTo(a[0], a[1] + coastDepth * layer);
+              m.lineTo(b[0], b[1] + coastDepth * layer);
+              m.stroke();
+            }
+            m.strokeStyle = "rgba(45,35,25,.28)";
+            m.lineWidth = 1;
+            for (let step = 8; step < length; step += 13) {
+              const t = step / length;
+              const x = a[0] + (b[0] - a[0]) * t;
+              const y = a[1] + (b[1] - a[1]) * t;
+              m.beginPath();
+              m.moveTo(x, y + 2);
+              m.lineTo(x + 2, y + coastDepth * 0.75);
+              m.stroke();
+            }
+            m.restore();
           }
         },
         40,
       );
       drawWrappedPolyPath(m, l.poly, (poly) => {
         polyPath(m, poly);
-        m.fillStyle = l.color;
+        const top = Math.min(...poly.map(([, y]) => y));
+        const bottom = Math.max(...poly.map(([, y]) => y));
+        const pigment = m.createLinearGradient(0, top, 0, bottom);
+        pigment.addColorStop(0, terrainPalette(terrainBiome(l.name)).paper);
+        pigment.addColorStop(1, l.color);
+        m.fillStyle = pigment;
         m.fill();
         m.strokeStyle = "#3b2b1a";
         m.lineWidth = 7;
@@ -1429,18 +1269,32 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       }
       m.restore();
 
-      const terrain = planLandTerrain(
-        l.poly,
-        1349 + li * 97,
-        mountainLands.has(l.name),
-      );
+      const center = polygonCentroid(l.poly);
+      const clearings = ports.map((port) => ({
+        x: port.x + Math.round((center.x - port.x) / WORLD.w) * WORLD.w,
+        y: port.y,
+        rx: Math.max(48, port.name.length * 5.5),
+        ry: 50,
+      }));
+      if (l.name)
+        clearings.push({
+          x: center.x,
+          y: center.y - 8,
+          rx: Math.max(45, l.name.length * 7),
+          ry: 23,
+        });
+      const terrain = planTerrainIllustration(l.poly, 1349 + li * 97, {
+        mountainous: mountainLands.has(l.name),
+        biome: terrainBiome(l.name),
+        clearings,
+      });
       m.save();
       wrappedClipPath(m, l.poly);
       m.clip();
       for (const offset of polygonWorldOffsets(l.poly)) {
         m.save();
         m.translate(offset, 0);
-        drawTerrain(m, terrain);
+        drawTerrainIllustration(m, terrain);
         m.restore();
       }
       m.restore();
@@ -1467,44 +1321,6 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
         }
       }
       m.restore();
-    });
-
-    // Wooded areas sit above the broad relief.
-    forests.forEach((v) => drawTree(m, ...v));
-    const detailRnd = seeded(774);
-    const forestLands = [
-      LAND_NAMES.orravelle,
-      LAND_NAMES.elderwythe,
-      LAND_NAMES.lunemire,
-      LAND_NAMES.kavrensward,
-      LAND_NAMES.drazhmark,
-      LAND_NAMES.thornvayle,
-      LAND_NAMES.sythrenCoast,
-      LAND_NAMES.aurelmarch,
-      LAND_NAMES.eoslynKeys,
-      LAND_NAMES.vesprynKeys,
-      LAND_NAMES.solvyrMarch,
-      LAND_NAMES.verdantate,
-      LAND_NAMES.stormvaneCrown,
-      PORT_NAMES.ossuwhale,
-      LAND_NAMES.orrawardIsle,
-      LAND_NAMES.kavrelChain,
-    ];
-    lands.forEach((l) => {
-      if (forestLands.includes(l.name)) {
-        for (let i = 0; i < 22; i++) {
-          let x,
-            y,
-            g = 0;
-          do {
-            x = l.poly[0][0] + detailRnd() * 900;
-            y = l.poly[0][1] + detailRnd() * 650;
-            g++;
-          } while (!pointInWrappedPolygon(x, y, l.poly, WORLD.w) && g < 80);
-          if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
-            drawTree(m, x, y, 9 + detailRnd() * 10);
-        }
-      }
     });
 
     lands.forEach((land) => {

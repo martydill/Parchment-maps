@@ -1,4 +1,31 @@
 import { pointInPolygon } from "./geometry.js";
+import { LAND_NAMES } from "../names.js";
+
+const regionalBiomes = new Map([
+  ...[
+    LAND_NAMES.thrymmSpires,
+    LAND_NAMES.rimevault,
+    LAND_NAMES.drazhmark,
+    LAND_NAMES.stormvaneCrown,
+  ].map((name) => [name, "alpine"]),
+  ...[LAND_NAMES.veyrAshreach, LAND_NAMES.sivvynIsle].map((name) => [
+    name,
+    "volcanic",
+  ]),
+  ...[
+    LAND_NAMES.verdantate,
+    LAND_NAMES.eoslynKeys,
+    LAND_NAMES.vesprynKeys,
+    LAND_NAMES.lazulynAtolls,
+    LAND_NAMES.kavrelChain,
+  ].map((name) => [name, "tropical"]),
+  [LAND_NAMES.lunemire, "marsh"],
+  [LAND_NAMES.orynthSteppe, "arid"],
+]);
+
+export function terrainBiome(name) {
+  return regionalBiomes.get(name) || "temperate";
+}
 
 function randomSource(seed) {
   let value = seed >>> 0;
@@ -176,4 +203,135 @@ export function planLandTerrain(poly, seed, mountainous = false) {
   }
 
   return { ranges, hills, rivers, tributaries, plains };
+}
+
+// Artwork is planned in an island's unwrapped coordinate system. Translating
+// the island and its clearings translates every mark without changing its art.
+export function planTerrainIllustration(
+  poly,
+  seed,
+  { mountainous = false, biome = "temperate", clearings = [] } = {},
+) {
+  const terrain = planLandTerrain(poly, seed, mountainous);
+  const result = { ...terrain, biome, ridges: [], groves: [] };
+  if (poly.length < 3 || polygonArea(poly) < 300) return result;
+  const random = randomSource(seed + 7919);
+  const clear = (point, radius) =>
+    clearings.every(
+      (zone) =>
+        ((point.x - zone.x) / (zone.rx + radius)) ** 2 +
+          ((point.y - zone.y) / (zone.ry + radius)) ** 2 >
+        1,
+    );
+  const inland = (point, radius) =>
+    pointInPolygon(point.x, point.y, poly) &&
+    closestCoast(poly, point).distance >= radius &&
+    clear(point, radius);
+
+  // Preserve the geographic relief, but leave cartographic lettering and
+  // harbor approaches free of tall silhouettes and ridge hatching.
+  result.ranges = terrain.ranges.map((range) => ({
+    ...range,
+    peaks: range.peaks.filter((peak) => clear(peak, peak.size * 1.2)),
+  }));
+  result.hills = terrain.hills.filter((hill) => inland(hill, hill.size * 1.2));
+  result.plains = terrain.plains.filter((plain) => inland(plain, 16));
+  for (const range of result.ranges) {
+    for (let i = 1; i < range.peaks.length; i++) {
+      const a = range.peaks[i - 1],
+        b = range.peaks[i];
+      const width = Math.min(a.size, b.size) * 0.55;
+      const steps = Math.max(
+        2,
+        Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6),
+      );
+      const spine = Array.from({ length: steps + 1 }, (_, j) => ({
+        x: a.x + ((b.x - a.x) * j) / steps,
+        y: a.y + ((b.y - a.y) * j) / steps,
+      }));
+      if (spine.every((point) => inland(point, width)))
+        result.ridges.push({ a, b, width });
+    }
+  }
+
+  // Dry and ash-covered regions get dunes/scree instead of evergreen symbols.
+  if (biome === "arid" || biome === "volcanic") return result;
+  const xs = poly.map(([x]) => x),
+    ys = poly.map(([, y]) => y);
+  const left = Math.min(...xs),
+    top = Math.min(...ys);
+  const width = Math.max(...xs) - left,
+    height = Math.max(...ys) - top;
+  const peaks = result.ranges.flatMap((range) => range.peaks);
+  const trees = [];
+  const waterways = [...terrain.rivers, ...terrain.tributaries];
+  const byRiver = (point, margin) =>
+    waterways.some((river) =>
+      river.slice(1).some((b, i) => {
+        const a = river[i],
+          dx = b.x - a.x,
+          dy = b.y - a.y;
+        const t = Math.max(
+          0,
+          Math.min(
+            1,
+            ((point.x - a.x) * dx + (point.y - a.y) * dy) /
+              (dx * dx + dy * dy || 1),
+          ),
+        );
+        return (
+          Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t) < margin
+        );
+      }),
+    );
+  const count = Math.min(9, Math.floor(polygonArea(poly) / 18000));
+  for (let groveIndex = 0; groveIndex < count; groveIndex++) {
+    const radius = 26 + random() * 35;
+    let center = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const point = { x: left + random() * width, y: top + random() * height };
+      if (
+        !inland(point, 20) ||
+        result.groves.some(
+          (grove) =>
+            Math.hypot(point.x - grove.x, point.y - grove.y) <
+            radius + grove.radius * 0.6,
+        )
+      )
+        continue;
+      center = point;
+      break;
+    }
+    if (!center) continue;
+    const grove = { ...center, radius, trees: [] };
+    for (let attempt = 0; attempt < 100 && grove.trees.length < 28; attempt++) {
+      const angle = random() * Math.PI * 2;
+      const distance = Math.sqrt(random()) * radius;
+      const size = 7 + random() * 7;
+      const point = {
+        x: center.x + Math.cos(angle) * distance,
+        y: center.y + Math.sin(angle) * distance * 0.7,
+      };
+      if (
+        !inland(point, size * 1.5) ||
+        byRiver(point, size + 5) ||
+        peaks.some(
+          (peak) =>
+            Math.hypot(point.x - peak.x, point.y - peak.y) <
+            peak.size * 1.6 + size,
+        ) ||
+        trees.some(
+          (tree) =>
+            Math.hypot(point.x - tree.x, point.y - tree.y) <
+            (tree.size + size) * 0.55,
+        )
+      )
+        continue;
+      const tree = { ...point, size, variant: random() };
+      grove.trees.push(tree);
+      trees.push(tree);
+    }
+    if (grove.trees.length) result.groves.push(grove);
+  }
+  return result;
 }

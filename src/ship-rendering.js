@@ -1,3 +1,4 @@
+import { sampleShipMotion } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 
@@ -14,7 +15,19 @@ const HULL_STATIONS = Object.freeze([
   [0.5, 0.05],
 ]);
 
-function rotatePoint([x, y, z], heading) {
+function rotatePoint([x, y, z], heading, motion) {
+  // Roll around the keel, then pitch around the beam, before heading and
+  // orthographic projection. Rigging and cloth use this same transform.
+  const rolledX = x * Math.cos(motion.roll) + z * Math.sin(motion.roll);
+  const rolledZ = z * Math.cos(motion.roll) - x * Math.sin(motion.roll);
+  const pitchedY =
+    y * Math.cos(motion.pitch) - rolledZ * Math.sin(motion.pitch);
+  z =
+    y * Math.sin(motion.pitch) +
+    rolledZ * Math.cos(motion.pitch) +
+    motion.heave;
+  x = rolledX;
+  y = pitchedY;
   const cosine = Math.cos(heading);
   const sine = Math.sin(heading);
   return {
@@ -24,8 +37,8 @@ function rotatePoint([x, y, z], heading) {
   };
 }
 
-function projectedPoint(point, heading) {
-  const world = rotatePoint(point, heading);
+function projectedPoint(point, heading, motion) {
+  const world = rotatePoint(point, heading, motion);
   return [world.x, world.y - world.z * MAP_TILT_TAN];
 }
 
@@ -161,8 +174,24 @@ function boxFaces(x1, x2, y1, y2, z1, z2, colors = {}) {
   ];
 }
 
-function worldFace(face, heading, order) {
-  const vertices = face.vertices.map((vertex) => rotatePoint(vertex, heading));
+function lightInk(color, normal) {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const light =
+    0.86 +
+    Math.max(0, -normal[0] * 0.45 - normal[1] * 0.3 + normal[2] * 0.84) * 0.23;
+  const channels = [1, 3, 5].map((offset) =>
+    Math.min(
+      255,
+      Math.round(parseInt(color.slice(offset, offset + 2), 16) * light),
+    ),
+  );
+  return `rgb(${channels.join(",")})`;
+}
+
+function worldFace(face, heading, order, motion) {
+  const vertices = face.vertices.map((vertex) =>
+    rotatePoint(vertex, heading, motion),
+  );
   const first = vertices[0];
   const second = vertices[1];
   const third = vertices[2];
@@ -184,6 +213,7 @@ function worldFace(face, heading, order) {
     ) / vertices.length;
   return {
     ...face,
+    fill: lightInk(face.fill, normal),
     projected: vertices.map((point) => [
       point.x,
       point.y - point.z * MAP_TILT_TAN,
@@ -213,9 +243,9 @@ function paintFaces(c, faces, z) {
   }
 }
 
-function drawLine3d(c, a, b, heading, color, width, z, alpha = 1) {
-  const pa = projectedPoint(a, heading);
-  const pb = projectedPoint(b, heading);
+function drawLine3d(c, a, b, heading, color, width, z, motion, alpha = 1) {
+  const pa = projectedPoint(a, heading, motion);
+  const pb = projectedPoint(b, heading, motion);
   c.save();
   c.globalAlpha = alpha;
   c.strokeStyle = color;
@@ -288,7 +318,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex) {
   return faces;
 }
 
-function shipDeckLines(c, profile, heading, z) {
+function shipDeckLines(c, profile, heading, z, motion) {
   c.save();
   c.strokeStyle = "rgba(67,43,25,.6)";
   c.lineWidth = 0.65 / z;
@@ -304,6 +334,7 @@ function shipDeckLines(c, profile, heading, z) {
       "rgba(74,48,28,.5)",
       0.55,
       z,
+      motion,
       0.75,
     );
   }
@@ -317,6 +348,7 @@ function shipDeckLines(c, profile, heading, z) {
     "#49301e",
     0.8,
     z,
+    motion,
   );
   drawLine3d(
     c,
@@ -326,6 +358,7 @@ function shipDeckLines(c, profile, heading, z) {
     "#49301e",
     0.8,
     z,
+    motion,
   );
   drawLine3d(
     c,
@@ -335,6 +368,7 @@ function shipDeckLines(c, profile, heading, z) {
     "#49301e",
     0.8,
     z,
+    motion,
   );
   drawLine3d(
     c,
@@ -344,11 +378,12 @@ function shipDeckLines(c, profile, heading, z) {
     "#49301e",
     0.8,
     z,
+    motion,
   );
   c.restore();
 }
 
-function drawHullDetails(c, profile, heading, z) {
+function drawHullDetails(c, profile, heading, z, motion) {
   const facingSide = Math.sin(heading) >= 0 ? 1 : -1;
   if (profile.guns) {
     c.fillStyle = "#241810";
@@ -359,7 +394,11 @@ function drawHullDetails(c, profile, heading, z) {
       profile.length * 0.32,
     ]) {
       const x = facingSide * hullWidth(profile, y / profile.length) * 0.83;
-      const point = projectedPoint([x, y, profile.deckHeight * 0.55], heading);
+      const point = projectedPoint(
+        [x, y, profile.deckHeight * 0.55],
+        heading,
+        motion,
+      );
       c.beginPath();
       c.ellipse(point[0], point[1], 1.1 / z, 0.82 / z, 0, 0, Math.PI * 2);
       c.fill();
@@ -371,6 +410,7 @@ function drawHullDetails(c, profile, heading, z) {
         "#392719",
         0.65,
         z,
+        motion,
       );
     }
   }
@@ -385,6 +425,7 @@ function drawHullDetails(c, profile, heading, z) {
         "#4b321f",
         0.9,
         z,
+        motion,
       );
       drawLine3d(
         c,
@@ -394,6 +435,7 @@ function drawHullDetails(c, profile, heading, z) {
         "#4b321f",
         1.1,
         z,
+        motion,
       );
       drawLine3d(
         c,
@@ -403,6 +445,7 @@ function drawHullDetails(c, profile, heading, z) {
         "#4b321f",
         0.9,
         z,
+        motion,
       );
     }
   }
@@ -430,7 +473,7 @@ function drawHullDetails(c, profile, heading, z) {
     paintFaces(
       c,
       faces
-        .map((face, order) => worldFace(face, heading, order))
+        .map((face, order) => worldFace(face, heading, order, motion))
         .filter(Boolean),
       z,
     );
@@ -448,22 +491,63 @@ function drawShipModel(
   z,
   windX = 0,
   windY = 0,
+  motion = sampleShipMotion(),
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
   c.save();
   c.translate(x, y);
-  c.fillStyle = "rgba(37,25,15,.22)";
+  c.save();
+  c.rotate(heading);
+  c.lineCap = "round";
+  c.strokeStyle = `rgba(247,238,200,${0.12 + motion.wake * 0.4})`;
+  c.lineWidth = 1 / z;
   c.beginPath();
   c.ellipse(
-    2.5,
-    5,
-    profile.beam * 1.15,
-    profile.length * 0.31,
-    heading + Math.PI / 2,
     0,
-    Math.PI * 2,
+    0,
+    profile.beam * 1.08,
+    profile.length * 0.51,
+    0,
+    Math.PI * 0.9,
+    Math.PI * 2.1,
   );
-  c.fill();
+  c.stroke();
+  if (motion.wake > 0.02) {
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(0, -profile.length * 0.52);
+      c.bezierCurveTo(
+        side * profile.beam * 0.8,
+        -profile.length * 0.4,
+        side * profile.beam * 1.25,
+        profile.length * 0.15,
+        side * (profile.beam + 7 * motion.wake),
+        profile.length * 0.75,
+      );
+      c.stroke();
+    }
+  }
+  c.restore();
+  // Soft contact shadow stays on the water as the hull rises and falls.
+  // Align its long axis with the keel, under the shared northwest light.
+  for (const [spread, alpha] of [
+    [1.35, 0.035],
+    [1.16, 0.06],
+    [1, 0.13],
+  ]) {
+    c.fillStyle = `rgba(29,52,42,${alpha})`;
+    c.beginPath();
+    c.ellipse(
+      2.5,
+      4,
+      profile.beam * spread,
+      profile.length * 0.43 * spread,
+      heading,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
+  }
 
   const hull = buildHullFaces(profile);
   const cabinStart = profile.length * 0.17;
@@ -499,7 +583,7 @@ function drawShipModel(
       sailFaces(mast, profile, windX, windY, index),
     ),
   ]
-    .map((face, order) => worldFace(face, heading, order))
+    .map((face, order) => worldFace(face, heading, order, motion))
     .filter(Boolean);
   paintFaces(c, faces, z);
 
@@ -515,6 +599,7 @@ function drawShipModel(
     "#3f291a",
     0.9,
     z,
+    motion,
   );
   for (const side of [-1, 1]) {
     const xSide = side * cabinWidth * 0.74;
@@ -527,11 +612,12 @@ function drawShipModel(
         "#39271b",
         1.2,
         z,
+        motion,
       );
     }
   }
-  shipDeckLines(c, profile, heading, z);
-  drawHullDetails(c, profile, heading, z);
+  shipDeckLines(c, profile, heading, z, motion);
+  drawHullDetails(c, profile, heading, z, motion);
 
   // Standing rigging and bowsprit give the model a readable three dimensional
   // silhouette. Sails are faceted cloth panels with seams and a wind belly.
@@ -549,10 +635,11 @@ function drawShipModel(
         "#5b432a",
         0.55,
         z,
+        motion,
         0.78,
       );
     }
-    drawLine3d(c, [0, mast.y, base], top, heading, "#352519", 1.55, z);
+    drawLine3d(c, [0, mast.y, base], top, heading, "#352519", 1.55, z, motion);
     drawLine3d(
       c,
       [-0.7, mast.y, base + 1],
@@ -561,6 +648,7 @@ function drawShipModel(
       "#b58c50",
       0.55,
       z,
+      motion,
     );
     const tierCount = mast.sails;
     for (let tier = 0; tier < tierCount; tier++) {
@@ -574,6 +662,7 @@ function drawShipModel(
         "#493321",
         1.1,
         z,
+        motion,
       );
       drawLine3d(
         c,
@@ -583,6 +672,7 @@ function drawShipModel(
         "#bd9a62",
         0.45,
         z,
+        motion,
         0.85,
       );
     }
@@ -596,6 +686,7 @@ function drawShipModel(
       "#5b432a",
       0.6,
       z,
+      motion,
       0.8,
     );
     for (let index = 0; index < mastHeads.length - 1; index++)
@@ -607,6 +698,7 @@ function drawShipModel(
         "#5b432a",
         0.55,
         z,
+        motion,
         0.76,
       );
     drawLine3d(
@@ -617,20 +709,31 @@ function drawShipModel(
       "#5b432a",
       0.55,
       z,
+      motion,
       0.72,
     );
   }
 
   // A tiny two-tone pennant is the only bright color on the timber model.
   const leadMast = profile.masts[Math.floor(profile.masts.length / 2)];
-  const pennantTop = projectedPoint([0, leadMast.y, leadMast.height], heading);
-  const pennantTip = projectedPoint(
-    [6, leadMast.y + 0.8, leadMast.height - 1.1],
+  const pennantTop = projectedPoint(
+    [0, leadMast.y, leadMast.height],
     heading,
+    motion,
+  );
+  const pennantTip = projectedPoint(
+    [
+      6 + motion.flutter,
+      leadMast.y + 0.8 + motion.flutter * 1.4,
+      leadMast.height - 1.1 + motion.flutter,
+    ],
+    heading,
+    motion,
   );
   const pennantBase = projectedPoint(
     [0, leadMast.y + 1.7, leadMast.height - 2.3],
     heading,
+    motion,
   );
   c.beginPath();
   c.moveTo(...pennantTop);
@@ -645,8 +748,21 @@ function drawShipModel(
   c.restore();
 }
 
-export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
+export function drawMerchantShip(
+  c,
+  merchant,
+  z = 1,
+  renderX = merchant.x,
+  environment = {},
+) {
   const angle = merchant.angle || 0;
+  const motion = sampleShipMotion({
+    time: 0,
+    speed: merchant.speed || 0,
+    ...environment,
+    seed: merchant.idNum || 0,
+  });
+  const relativeWind = (environment.windAngle || 0) - angle;
   drawShipModel(
     c,
     merchant.vesselClass,
@@ -656,8 +772,9 @@ export function drawMerchantShip(c, merchant, z = 1, renderX = merchant.x) {
     merchant.y,
     angle + Math.PI / 2,
     z,
-    Math.sin((merchant.idNum || 0) * 17) * 2.2,
-    Math.cos((merchant.idNum || 0) * 17) * 1.2,
+    Math.cos(relativeWind) * motion.billow,
+    Math.sin(relativeWind) * motion.billow,
+    motion,
   );
 }
 
@@ -670,10 +787,14 @@ export function drawShip(
   windStrength = 0,
   vesselClass = "cutter",
   z = 1,
+  environment = {},
 ) {
   const relativeWind = windAngle - angle;
-  const billow = windStrength * 0.38;
-  const gust = Math.sin(performance.now() / 150) * windStrength * 0.08;
+  const motion = sampleShipMotion({
+    time: performance.now() / 1000,
+    ...environment,
+    windStrength,
+  });
   c.save();
   c.translate(x, y);
   c.scale(1.7, 1.7);
@@ -686,8 +807,9 @@ export function drawShip(
     0,
     angle + Math.PI / 2,
     z / 1.7,
-    Math.cos(relativeWind) * (billow + gust),
-    Math.sin(relativeWind) * (billow + gust),
+    Math.cos(relativeWind) * motion.billow,
+    Math.sin(relativeWind) * motion.billow,
+    motion,
   );
   c.restore();
 }

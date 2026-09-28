@@ -43,13 +43,16 @@ export function renderChartPanel({
   c.drawImage(mapLayer, 0, 0, w, h);
   const f = minimapFogCtx;
   f.clearRect(0, 0, w, h);
-  f.fillStyle = "rgba(23,20,16,.92)";
+  f.fillStyle = "rgba(77,94,86,.96)";
   f.fillRect(0, 0, w, h);
   f.globalCompositeOperation = "destination-out";
-  f.globalAlpha = 0.48;
+  f.globalAlpha = 0.64;
   f.drawImage(exploredMask, 0, 0, w, h);
   f.globalAlpha = 1;
+  f.save();
+  f.filter = "blur(3px)";
   punchCurrentVisibility(f, sx, sy, true);
+  f.restore();
   f.globalCompositeOperation = "source-over";
   c.drawImage(minimapFog, 0, 0);
   drawAmberConvoyRoute(c, sx, sy, game);

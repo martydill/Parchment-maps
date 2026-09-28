@@ -1,3 +1,4 @@
+import { createSeaRendering } from "./sea-rendering.js";
 import {
   GAME_NAME,
   PORT_NAMES,
@@ -417,9 +418,11 @@ const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 1.12;
 let vw = 0,
   vh = 0,
-  fogWashGradient = null,
   vignetteGradient = null;
 const camera = { x: 0, y: 0, zoom: 1 };
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const wakeTrail = [];
+const seaRendering = createSeaRendering({ WORLD, lands });
 let viewportZoom = 1;
 let userZoom = 1;
 const keys = new Set();
@@ -3122,10 +3125,6 @@ function resize() {
   fogCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
-  fogWashGradient = fogCtx.createLinearGradient(0, 0, vw, vh);
-  fogWashGradient.addColorStop(0, "rgba(25,22,18,.94)");
-  fogWashGradient.addColorStop(0.55, "rgba(18,19,18,.92)");
-  fogWashGradient.addColorStop(1, "rgba(31,24,17,.95)");
   vignetteGradient = ctx.createRadialGradient(
     vw / 2,
     vh / 2,
@@ -3661,94 +3660,90 @@ function screenToWorld(clientX, clientY) {
   );
 }
 
-// Cache for fog rendering state to avoid unnecessary redraws
-const fogRenderState = {
-  lastCameraX: 0,
-  lastCameraY: 0,
-  lastVW: 0,
-  lastVH: 0,
-  needsFullRedraw: true,
-  mistParticles: [],
-  initMistParticles: function () {
-    this.mistParticles = [];
-    for (let i = 0; i < 11; i++) {
-      this.mistParticles.push({
-        index: i,
-        rx: 150 + (i % 4) * 38,
-        squash: 0.24 + (i % 3) * 0.055,
-        rotation: ((i % 5) - 2) * 0.08,
-      });
-    }
-  },
-};
-fogRenderState.initMistParticles();
+// A small screen-space mask gives the ink wash a soft edge without repeatedly
+// blurring a full-resolution world canvas. Exploration/save masks are unchanged.
+const horizonMask = document.createElement("canvas");
+const horizonCtx = horizonMask.getContext("2d");
+const mistStamp = document.createElement("canvas");
+mistStamp.width = mistStamp.height = 192;
+const mistCtx = mistStamp.getContext("2d");
+const mistGradient = mistCtx.createRadialGradient(96, 96, 6, 96, 96, 96);
+mistGradient.addColorStop(0, "rgba(229,228,201,.34)");
+mistGradient.addColorStop(0.45, "rgba(204,215,194,.16)");
+mistGradient.addColorStop(1, "rgba(189,206,188,0)");
+mistCtx.fillStyle = mistGradient;
+mistCtx.fillRect(0, 0, 192, 192);
 
-function renderFog() {
+function renderFog(time) {
   if (!gameStarted) return;
   buildVisibilityPolygon();
   const f = fogCtx;
+  const scale = 0.5;
+  const width = Math.ceil(vw * scale),
+    height = Math.ceil(vh * scale);
+  if (horizonMask.width !== width || horizonMask.height !== height) {
+    horizonMask.width = width;
+    horizonMask.height = height;
+  }
+  const h = horizonCtx;
+  h.setTransform(1, 0, 0, 1, 0, 0);
+  h.clearRect(0, 0, width, height);
+  h.save();
+  h.translate(width / 2, height / 2);
+  h.scale(camera.zoom * scale, camera.zoom * MAP_TILT_COS * scale);
+  h.translate(-camera.x, -camera.y);
+  // Previously surveyed water reads as a faded chart beneath the haze.
+  h.globalAlpha = 0.64;
+  for (const offset of worldCopiesNear(camera.x))
+    h.drawImage(exploredMask, offset, 0, WORLD.w, WORLD.h);
+  h.globalAlpha = 1;
+  punchCurrentVisibility(h, 1, 1);
+  punchNearShoreTerrain(h);
+  h.restore();
+
   f.setTransform(DPR, 0, 0, DPR, 0, 0);
   f.clearRect(0, 0, vw, vh);
-
-  // Uncharted water is an opaque ink wash. Previously seen water remains as a
-  // dim chart memory, while the current line of sight is cut out of the wash.
-  f.fillStyle = fogWashGradient;
+  const wash = f.createLinearGradient(0, 0, 0, vh);
+  wash.addColorStop(0, "rgba(77,94,86,.97)");
+  wash.addColorStop(0.55, "rgba(93,105,91,.96)");
+  wash.addColorStop(1, "rgba(74,85,74,.97)");
+  f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
 
-  // Slow translucent wisps make reduced visibility feel like ocean haze rather
-  // than a hard game mask. They remain subtle enough not to obscure controls.
-  const time = performance.now() * 0.000018;
-  f.save();
-  // Optimized: use pre-calculated particles and reduce state changes
-  for (let i = 0; i < fogRenderState.mistParticles.length; i++) {
-    const p = fogRenderState.mistParticles[i];
-    const x = ((i * 211 + time * 7600) % (vw + 420)) - 210;
-    const y = ((i * 127 + Math.sin(time * 42 + i) * 48) % (vh + 220)) - 110;
-
-    f.save();
-    f.translate(x, y);
-    f.rotate(p.rotation);
-    f.scale(1, p.squash);
-    const mist = f.createRadialGradient(0, 0, 0, 0, 0, p.rx);
-    mist.addColorStop(0, "rgba(239,233,214,.065)");
-    mist.addColorStop(0.52, "rgba(239,233,214,.025)");
-    mist.addColorStop(1, "rgba(239,233,214,0)");
-    f.fillStyle = mist;
-    f.beginPath();
-    f.arc(0, 0, p.rx, 0, Math.PI * 2);
-    f.fill();
-    f.restore();
-  }
-  f.restore();
-
-  f.globalCompositeOperation = "destination-out";
-  f.save();
+  // World-anchored, overlapping cloud banks avoid a screen-attached spotlight.
+  // Drift is deliberately slow, like diluted ink spreading through wet paper.
+  const drift = reducedMotion.matches ? 0 : time * 0.003;
   const z = camera.zoom;
+  f.save();
   f.translate(vw / 2, vh / 2);
   f.scale(z, z * MAP_TILT_COS);
   f.translate(-camera.x, -camera.y);
-  f.globalAlpha = 0.48;
-  for (const offset of worldCopiesNear(camera.x))
-    f.drawImage(exploredMask, offset, 0, WORLD.w, WORLD.h);
-  f.globalAlpha = 1;
-  punchCurrentVisibility(f, 1, 1);
-  punchNearShoreTerrain(f);
+  const spacing = WORLD.w / Math.ceil(WORLD.w / 240);
+  const left = Math.floor((camera.x - vw / (2 * z) - 500 - drift) / spacing);
+  const right = Math.ceil((camera.x + vw / (2 * z) + 500 - drift) / spacing);
+  const top = Math.floor((camera.y - vh / (2 * z * MAP_TILT_COS) - 200) / 160);
+  const bottom = Math.ceil(
+    (camera.y + vh / (2 * z * MAP_TILT_COS) + 200) / 160,
+  );
+  const columns = Math.round(WORLD.w / spacing);
+  for (let row = top; row <= bottom; row++) {
+    for (let column = left; column <= right; column++) {
+      const phase =
+        (((column % columns) + columns) % columns) * 2.4 + row * 1.7;
+      const x = column * spacing + drift + Math.sin(row * 4.1) * 65;
+      const y = row * 160 + Math.sin(phase) * 45;
+      f.globalAlpha = 0.38 + Math.sin(phase) * 0.15;
+      f.drawImage(mistStamp, x - 260, y - 95, 520, 190);
+    }
+  }
   f.restore();
-  f.globalCompositeOperation = "source-over";
-
-  // A pale, blurred boundary suggests the wall of mist at the visual horizon.
   f.save();
-  f.translate(vw / 2, vh / 2);
-  f.scale(camera.zoom, camera.zoom * MAP_TILT_COS);
-  f.translate(-camera.x, -camera.y);
-  polygonPath(f, visibility.polygon);
-  f.strokeStyle = "rgba(235,229,208,.13)";
-  f.lineWidth = 13 / camera.zoom;
-  f.shadowColor = "rgba(235,229,208,.28)";
-  f.shadowBlur = 18 / camera.zoom;
-  f.stroke();
+  f.globalCompositeOperation = "destination-out";
+  // Feather the reveal itself; an outlined polygon would recreate the old
+  // bright halo. The exact visibility polygon still controls sightings.
+  f.filter = "blur(12px)";
+  f.drawImage(horizonMask, 0, 0, vw, vh);
   f.restore();
-
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
 }
 
@@ -3892,7 +3887,13 @@ function drawDynamicTradeWorld(c, z, time) {
     if (!merchantVisible(merchant)) continue;
     const x = nearestWrappedX(merchant.x, camera.x);
     if (!isWorldCircleInViewport(merchant.x, merchant.y, 60, z)) continue;
-    drawMerchantShip(c, merchant, z, x);
+    drawMerchantShip(c, merchant, z, x, {
+      time: reducedMotion.matches ? 0 : time / 1000,
+      roughness: getInterpolatedWeather().roughness,
+      windAngle: game.windAngle,
+      windStrength: game.windStrength,
+      reducedMotion: reducedMotion.matches,
+    });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
       c.fillStyle = "rgba(47,29,15,.8)";
@@ -3931,7 +3932,13 @@ function drawDynamicTradeWorld(c, z, time) {
     c.lineWidth = 1.8 / z;
     c.strokeStyle = "rgba(46,158,90,.9)";
     c.stroke();
-    drawMerchantShip(c, render, z, x);
+    drawMerchantShip(c, render, z, x, {
+      time: reducedMotion.matches ? 0 : time / 1000,
+      roughness: getInterpolatedWeather().roughness,
+      windAngle: game.windAngle,
+      windStrength: game.windStrength,
+      reducedMotion: reducedMotion.matches,
+    });
     c.fillStyle = "rgba(34,150,82,.96)";
     c.font = "bold " + 11 / z + "px Georgia";
     c.textAlign = "center";
@@ -3945,6 +3952,38 @@ function render() {
   ctx.clearRect(0, 0, vw, vh);
   const z = camera.zoom;
   const time = performance.now();
+  const visualTime = reducedMotion.matches ? 0 : time;
+  const weather = currentWeather();
+  const moving =
+    !ship.anchored &&
+    !currentPort &&
+    !selectedTown &&
+    !selectedMerchant &&
+    !pendingMaritimeHazard;
+  const stern = {
+    x: ship.x - Math.cos(ship.angle) * 24,
+    y: ship.y - Math.sin(ship.angle) * 24,
+    time,
+  };
+  if (
+    moving &&
+    ship.speed > 3 &&
+    (!wakeTrail.length ||
+      (time - wakeTrail[0].time > 65 &&
+        wrappedDistance(stern.x, stern.y, wakeTrail[0].x, wakeTrail[0].y) > 3))
+  ) {
+    if (
+      wakeTrail.length &&
+      wrappedDistance(stern.x, stern.y, wakeTrail[0].x, wakeTrail[0].y) > 100
+    )
+      wakeTrail.length = 0;
+    wakeTrail.unshift(stern);
+  }
+  while (
+    wakeTrail.length &&
+    (time - wakeTrail.at(-1).time > 5000 || wakeTrail.length > 80)
+  )
+    wakeTrail.pop();
   const worldTransform = () => {
     ctx.save();
     ctx.translate(vw / 2, vh / 2);
@@ -3956,21 +3995,21 @@ function render() {
   worldTransform();
   for (const offset of worldCopiesNear(camera.x))
     ctx.drawImage(mapLayer, offset, 0);
-  drawAnimatedRoughSeas(ctx, time, z);
+  seaRendering.drawSurface(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    roughness: weather.roughness,
+    windAngle: game.windAngle,
+    reducedMotion: reducedMotion.matches,
+  });
+  drawAnimatedRoughSeas(ctx, visualTime, z);
+  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
   drawDynamicTradeWorld(ctx, z, time);
 
   // Batch trail and wind rendering
   ctx.save();
-  // wake
-  if (ship.trail.length > 1) {
-    ctx.strokeStyle = "rgba(245,236,201,.55)";
-    ctx.lineWidth = 2 / z;
-    ctx.beginPath();
-    ship.trail.forEach((p, i) =>
-      i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y),
-    );
-    ctx.stroke();
-  }
   // wind streaks
   ctx.strokeStyle = "rgba(244,231,190,.28)";
   ctx.lineWidth = 1.5 / z;
@@ -3980,7 +4019,7 @@ function render() {
   const windSin = Math.sin(game.windAngle) * 30;
 
   for (let i = 0; i < 14; i++) {
-    const x = windLeft + ((i * 173 + time * 0.025) % windSpan),
+    const x = windLeft + ((i * 173 + visualTime * 0.025) % windSpan),
       y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -3990,7 +4029,7 @@ function render() {
   ctx.restore();
   ctx.restore(); // Restore world transform
 
-  renderFog();
+  renderFog(visualTime);
 
   // The ship and immediate docking cue remain readable above the fog layer.
   worldTransform();
@@ -4003,6 +4042,13 @@ function render() {
     game.windStrength,
     game.shipUpgrades.activeClass,
     z,
+    {
+      time: visualTime / 1000,
+      roughness: weather.roughness,
+      speed: moving ? ship.speed : 0,
+      anchored: ship.anchored,
+      reducedMotion: reducedMotion.matches,
+    },
   );
   if (nearPort) {
     const px = nearestWrappedX(nearPort.x, ship.x);
@@ -4026,7 +4072,6 @@ function render() {
   // Atmospheric weather — clouds, fog, rain, and storms are drawn over the
   // ship so they read as something the vessel is sailing through.
   {
-    const weather = currentWeather();
     drawWeatherEffects(ctx, {
       name: weather.name,
       roughness: weather.roughness,
@@ -4038,7 +4083,8 @@ function render() {
       windStrength: game.windStrength,
       vw,
       vh,
-      time,
+      time: visualTime,
+      reducedMotion: reducedMotion.matches,
     });
   }
 
