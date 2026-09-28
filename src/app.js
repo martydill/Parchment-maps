@@ -25,6 +25,7 @@ import {
   raySegmentDistance,
 } from "./core/geometry.js";
 import { MAP_TILT_COS, unprojectMapPoint } from "./core/projection.js";
+import { layoutMapLabels } from "./core/label-layout.js";
 import {
   edgeInwardVector,
   limitOutwardWind,
@@ -488,6 +489,8 @@ const visibility = {
   horizonKm: 3.57 * Math.sqrt(12),
   radius: 0,
   polygon: [],
+  visualPolygon: [],
+  visualTime: 0,
   terrainPolygon: [],
   nearShoreLandIndices: [],
   rays: 192,
@@ -3046,26 +3049,66 @@ function punchCurrentVisibility(
   worldToTargetX,
   worldToTargetY,
   canonical = false,
+  visual = false,
 ) {
-  if (!visibility.polygon.length) return;
+  const points = visual ? visibility.visualPolygon : visibility.polygon;
+  if (!points.length) return;
   const base = canonical ? Math.floor(ship.x / WORLD.w) * WORLD.w : 0;
   const offsets = canonical ? [-base - WORLD.w, -base, -base + WORLD.w] : [0];
   for (const offsetX of offsets) {
     c.save();
-    polygonPath(c, visibility.polygon, worldToTargetX, worldToTargetY, offsetX);
+    polygonPath(c, points, worldToTargetX, worldToTargetY, offsetX);
     c.clip();
     const sx = (ship.x + offsetX) * worldToTargetX,
       sy = ship.y * worldToTargetY;
     const radius = visibility.radius * Math.min(worldToTargetX, worldToTargetY);
     const g = c.createRadialGradient(sx, sy, radius * 0.5, sx, sy, radius);
     g.addColorStop(0, "rgba(0,0,0,1)");
-    g.addColorStop(0.68, "rgba(0,0,0,.98)");
-    g.addColorStop(0.88, "rgba(0,0,0,.72)");
+    g.addColorStop(0.72, "rgba(0,0,0,.98)");
+    g.addColorStop(0.89, "rgba(0,0,0,.66)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = g;
     c.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
     c.restore();
   }
+}
+
+function updateVisualVisibility(time) {
+  const points = visibility.polygon;
+  if (!points.length) return;
+  const previous = visibility.visualPolygon;
+  const elapsed = Math.max(0, Math.min(100, time - visibility.visualTime));
+  const mix = reducedMotion.matches ? 1 : 1 - Math.exp(-elapsed / 140);
+  const reset = previous.length !== points.length || elapsed > 100;
+  visibility.visualPolygon = points.map((point, index) => {
+    const dx = point.x - ship.x;
+    const dy = point.y - ship.y;
+    // Pull the painted edge slightly inward so it never reveals unseen water.
+    const ripple =
+      0.965 -
+      0.017 * Math.sin(index * 0.23 + time * 0.00018) -
+      0.012 * Math.sin(index * 0.61 - time * 0.00011);
+    const distance = Math.hypot(dx, dy) || 1;
+    const target = { x: ship.x + dx * ripple, y: ship.y + dy * ripple };
+    if (
+      reset ||
+      Math.hypot(target.x - previous[index].x, target.y - previous[index].y) >
+        180
+    )
+      return target;
+    const previousRadius =
+      ((previous[index].x - ship.x) * dx + (previous[index].y - ship.y) * dy) /
+      distance;
+    const radius = Math.min(
+      distance * 0.995,
+      Math.max(0, previousRadius + (distance * ripple - previousRadius) * mix),
+    );
+    return {
+      x: ship.x + (dx / distance) * radius,
+      y: ship.y + (dy / distance) * radius,
+    };
+  });
+  visibility.visualTime = time;
 }
 
 function punchNearShoreTerrain(c) {
@@ -3704,6 +3747,7 @@ mistCtx.fillRect(0, 0, 192, 192);
 function renderFog(time, lighting) {
   if (!gameStarted) return;
   buildVisibilityPolygon();
+  updateVisualVisibility(time);
   const f = fogCtx;
   const scale = 0.5;
   const width = Math.ceil(vw * scale),
@@ -3720,11 +3764,11 @@ function renderFog(time, lighting) {
   h.scale(camera.zoom * scale, camera.zoom * MAP_TILT_COS * scale);
   h.translate(-camera.x, -camera.y);
   // Previously surveyed water reads as a faded chart beneath the haze.
-  h.globalAlpha = 0.64;
+  h.globalAlpha = 0.78;
   for (const offset of worldCopiesNear(camera.x))
     h.drawImage(exploredMask, offset, 0, WORLD.w, WORLD.h);
   h.globalAlpha = 1;
-  punchCurrentVisibility(h, 1, 1);
+  punchCurrentVisibility(h, 1, 1, false, true);
   punchNearShoreTerrain(h);
   h.restore();
 
@@ -3778,7 +3822,7 @@ function renderFog(time, lighting) {
   f.globalCompositeOperation = "destination-out";
   // Feather the reveal itself; an outlined polygon would recreate the old
   // bright halo. The exact visibility polygon still controls sightings.
-  f.filter = "blur(12px)";
+  f.filter = "blur(18px)";
   f.drawImage(horizonMask, 0, 0, vw, vh);
   f.restore();
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
@@ -4146,7 +4190,101 @@ function drawHarborLights(c, lighting, z) {
       c.arc(x, y, 1.35 / z, 0, Math.PI * 2);
       c.fill();
     }
+    c.strokeStyle = `rgba(255,205,124,${strength * 0.24})`;
+    c.lineCap = "round";
+    for (let ripple = 0; ripple < 4; ripple++) {
+      const y = 12 + ripple * 7;
+      c.lineWidth = (7 - ripple) / z;
+      c.beginPath();
+      c.moveTo(-13 + ripple * 2, y);
+      c.quadraticCurveTo(0, y + 2, 14 - ripple * 2, y);
+      c.stroke();
+    }
     c.restore();
+  }
+  c.restore();
+}
+function drawPortLabels(c, z, shipScreen) {
+  c.save();
+  c.font = "700 15px Georgia";
+  const labels = ports
+    .filter(
+      (port) =>
+        isWorldCircleInViewport(port.x, port.y, 90, z) &&
+        isWorldPointExplored(port.x, port.y),
+    )
+    .map((port) => ({
+      id: port.name,
+      x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
+      y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
+      width: Math.ceil(c.measureText(port.name).width) + 20,
+      height: 27,
+      priority:
+        (port.name === game.navigation.destination ? 100 : 0) +
+        (port.home ? 20 : 0) +
+        (pointCurrentlyVisible(port.x, port.y) ? 10 : 0),
+      port,
+    }));
+  const blockers = [
+    { x: shipScreen.x - 42, y: shipScreen.y - 54, width: 84, height: 94 },
+    { x: 0, y: 0, width: vw, height: Math.min(vh * 0.12, 96) },
+  ];
+  const course = document.getElementById("courseCard");
+  if (course?.offsetWidth) {
+    const rect = course.getBoundingClientRect();
+    blockers.push({
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    });
+  }
+  for (const port of labels)
+    blockers.push({ x: port.x - 10, y: port.y - 10, width: 20, height: 20 });
+  for (const merchant of merchantShips) {
+    if (!merchantVisible(merchant)) continue;
+    const x = vw / 2 + (nearestWrappedX(merchant.x, camera.x) - camera.x) * z;
+    const y = vh / 2 + (merchant.y - camera.y) * z * MAP_TILT_COS;
+    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
+  }
+  const raider = game.seaRaid.raider;
+  if (raider && pointCurrentlyVisible(raider.x, raider.y)) {
+    const x = vw / 2 + (nearestWrappedX(raider.x, camera.x) - camera.x) * z;
+    const y = vh / 2 + (raider.y - camera.y) * z * MAP_TILT_COS;
+    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
+  }
+  for (const vessel of game.fleet?.ships || []) {
+    if (vessel.status === "laidUp") continue;
+    const position = fleetRenderObject(vessel);
+    const x = vw / 2 + (nearestWrappedX(position.x, camera.x) - camera.x) * z;
+    const y = vh / 2 + (position.y - camera.y) * z * MAP_TILT_COS;
+    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
+  }
+  const placed = layoutMapLabels(labels, blockers, vw, vh);
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  for (const label of placed) {
+    const distance = wrappedDistance(
+      ship.x,
+      ship.y,
+      label.port.x,
+      label.port.y,
+    );
+    const dim = z >= 1.08 && distance > 200 && label.priority < 20;
+    c.globalAlpha = dim ? 0.62 : label.priority >= 10 ? 0.96 : 0.78;
+    c.fillStyle = "rgba(239,220,175,.94)";
+    c.strokeStyle = "rgba(88,61,34,.75)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.roundRect(label.x, label.y, label.width, label.height, 5);
+    c.fill();
+    c.stroke();
+    c.fillStyle = "#302318";
+    c.fillText(
+      label.id,
+      label.x + label.width / 2,
+      label.y + label.height / 2 + 1,
+    );
   }
   c.restore();
 }
@@ -4167,6 +4305,7 @@ function render() {
   const stern = {
     x: ship.x - Math.cos(ship.angle) * 24,
     y: ship.y - Math.sin(ship.angle) * 24,
+    strength: Math.min(1, ship.speed / ship.maxSpeed),
     time,
   };
   if (
@@ -4207,6 +4346,7 @@ function render() {
     roughness: weather.roughness,
     windAngle: game.windAngle,
     reducedMotion: reducedMotion.matches,
+    lighting,
   });
   drawAnimatedRoughSeas(ctx, visualTime, z);
   drawNavigationalHazards(ctx, z);
@@ -4341,6 +4481,8 @@ function render() {
     ctx.stroke();
   }
   ctx.restore();
+
+  drawPortLabels(ctx, z, shipScreen);
 
   // vignette
   ctx.fillStyle = vignetteGradient;

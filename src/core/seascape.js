@@ -64,11 +64,15 @@ export function buildWakeRibbon(trail, time, worldWidth) {
     if (age < 0 || age >= 5) continue;
     const x = nearestWrapped(point.x, previousX, worldWidth);
     previousX = x;
+    const strength = Number.isFinite(point.strength)
+      ? clamp(point.strength, 0, 1)
+      : 1;
     sections.push({
       x,
       y: point.y,
-      width: 2 + age * 5.5,
-      alpha: (1 - age / 5) ** 2 * 0.48,
+      seed: point.time * 0.001,
+      width: (2 + age * 5.5) * (0.45 + strength * 0.55),
+      alpha: (1 - age / 5) ** 2 * 0.48 * strength,
     });
   }
   return sections;

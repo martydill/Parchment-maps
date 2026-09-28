@@ -492,6 +492,83 @@ function drawHullDetails(c, profile, heading, z, motion, lighting) {
   }
 }
 
+function drawHullWater(c, profile, motion, heading, z) {
+  const strength = motion.wake;
+  if (strength < 0.02) return;
+  const beam = profile.beam;
+  const length = profile.length;
+  c.save();
+  c.rotate(heading);
+  c.lineCap = "round";
+
+  // The bow pushes a shallow, dark wedge outward before foam gathers on its lip.
+  for (const side of [-1, 1]) {
+    c.fillStyle = `rgba(35,88,86,${strength * 0.16})`;
+    c.beginPath();
+    c.moveTo(side * beam * 0.3, -length * 0.5);
+    c.quadraticCurveTo(
+      side * (beam + 4 * strength),
+      -length * 0.46,
+      side * (beam + 8 * strength),
+      -length * 0.16,
+    );
+    c.quadraticCurveTo(
+      side * beam * 0.95,
+      -length * 0.28,
+      side * beam * 0.48,
+      -length * 0.43,
+    );
+    c.closePath();
+    c.fill();
+    for (let fleck = 0; fleck < 7; fleck++) {
+      const spread = (fleck + Math.sin(fleck * 2.4) * 0.25) / 7;
+      const x = side * (beam * (0.38 + spread * 0.62) + strength * spread * 4);
+      const y = -length * (0.49 - spread * 0.36);
+      c.fillStyle = `rgba(255,247,213,${strength * (0.12 + (1 - spread) * 0.12)})`;
+      c.beginPath();
+      c.ellipse(
+        x,
+        y,
+        0.5 + spread * 0.4,
+        0.35 + spread * 0.2,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+    }
+  }
+
+  // Uneven foam flecks mark the disturbed water behind the stern.
+  for (let fleck = 0; fleck < 11; fleck++) {
+    const distance = (fleck + Math.sin(fleck * 3.9) * 0.3) / 11;
+    const cross = Math.sin(fleck * 9.13) * beam * (0.38 + distance * 0.48);
+    const x = cross + motion.flutter * 0.25;
+    const y = length * (0.48 + distance * 0.65);
+    c.fillStyle = `rgba(255,248,213,${strength * (0.18 + (1 - distance) * 0.22)})`;
+    c.beginPath();
+    c.ellipse(
+      x,
+      y,
+      0.65 + (fleck % 3) * 0.38,
+      0.4 + (fleck % 4) * 0.2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
+    if (fleck % 4 === 0) {
+      c.strokeStyle = `rgba(255,249,218,${strength * (0.2 - distance * 0.08)})`;
+      c.lineWidth = 0.9 / z;
+      c.beginPath();
+      c.moveTo(x - 2.2, y + 0.8);
+      c.quadraticCurveTo(x, y - 2.3, x + 2.9, y + 0.7);
+      c.stroke();
+    }
+  }
+  c.restore();
+}
+
 function drawShipModel(
   c,
   vesselClass,
@@ -509,38 +586,7 @@ function drawShipModel(
   const profile = getShipModelProfile(vesselClass, seed);
   c.save();
   c.translate(x, y);
-  c.save();
-  c.rotate(heading);
-  c.lineCap = "round";
-  c.strokeStyle = `rgba(247,238,200,${0.12 + motion.wake * 0.4})`;
-  c.lineWidth = 1 / z;
-  c.beginPath();
-  c.ellipse(
-    0,
-    0,
-    profile.beam * 1.08,
-    profile.length * 0.51,
-    0,
-    Math.PI * 0.9,
-    Math.PI * 2.1,
-  );
-  c.stroke();
-  if (motion.wake > 0.02) {
-    for (const side of [-1, 1]) {
-      c.beginPath();
-      c.moveTo(0, -profile.length * 0.52);
-      c.bezierCurveTo(
-        side * profile.beam * 0.8,
-        -profile.length * 0.4,
-        side * profile.beam * 1.25,
-        profile.length * 0.15,
-        side * (profile.beam + 7 * motion.wake),
-        profile.length * 0.75,
-      );
-      c.stroke();
-    }
-  }
-  c.restore();
+  drawHullWater(c, profile, motion, heading, z);
   // Soft contact shadow stays on the water as the hull rises and falls.
   // The contact shadow falls southeast of the shared northwest light.
   for (const [spread, alpha] of [
@@ -599,6 +645,27 @@ function drawShipModel(
     .map((face, order) => worldFace(face, heading, order, motion, lighting))
     .filter(Boolean);
   paintFaces(c, faces, z);
+
+  // A narrow painted waterline carries each vessel's color across the hull.
+  // It also keeps smaller ships identifiable when their pennants are tiny.
+  {
+    const side = Math.sin(heading) >= 0 ? 1 : -1;
+    for (let index = 0; index < HULL_STATIONS.length - 1; index++) {
+      const [from] = HULL_STATIONS[index];
+      const [to] = HULL_STATIONS[index + 1];
+      drawLine3d(
+        c,
+        [side * hullWidth(profile, from) * 0.92, from * profile.length, 2.3],
+        [side * hullWidth(profile, to) * 0.92, to * profile.length, 2.3],
+        heading,
+        color,
+        1.25,
+        z,
+        motion,
+        0.85,
+      );
+    }
+  }
 
   // The raised stern works as a quarterdeck; a rail and cabin windows make
   // the larger merchant hulls read clearly even at chart scale.
@@ -688,6 +755,23 @@ function drawShipModel(
         motion,
         0.85,
       );
+      if (
+        profile.rig === "square" ||
+        (profile.rig === "barque" && mast !== profile.masts.at(-1))
+      ) {
+        const seamZ = mast.height * (0.67 - tier * 0.21);
+        drawLine3d(
+          c,
+          [-yard * 0.34 + windX * 0.4, mast.y + windY * 0.4, seamZ],
+          [yard * 0.34 + windX * 0.4, mast.y + windY * 0.4, seamZ],
+          heading,
+          color,
+          0.75,
+          z,
+          motion,
+          0.62,
+        );
+      }
     }
   }
   if (mastHeads.length > 1) {
