@@ -68,6 +68,90 @@ export function shoalAtPosition(position, shoals, worldWidth) {
   return nearest;
 }
 
+export function roughSeaAtPosition(position, seas, worldWidth) {
+  let nearest = null;
+  for (const [index, sea] of seas.entries()) {
+    const dx = wrappedDelta(sea.x, position.x, worldWidth);
+    const dy = sea.y - position.y;
+    const exposure = 1 - Math.hypot(dx / sea.rx, dy / sea.ry);
+    if (exposure > 0 && (!nearest || exposure > nearest.exposure))
+      nearest = {
+        index,
+        exposure: clamp(exposure, 0, 1),
+        strength: sea.strength || 1,
+      };
+  }
+  return nearest;
+}
+
+export function hazardAhead({
+  position,
+  heading,
+  distance,
+  shoals,
+  roughSeas,
+  worldWidth,
+}) {
+  for (let step = 0; step <= 8; step++) {
+    const ahead = (distance * step) / 8;
+    const point = {
+      x: position.x + Math.cos(heading) * ahead,
+      y: position.y + Math.sin(heading) * ahead,
+    };
+    const shoal = shoalAtPosition(point, shoals, worldWidth);
+    if (shoal && shoal.exposure >= 0.12)
+      return { type: "shoal", name: shoal.name, distance: ahead };
+    const storm = roughSeaAtPosition(point, roughSeas, worldWidth);
+    if (storm && storm.exposure >= 0.25)
+      return { type: "storm", name: "Squall waters", distance: ahead };
+  }
+  return null;
+}
+
+export function resolveUnderwayHazard({
+  type,
+  exposure,
+  speed,
+  seamanship = 0,
+  stormResistance = 1,
+}) {
+  if (type === "shoal") {
+    if (exposure < 0.4 || speed <= 45) return null;
+    const severity = clamp(
+      exposure * 0.7 + speed / 200 - seamanship * 0.08,
+      0,
+      1,
+    );
+    return {
+      outcome: "Grounded on a shoal",
+      componentDamage: {
+        hull: Math.max(1, Math.round(severity * 9)),
+        rudder: Math.max(1, Math.round(severity * 4)),
+      },
+      moraleChange: -3,
+      speedMultiplier: 0.2,
+      cargoLossRisk: severity * 0.22,
+    };
+  }
+  if (type !== "storm" || exposure < 0.55 || speed <= 95) return null;
+  const severity = clamp(
+    (exposure * speed) / (150 * Math.max(0.5, stormResistance)) -
+      seamanship * 0.06,
+    0,
+    1,
+  );
+  return {
+    outcome: "Squall struck the sails",
+    componentDamage: {
+      rigging: Math.max(1, Math.round(severity * 10)),
+      hull: Math.max(0, Math.round(severity * 3)),
+    },
+    moraleChange: -2,
+    speedMultiplier: 0.58,
+    cargoLossRisk: severity * 0.15,
+  };
+}
+
 export function stormCycle(day, voyageDistance, interval = 2200) {
   return Math.floor(((day - 1) * 620 + voyageDistance) / interval);
 }

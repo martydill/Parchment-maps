@@ -10,6 +10,7 @@ import { createSpecialistState } from "./specialists.js";
 import { createNavigationState } from "./navigation.js";
 import { createRivalState } from "./rivals.js";
 import { createMaritimeHazardState } from "./maritime-hazards.js";
+import { createSeaRaidState } from "./sea-raiders.js";
 import { createLegacyState } from "./legacies.js";
 
 export function createGameState() {
@@ -66,6 +67,7 @@ export function createGameState() {
     navigation: createNavigationState(),
     rivals: createRivalState(),
     maritimeHazards: createMaritimeHazardState(),
+    seaRaid: createSeaRaidState(),
     legacy: createLegacyState(),
     legacyProgress: { piratesRepelled: 0 },
   };

@@ -46,7 +46,7 @@ import {
   cargoCount as countCargo,
   changeStanding as adjustStanding,
   createGameState,
-} from "./core/state.js";
+} from "./core/state.js?v=2";
 import {
   createSaveData,
   parseSave,
@@ -133,7 +133,6 @@ import {
   processObligations,
   processWages,
   resolveCombatAction,
-  resolveHostileEncounter,
   resolveVoyageOperations,
   routePlanEffects,
   SHIP_COMPONENTS,
@@ -233,14 +232,22 @@ import {
 } from "./core/fleet.js";
 import {
   currentAtPosition,
+  hazardAhead,
   markHazardEncounter,
   normalizeMaritimeHazardState,
-  resolveShoalAction,
-  resolveStormAction,
+  resolveUnderwayHazard,
+  roughSeaAtPosition,
   shoalAtPosition,
   shouldTriggerStorm,
   stormCycle,
-} from "./core/maritime-hazards.js";
+} from "./core/maritime-hazards.js?v=2";
+import {
+  advanceRaider,
+  createSeaRaidState,
+  normalizeSeaRaidState,
+  raidChance,
+  spawnRaider,
+} from "./core/sea-raiders.js";
 import {
   directionalVisibilityRadius,
   localWeatherAtBearing,
@@ -437,7 +444,6 @@ let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
 let pendingCombat = null;
-let pendingMaritimeHazard = null;
 let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
@@ -497,19 +503,29 @@ function setWeatherForDay(_day) {
   game.weatherVisibilityKm = weather.visibilityKm;
   visibility.lastRadius = -1;
 }
+function weatherInSeaZone(baseWeather, position = ship) {
+  const sea = roughSeaAtPosition(position, roughSeas, WORLD.w);
+  if (!sea) return baseWeather;
+  return {
+    ...baseWeather,
+    name: sea.exposure > 0.4 ? "Squall waters" : baseWeather.name,
+    roughness: clamp(
+      baseWeather.roughness + sea.exposure * sea.strength * 0.55,
+      0,
+      1,
+    ),
+    visibilityKm: Math.max(
+      2,
+      baseWeather.visibilityKm * (1 - sea.exposure * 0.55),
+    ),
+  };
+}
 function currentVisibilityKm(angle = ship.angle) {
-  return localWeatherAtBearing({
-    baseWeather: getInterpolatedWeather(),
-    position: ship,
-    angle,
-    day: game.day,
-    voyageDistance: game.voyageDistance,
-    horizonKm: visibility.horizonKm,
-  }).visibilityKm;
+  return currentWeather(angle).visibilityKm;
 }
 function currentWeather(angle = ship.angle) {
   return localWeatherAtBearing({
-    baseWeather: getInterpolatedWeather(),
+    baseWeather: weatherInSeaZone(getInterpolatedWeather()),
     position: ship,
     angle,
     day: game.day,
@@ -2653,7 +2669,7 @@ function onLand(x, y) {
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
 function buildVisibilityPolygon(force = false) {
-  const baseWeather = getInterpolatedWeather();
+  const baseWeather = weatherInSeaZone(getInterpolatedWeather());
   const radius = currentVisibilityKm() * visibility.worldUnitsPerKm;
   const moved = Math.hypot(
     ship.x - visibility.lastX,
@@ -2870,6 +2886,7 @@ function loadGameState() {
   game.specialists = normalizeSpecialistState(game.specialists);
   game.rivals = normalizeRivalState(game.rivals);
   game.maritimeHazards = normalizeMaritimeHazardState(game.maritimeHazards);
+  game.seaRaid = normalizeSeaRaidState(game.seaRaid);
   game.legacy = normalizeLegacyState(game.legacy);
   game.legacyProgress ||= { piratesRepelled: 0 };
   game.legacyProgress.piratesRepelled = Math.max(
@@ -3901,6 +3918,37 @@ function drawDynamicTradeWorld(c, z, time) {
       c.fillText(merchant.name, x, merchant.y - 19 / z);
     }
   }
+  const raider = game.seaRaid.raider;
+  if (
+    raider &&
+    pointCurrentlyVisible(raider.x, raider.y) &&
+    isWorldCircleInViewport(raider.x, raider.y, 60, z)
+  ) {
+    const x = nearestWrappedX(raider.x, camera.x);
+    c.beginPath();
+    c.arc(x, raider.y, 19 / z, 0, Math.PI * 2);
+    c.fillStyle = "rgba(133, 39, 29, .24)";
+    c.fill();
+    c.strokeStyle = "rgba(166, 51, 34, .95)";
+    c.lineWidth = 2 / z;
+    c.stroke();
+    drawMerchantShip(
+      c,
+      { ...raider, vesselClass: raider.attackStrength > 1 ? "brig" : "cutter" },
+      z,
+      x,
+      {
+        time: reducedMotion.matches ? 0 : time / 1000,
+        roughness: currentWeather().roughness,
+        windAngle: game.windAngle,
+        windStrength: game.windStrength,
+        reducedMotion: reducedMotion.matches,
+      },
+    );
+    c.fillStyle = "#8c261b";
+    c.font = `bold ${12 / z}px Georgia`;
+    c.fillText("RAIDER", x, raider.y - 24 / z);
+  }
   // Player fleet: assigned trade routes, then the vessels sailing them.
   for (const ship of game.fleet?.ships || []) {
     if (ship.status === "laidUp" || !ship.route) continue;
@@ -3947,6 +3995,54 @@ function drawDynamicTradeWorld(c, z, time) {
   }
   c.restore();
 }
+function drawNavigationalHazards(c, z) {
+  c.save();
+  for (const sea of roughSeas) {
+    if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
+      continue;
+    const x = nearestWrappedX(sea.x, camera.x);
+    c.beginPath();
+    c.ellipse(x, sea.y, sea.rx, sea.ry, 0, 0, Math.PI * 2);
+    c.fillStyle = "rgba(40, 64, 70, .16)";
+    c.fill();
+    c.strokeStyle = "rgba(218, 233, 218, .6)";
+    c.lineWidth = 2 / z;
+    c.setLineDash([12 / z, 11 / z]);
+    c.stroke();
+  }
+  c.setLineDash([]);
+  for (const [sx, sy, rx, ry, name] of worldShoals) {
+    if (!isWorldCircleInViewport(sx, sy, rx, z)) continue;
+    const x = nearestWrappedX(sx, camera.x);
+    c.save();
+    c.beginPath();
+    c.ellipse(x, sy, rx, ry, 0, 0, Math.PI * 2);
+    c.fillStyle = "rgba(198, 167, 96, .36)";
+    c.fill();
+    c.clip();
+    c.strokeStyle = "rgba(255, 236, 185, .65)";
+    c.lineWidth = 2 / z;
+    for (let offset = -rx - ry; offset < rx + ry; offset += 17 / z) {
+      c.beginPath();
+      c.moveTo(x + offset - ry, sy - ry);
+      c.lineTo(x + offset + ry, sy + ry);
+      c.stroke();
+    }
+    c.restore();
+    c.beginPath();
+    c.ellipse(x, sy, rx, ry, 0, 0, Math.PI * 2);
+    c.strokeStyle = "rgba(102, 72, 36, .8)";
+    c.lineWidth = 2 / z;
+    c.stroke();
+    if (pointCurrentlyVisible(sx, sy)) {
+      c.fillStyle = "rgba(64, 39, 20, .9)";
+      c.font = `bold ${11 / z}px Georgia`;
+      c.textAlign = "center";
+      c.fillText(name || "Shallows", x, sy - ry - 8 / z);
+    }
+  }
+  c.restore();
+}
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, vw, vh);
@@ -3959,7 +4055,7 @@ function render() {
     !currentPort &&
     !selectedTown &&
     !selectedMerchant &&
-    !pendingMaritimeHazard;
+    !pendingCombat;
   const stern = {
     x: ship.x - Math.cos(ship.angle) * 24,
     y: ship.y - Math.sin(ship.angle) * 24,
@@ -4005,6 +4101,7 @@ function render() {
     reducedMotion: reducedMotion.matches,
   });
   drawAnimatedRoughSeas(ctx, visualTime, z);
+  drawNavigationalHazards(ctx, z);
   seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
   drawDynamicTradeWorld(ctx, z, time);
 
@@ -4101,6 +4198,159 @@ function readInput() {
 }
 const MAP_MARGIN = 58;
 const EDGE_RECOVERY_ZONE = 155;
+function raiderOpenWater(x, y) {
+  return y > MAP_MARGIN + 20 && y < WORLD.h - MAP_MARGIN - 20 && !onLand(x, y);
+}
+function updateSeaRaid(dt) {
+  if (
+    !game.seaRaid.checkedThisVoyage &&
+    game.departedFromPort &&
+    game.voyageDistance > 240
+  ) {
+    game.seaRaid.checkedThisVoyage = true;
+    const destination =
+      game.navigation.destination || game.activeContracts[0]?.destination;
+    const risk = destination
+      ? hostileRiskBetween(game.departedFromPort, destination)
+      : 0.2;
+    const seed =
+      game.day * 23 +
+      game.departedFromPort.length * 17 +
+      Math.round(ship.x / 200) * 7 +
+      Math.round(ship.y / 200);
+    const chance = raidChance({
+      risk,
+      cargoValue: combatCargoValue(),
+      deterrence: routePlanEffects(game.operations.routePlan)
+        .hostileRiskMultiplier,
+    });
+    if (encounterRollLike(seed) < chance) {
+      game.seaRaid.raider = spawnRaider({
+        player: ship,
+        worldWidth: WORLD.w,
+        isOpen: raiderOpenWater,
+        seed,
+        attackStrength: 1 + Math.floor(encounterRollLike(seed + 1) * 3),
+      });
+      if (game.seaRaid.raider)
+        showMessage(
+          "LOOKOUT · An unfamiliar sail lies ahead. Change course or prepare to run.",
+          5,
+        );
+    }
+  }
+  const raider = game.seaRaid.raider;
+  if (!raider) return;
+  const sightRange = Math.max(100, currentVisibilityKm() * 20);
+  const result = advanceRaider({
+    raider,
+    player: ship,
+    dt,
+    worldWidth: WORLD.w,
+    sightRange,
+    hasSight: segmentClear(seaField, raider.x, raider.y, ship.x, ship.y),
+    isOpen: raiderOpenWater,
+  });
+  game.seaRaid.raider = result.raider;
+  if (result.event === "spotted")
+    showMessage(
+      "RAIDER · Hostile sails turn toward you! Steer away to escape.",
+      4,
+    );
+  else if (result.event === "caught") {
+    const stats = operationalShipStats();
+    stats.defense += routePlanEffects(game.operations.routePlan).defenseBonus;
+    openCombatEncounter(
+      {
+        encountered: true,
+        attackStrength: raider.attackStrength,
+        seed: raider.seed,
+      },
+      stats,
+    );
+  } else if (result.event === "escaped") {
+    showMessage("RAIDER EVADED · The hostile ship falls behind.", 4);
+    addNews(
+      "Raider evaded",
+      "Your course and seamanship shook a hostile ship at sea.",
+    );
+  }
+}
+
+function resolveUnderwayDanger(type, exposure, speed, label) {
+  const result = resolveUnderwayHazard({
+    type,
+    exposure,
+    speed,
+    seamanship: seamanshipBonus(),
+    stormResistance: operationalShipStats().stormResistance,
+  });
+  if (!result) return false;
+  game.operations = applyComponentDamage(
+    game.operations,
+    result.componentDamage,
+  ).operations;
+  game.operations.morale = clampNumber(
+    game.operations.morale + result.moraleChange,
+    0,
+    100,
+  );
+  ship.speed *= result.speedMultiplier;
+  let cargoText = "";
+  if (
+    game.cargoLots.length &&
+    encounterRollLike(game.day + game.voyageDistance + exposure * 100) <
+      result.cargoLossRisk
+  ) {
+    const lost = game.cargoLots.shift();
+    syncCargoCounts(game, goods);
+    cargoText = ` A ${goods[lost.key].name} lot was lost.`;
+  }
+  const damage = Object.entries(result.componentDamage)
+    .filter(([, amount]) => amount > 0)
+    .map(([key, amount]) => `${SHIP_COMPONENTS[key].label} -${amount}`)
+    .join(", ");
+  addNews(result.outcome, `${label}: ${damage}.${cargoText}`);
+  showMessage(`${result.outcome.toUpperCase()} · ${damage}`, 4);
+  return true;
+}
+
+function updateSeaWarning() {
+  const warning = document.getElementById("seaWarning");
+  const lines = [];
+  const waterline = operationalShipStats().waterlineLengthFt;
+  const ahead = hazardAhead({
+    position: ship,
+    heading: ship.angle,
+    distance: Math.max(230, ship.speed * 2),
+    shoals: worldShoals,
+    roughSeas,
+    worldWidth: WORLD.w,
+  });
+  if (ahead?.type === "shoal")
+    lines.push(
+      `${ahead.name.toUpperCase()} ${ahead.distance < 60 ? "UNDER KEEL" : "AHEAD"} · slow below ${shipSpeedKnots(45, waterline).toFixed(1)} knots or steer clear`,
+    );
+  else if (ahead?.type === "storm")
+    lines.push(
+      `SQUALL ${ahead.distance < 60 ? "AROUND YOU" : "AHEAD"} · slow below ${shipSpeedKnots(95, waterline).toFixed(1)} knots or steer clear`,
+    );
+  const raider = game.seaRaid.raider;
+  if (raider) {
+    const distance = Math.round(
+      wrappedDistance(ship.x, ship.y, raider.x, raider.y),
+    );
+    if (distance < 850)
+      lines.push(
+        raider.mode === "chase"
+          ? "RAIDER PURSUING · turn or outrun them"
+          : "UNKNOWN SAIL AHEAD · alter course to avoid",
+      );
+  }
+  warning.hidden = lines.length === 0 || ship.anchored;
+  const text = lines.join("  ·  ");
+  if (warning.textContent !== text) warning.textContent = text;
+}
 function update(dt) {
   // Fleet vessels trade autonomously in real time and keep sailing even while
   // the player is docked or has a town dossier open — otherwise commissioning a
@@ -4113,7 +4363,7 @@ function update(dt) {
     currentPort ||
     selectedTown ||
     selectedMerchant ||
-    pendingMaritimeHazard
+    pendingCombat
   )
     return;
   updateMerchantShips(dt);
@@ -4259,44 +4509,46 @@ function update(dt) {
       (game.day * 620 + game.voyageDistance) / 250 + performance.now() / 15000;
     game.windStrength = 0.08 + (Math.sin(windPhase) + 1) * 0.07;
 
-    const weather = getInterpolatedWeather();
+    const weather = currentWeather();
     game.weatherName = weather.name;
     game.weatherVisibilityKm = weather.visibilityKm;
 
     const shoal = shoalAtPosition(ship, worldShoals, WORLD.w);
     if (
       shoal &&
-      ship.speed > 24 &&
-      game.voyageDistance - game.maritimeHazards.lastShoalDistance > 180
+      game.voyageDistance - game.maritimeHazards.lastShoalDistance > 180 &&
+      resolveUnderwayDanger("shoal", shoal.exposure, ship.speed, shoal.name)
     ) {
       game.maritimeHazards = markHazardEncounter(game.maritimeHazards, {
         type: "shoal",
-        cycle: stormCycle(game.day, game.voyageDistance),
         voyageDistance: game.voyageDistance,
       });
-      openMaritimeHazard("shoal", {
-        name: shoal.name,
-        exposure: shoal.exposure,
-        speed: ship.speed,
-      });
-    } else if (
-      shouldTriggerStorm(game.maritimeHazards, {
-        day: game.day,
-        voyageDistance: game.voyageDistance,
-        roughness: weather.roughness,
-      })
-    ) {
-      const cycle = stormCycle(game.day, game.voyageDistance);
-      game.maritimeHazards = markHazardEncounter(game.maritimeHazards, {
-        type: "storm",
-        cycle,
-        voyageDistance: game.voyageDistance,
-        day: game.day,
-      });
-      openMaritimeHazard("storm", {
-        name: weather.name,
-        roughness: weather.roughness,
-      });
+      saveGameState();
+    } else {
+      const squall = roughSeaAtPosition(ship, roughSeas, WORLD.w);
+      if (
+        squall &&
+        shouldTriggerStorm(game.maritimeHazards, {
+          day: game.day,
+          voyageDistance: game.voyageDistance,
+          roughness: squall.exposure,
+          minRoughness: 0.55,
+        }) &&
+        resolveUnderwayDanger(
+          "storm",
+          squall.exposure,
+          ship.speed,
+          "Squall waters",
+        )
+      ) {
+        game.maritimeHazards = markHazardEncounter(game.maritimeHazards, {
+          type: "storm",
+          cycle: stormCycle(game.day, game.voyageDistance),
+          voyageDistance: game.voyageDistance,
+          day: game.day,
+        });
+        saveGameState();
+      }
     }
 
     if (oldCycle !== newCycle && !game.firstMeridianCrossed) {
@@ -4319,6 +4571,7 @@ function update(dt) {
     y: ship.y - Math.sin(ship.angle) * 20,
   });
   if (ship.trail.length > 28) ship.trail.pop();
+  if (!ship.anchored) updateSeaRaid(dt);
   checkRumorLeads();
   nearPort = null;
   let best = 78;
@@ -4369,6 +4622,7 @@ function update(dt) {
     messageTimer -= dt;
     if (messageTimer <= 0) ui.message.classList.remove("show");
   }
+  updateSeaWarning();
   updateHud();
 }
 function loop(now) {
@@ -4636,6 +4890,8 @@ function applyCrewVoyageEvent(event) {
 function openPort() {
   if (!nearPort) return;
   currentPort = nearPort;
+  game.seaRaid.raider = null;
+  document.getElementById("seaWarning").hidden = true;
   ship.speed = 0;
   ship.anchored = true;
   if (game.departedFromPort !== null && game.voyageDistance > 35) {
@@ -4677,17 +4933,6 @@ function openPort() {
       },
     });
     game.operations = operations.operations;
-    const encounter = resolveHostileEncounter({
-      distance,
-      risk:
-        hostileRiskBetween(game.departedFromPort, currentPort.name) *
-        routePlan.hostileRiskMultiplier,
-      defense: stats.defense + routePlan.defenseBonus,
-      seed: game.day + currentPort.name.length + game.departedFromPort.length,
-    });
-    if (encounter.encountered) {
-      openCombatEncounter(encounter, stats);
-    }
     const outcome = resolveVoyageCargo(game.cargoLots, {
       distance,
       roughness:
@@ -4812,7 +5057,7 @@ function combatLocationAdvantage() {
   let advantage = 0;
   if (weather.visibilityKm < 8) advantage += 0.04;
   if ((weather.roughness || 0) > 0.35) advantage += 0.03;
-  if (nearPort === currentPort) advantage += 0.03;
+  if (nearPort && nearPort === currentPort) advantage += 0.03;
   return advantage;
 }
 
@@ -4981,6 +5226,130 @@ function drawCombatCoastline(c, width, height, climate, seed) {
   }
 }
 
+function drawCombatShip(c, x, waterline, size, facing, raider, vesselClass) {
+  c.save();
+  c.translate(x, waterline);
+  c.scale(size * facing, size);
+
+  // A narrow wake and reflected hull tie the side-view ship to the sea.
+  c.fillStyle = "rgba(14, 42, 48, .32)";
+  c.beginPath();
+  c.ellipse(0, 4, 53, 5, 0, 0, Math.PI * 2);
+  c.fill();
+  c.strokeStyle = "rgba(230, 223, 188, .5)";
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.moveTo(-49, 3);
+  c.quadraticCurveTo(-66, 1, -77, 5);
+  c.moveTo(-43, 7);
+  c.quadraticCurveTo(-59, 10, -69, 8);
+  c.stroke();
+
+  const mast = raider ? "#42352c" : "#60452e";
+  const sail = raider ? "#b9ad92" : "#e4d7ad";
+  const sailShade = raider ? "#8f8673" : "#b7a67f";
+  const hull = raider ? "#50352e" : "#815038";
+  const hullShade = raider ? "#2f2826" : "#51372b";
+  const largeShip = vesselClass === "carrack" || vesselClass === "galleon";
+
+  // Rigging and sails share the same horizon-level, side-on perspective.
+  c.strokeStyle = "rgba(47, 42, 35, .72)";
+  c.lineWidth = 0.8;
+  c.beginPath();
+  c.moveTo(-45, -8);
+  c.lineTo(-14, -66);
+  c.lineTo(45, -8);
+  c.moveTo(-41, -8);
+  c.lineTo(17, -53);
+  c.lineTo(43, -8);
+  c.stroke();
+
+  c.fillStyle = sailShade;
+  c.beginPath();
+  c.moveTo(18, -49);
+  c.lineTo(36, -16);
+  c.lineTo(19, -18);
+  c.closePath();
+  c.fill();
+  c.fillStyle = sail;
+  c.beginPath();
+  c.moveTo(-13, -59);
+  c.quadraticCurveTo(3, -54, 9, -51);
+  c.lineTo(7, -20);
+  c.quadraticCurveTo(-1, -23, -15, -22);
+  c.closePath();
+  c.fill();
+  c.fillStyle = sailShade;
+  c.beginPath();
+  c.moveTo(-32, -42);
+  c.quadraticCurveTo(-24, -40, -20, -37);
+  c.lineTo(-21, -19);
+  c.lineTo(-34, -18);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = "rgba(73, 61, 45, .7)";
+  c.lineWidth = 0.75;
+  c.beginPath();
+  c.moveTo(-15, -22);
+  c.lineTo(7, -20);
+  c.moveTo(-34, -18);
+  c.lineTo(-21, -19);
+  c.stroke();
+
+  c.strokeStyle = mast;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(-14, -5);
+  c.lineTo(-14, -66);
+  c.moveTo(18, -5);
+  c.lineTo(18, -53);
+  c.moveTo(-33, -5);
+  c.lineTo(-33, -45);
+  c.stroke();
+  c.fillStyle = raider ? "#8b392e" : "#a45434";
+  c.beginPath();
+  c.moveTo(-14, -65);
+  c.lineTo(-1, -62);
+  c.lineTo(-14, -59);
+  c.closePath();
+  c.fill();
+
+  c.fillStyle = hullShade;
+  c.beginPath();
+  c.moveTo(-52, -10);
+  c.quadraticCurveTo(-41, -7, 39, -9);
+  c.lineTo(49, -14);
+  c.quadraticCurveTo(49, -2, 32, 7);
+  c.quadraticCurveTo(-4, 11, -38, 5);
+  c.quadraticCurveTo(-49, 1, -52, -10);
+  c.fill();
+  c.fillStyle = hull;
+  c.beginPath();
+  c.moveTo(-48, -11);
+  c.quadraticCurveTo(-10, -9, 38, -11);
+  c.lineTo(47, -15);
+  c.quadraticCurveTo(42, -2, 30, 2);
+  c.quadraticCurveTo(-6, 5, -38, 1);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = "#302922";
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.moveTo(-51, -11);
+  c.quadraticCurveTo(-1, -8, 38, -11);
+  c.lineTo(50, -17);
+  c.stroke();
+  c.fillStyle = hullShade;
+  c.fillRect(-43, -17, largeShip ? 19 : 15, 6);
+  c.strokeStyle = "rgba(232, 199, 141, .48)";
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(-39, -4);
+  c.quadraticCurveTo(0, 0, 34, -4);
+  c.stroke();
+  c.restore();
+}
+
 function renderCombatScene(canvas, climate, enemyClass, seed, weatherName) {
   const bounds = canvas.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
@@ -5065,42 +5434,25 @@ function renderCombatScene(canvas, climate, enemyClass, seed, weatherName) {
   c.stroke();
   c.shadowBlur = 0;
 
-  // Reuse the same faceted, projected ship meshes used on the main chart.
-  const playerScale = 3.55;
-  c.save();
-  c.translate(width * 0.32, height * 0.69);
-  c.scale(playerScale, playerScale);
-  drawMerchantShip(
+  const sceneScale = Math.min(width / 596, height / 290);
+  drawCombatShip(
     c,
-    {
-      x: 0,
-      y: 0,
-      angle: 0.03,
-      vesselClass: game.shipUpgrades.activeClass,
-      idNum: seed,
-      color: "#9c3d2c",
-    },
-    playerScale,
+    width * 0.32,
+    height * 0.76,
+    sceneScale * 0.84,
+    1,
+    false,
+    game.shipUpgrades.activeClass,
   );
-  c.restore();
-
-  const enemyScale = enemyClass === "carrack" ? 2.7 : 3.05;
-  c.save();
-  c.translate(width * 0.65, height * 0.59);
-  c.scale(enemyScale, enemyScale);
-  drawMerchantShip(
+  drawCombatShip(
     c,
-    {
-      x: 0,
-      y: 0,
-      angle: Math.PI - 0.04,
-      vesselClass: enemyClass,
-      idNum: seed + 53,
-      color: "#71352a",
-    },
-    enemyScale,
+    width * 0.61,
+    height * 0.62,
+    sceneScale * (enemyClass === "carrack" ? 0.68 : 0.62),
+    -1,
+    true,
+    enemyClass,
   );
-  c.restore();
 }
 
 function combatBackdropClass() {
@@ -5120,7 +5472,8 @@ function combatBackdropClass() {
 }
 
 function openCombatEncounter(encounter, stats) {
-  const seed = game.day + currentPort.name.length + 31;
+  const seed =
+    encounter.seed ?? game.day + (game.departedFromPort?.length || 0) + 31;
   const profile = combatEnemyProfile(seed, encounter.attackStrength);
   pendingCombat = {
     encounter,
@@ -5135,7 +5488,7 @@ function openCombatEncounter(encounter, stats) {
     "Heavy boarding ship",
   ];
   document.getElementById("combatDescription").textContent =
-    `${profile.label}: ${profile.description} ${strengthLabels[encounter.attackStrength]} shadows your wake outside ${currentPort.name}. The harbor is close, but not close enough for its guns to protect you.`;
+    `${profile.label}: ${profile.description} ${strengthLabels[encounter.attackStrength]} has caught your ship at sea. Your earlier course brought it within boarding range.`;
   document.getElementById("combatPlayer").textContent =
     `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
   document.getElementById("combatEnemy").textContent =
@@ -5149,8 +5502,9 @@ function renderCombatVisual(enemyLabel, profile) {
   const visual = document.getElementById("combatVisual");
   const backdrop = combatBackdropClass();
   visual.className = backdrop;
-  document.getElementById("combatLocation").textContent =
-    `${currentPort.land} waters`;
+  document.getElementById("combatLocation").textContent = currentPort
+    ? `${currentPort.land} waters`
+    : "Open sea";
   const weatherName = currentWeather(ship.angle).name;
   document.getElementById("combatWaters").textContent = weatherName;
   document.getElementById("combatEnemyVisualLabel").textContent = enemyLabel;
@@ -5245,135 +5599,6 @@ function renderCombatActions() {
   });
 }
 
-function resolvePendingHazard(pending, action, stats) {
-  if (pending.type === "shoal") {
-    return resolveShoalAction({
-      action,
-      exposure: pending.details.exposure,
-      speed: pending.details.speed,
-      seamanship: seamanshipBonus(),
-    });
-  }
-  return resolveStormAction({
-    action,
-    roughness: pending.details.roughness,
-    stormResistance: stats.stormResistance,
-    seamanship: seamanshipBonus(),
-  });
-}
-
-// Hazards resolve deterministically from values known when the modal opens, so
-// we can preview each option's exact outcome. This mirrors what
-// chooseMaritimeHazardAction applies so the caption never misleads.
-function describeHazardConsequence(result, hasCargo) {
-  const parts = [];
-  const damage = Object.entries(result.componentDamage || {})
-    .filter(([, amount]) => amount > 0)
-    .map(([key, amount]) => `${SHIP_COMPONENTS[key]?.label ?? key} -${amount}`);
-  if (damage.length) parts.push(damage.join(", "));
-  if (result.moraleChange)
-    parts.push(
-      `${result.moraleChange > 0 ? "+" : ""}${result.moraleChange} morale`,
-    );
-  if (result.provisionsUsed) parts.push(`-${result.provisionsUsed} provisions`);
-  if (result.daysLost)
-    parts.push(
-      `${result.daysLost} day${result.daysLost === 1 ? "" : "s"} lost`,
-    );
-  if (result.speedMultiplier < 1) {
-    const lost = Math.round((1 - result.speedMultiplier) * 100);
-    parts.push(lost >= 100 ? "ship stalled" : `-${lost}% speed`);
-  }
-  if (hasCargo && result.cargoLossRisk > 0.2) parts.push("loses 1 cargo lot");
-  return parts.length ? parts.join("  ·  ") : "no lasting harm";
-}
-
-function openMaritimeHazard(type, details) {
-  pendingMaritimeHazard = { type, details };
-  const stats = operationalShipStats();
-  const actions = document.getElementById("hazardActions");
-  actions.innerHTML = "";
-  const options =
-    type === "shoal"
-      ? [
-          ["soundings", "Take soundings and creep through"],
-          ["back-sails", "Back sails and warp into deep water"],
-          ["force", "Keep way on and force the passage"],
-        ]
-      : [
-          ["heave-to", "Heave to"],
-          ["seek-lee", "Seek lee"],
-          ["run", "Run before it"],
-        ];
-  document.getElementById("hazardKicker").textContent =
-    type === "shoal" ? "Breakers under the bow" : "Heavy weather closes in";
-  document.getElementById("hazardTitle").textContent =
-    type === "shoal" ? details.name : `${details.name} squall`;
-  document.getElementById("hazardDescription").textContent =
-    type === "shoal"
-      ? "The water pales around the keel and leadsmen call rapidly decreasing depth."
-      : "The wind hardens, visibility closes, and steep seas begin breaking over the weather rail.";
-  document.getElementById("hazardAssessment").textContent =
-    type === "shoal"
-      ? `${Math.round(details.exposure * 100)}% bank exposure · ${shipSpeedKnots(details.speed, stats.waterlineLengthFt).toFixed(1)} knots. Slowing down favors careful soundings; forcing the bank risks hull, rudder, and cargo fittings.`
-      : `${Math.round(details.roughness * 100)}% sea severity · storm resistance ${stats.stormResistance.toFixed(2)}. Heaving to is safest, shelter costs time and provisions, and running preserves way at greater rigging risk.`;
-  const hasCargo = game.cargoLots.length > 0;
-  for (const [action, label] of options) {
-    const result = resolvePendingHazard(pendingMaritimeHazard, action, stats);
-    const wrap = document.createElement("div");
-    wrap.className = "hazard-action";
-    const button = document.createElement("button");
-    button.className =
-      "parchment" + (action === "force" || action === "run" ? " danger" : "");
-    const labelText = document.createElement("span");
-    labelText.className = "hazard-action-label";
-    labelText.textContent = label;
-    const consequence = document.createElement("span");
-    consequence.className = "hazard-consequence";
-    consequence.textContent = describeHazardConsequence(result, hasCargo);
-    button.append(labelText, consequence);
-    button.onclick = () => chooseMaritimeHazardAction(action);
-    wrap.append(button);
-    actions.append(wrap);
-  }
-  document.getElementById("hazardPanel").style.display = "grid";
-}
-
-function chooseMaritimeHazardAction(action) {
-  if (!pendingMaritimeHazard) return;
-  const stats = operationalShipStats();
-  const result = resolvePendingHazard(pendingMaritimeHazard, action, stats);
-  game.operations = applyComponentDamage(
-    game.operations,
-    result.componentDamage,
-  ).operations;
-  game.operations.morale = clampNumber(
-    game.operations.morale + result.moraleChange,
-    0,
-    100,
-  );
-  game.operations.provisions = Math.max(
-    0,
-    game.operations.provisions - (result.provisionsUsed || 0),
-  );
-  if (result.daysLost) {
-    advanceDays(result.daysLost);
-    result.description += ` The maneuver cost ${result.daysLost} day${result.daysLost === 1 ? "" : "s"}.`;
-  }
-  ship.speed *= result.speedMultiplier;
-  if (result.cargoLossRisk > 0.2 && game.cargoLots.length) {
-    const lost = game.cargoLots.shift();
-    syncCargoCounts(game, goods);
-    result.description += ` A ${goods[lost.key].name} cargo lot was lost overboard.`;
-  }
-  addNews(`Seamanship: ${result.outcome}`, result.description);
-  showMessage(`MARITIME HAZARD · ${result.outcome}`, 4.5);
-  pendingMaritimeHazard = null;
-  document.getElementById("hazardPanel").style.display = "none";
-  updateHud();
-  saveGameState();
-}
-
 function chooseCombatAction(action) {
   if (!pendingCombat) return;
   const result = resolveCombatAction({
@@ -5421,6 +5646,7 @@ function chooseCombatAction(action) {
   );
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
   pendingCombat = null;
+  game.seaRaid.raider = null;
   document.getElementById("combatPanel").style.display = "none";
   renderPortSystems();
   updateHud();
@@ -5846,6 +6072,7 @@ document.getElementById("closePort").addEventListener("click", () => {
   currentPort = null;
   ship.anchored = true;
   game.departedFromPort = leaving ? leaving.name : null;
+  game.seaRaid = createSeaRaidState();
   game.voyageDistance = 0;
   resetVoyageTimeState();
   revealCurrentView(true);

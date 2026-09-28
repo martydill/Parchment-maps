@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=11" />
+    <link rel="stylesheet" href="./styles.css?v=13" />
   </head>
   <body>
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -133,6 +133,7 @@
         </div>
       </div>
       <div id="message"></div>
+      <div id="seaWarning" role="status" aria-live="polite" hidden></div>
       <button id="courseCard" type="button">
         <span class="course-kicker">Captain’s course</span>
         <b id="courseTitle">Dock at home port</b>
@@ -234,6 +235,12 @@
           the view beyond their shores. Slow near star-marked shore surveys and
           press <b>EXPLORE</b> to send an expedition; successful surveys ink the
           whole landmass onto your chart.
+        </p>
+        <p>
+          Pale hatched water marks shoals and dark outlined water marks squalls.
+          Slow down or steer around them before the ship reaches the dangerous
+          center. A hostile sail can appear ahead during a voyage; change course
+          to evade it before it closes for boarding.
         </p>
         <p>
           Tap any charted town marker on the sea map or world chart to inspect
@@ -829,24 +836,6 @@
       </div>
     </div>
 
-    <div
-      id="hazardPanel"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="hazardTitle"
-    >
-      <div class="scroll hazard-scroll">
-        <div class="town-kicker" id="hazardKicker">Dangerous waters</div>
-        <h2 id="hazardTitle">Maritime hazard</h2>
-        <p id="hazardDescription"></p>
-        <div class="detail-card">
-          <h3>Captain’s assessment</h3>
-          <p id="hazardAssessment"></p>
-        </div>
-        <div class="hazard-actions" id="hazardActions"></div>
-      </div>
-    </div>
-
     <div id="discoveryPanel">
       <div class="scroll discovery-scroll">
         <div class="town-kicker" id="discoveryType">Discovery</div>
@@ -877,6 +866,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=32"></script>
+    <script type="module" src="./src/app.js?v=35"></script>
   </body>
 </html>
