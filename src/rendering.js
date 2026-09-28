@@ -8,6 +8,7 @@ import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { LIGHT_DIRECTION } from "./core/lighting.js";
+import { drawPortMiniature } from "./port-miniatures.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
@@ -527,7 +528,12 @@ export function drawSceneLightWash(c, lighting, width, height) {
   c.restore();
 }
 
-export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
+export function createMapRendering({
+  WORLD,
+  game,
+  merchantRoutePaths,
+  portMiniaturePlacements = new Map(),
+}) {
   const onLand = (x, y) => isLandPoint(x, y, WORLD.w);
   const wrappedDistance = (x1, y1, x2, y2) => {
     const directX = Math.abs(x1 - x2);
@@ -570,14 +576,36 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       Math.PI * 2,
     );
     c.fill();
+    const placement = portMiniaturePlacements.get(p.name);
+    const illustrated = Boolean(placement);
+    if (placement) {
+      c.save();
+      c.setLineDash([3, 4]);
+      c.strokeStyle = "rgba(75,56,38,.48)";
+      c.lineWidth = 1.2;
+      for (const offset of [-WORLD.w, 0, WORLD.w]) {
+        c.beginPath();
+        c.moveTo(offset, 0);
+        c.lineTo(placement.x - p.x + offset, placement.y - p.y);
+        c.stroke();
+      }
+      c.restore();
+      for (const offset of [-WORLD.w, 0, WORLD.w]) {
+        c.save();
+        c.translate(placement.x - p.x + offset, placement.y - p.y);
+        c.scale(placement.scale, placement.scale);
+        drawPortMiniature(c, p.name, evolution, placement.heading);
+        c.restore();
+      }
+    }
     c.strokeStyle = "#291b10";
     c.fillStyle = "#a83f2f";
     c.lineWidth = 3;
     c.beginPath();
-    c.arc(0, 0, 8, 0, Math.PI * 2);
+    c.arc(0, 0, illustrated ? 5 : 8, 0, Math.PI * 2);
     c.fill();
     c.stroke();
-    if (evolution.warehouses) {
+    if (!illustrated && evolution.warehouses) {
       c.fillStyle = "rgba(111,66,31,.78)";
       c.fillRect(7, -21, 20, 14);
       c.strokeRect(7, -21, 20, 14);
@@ -589,7 +617,7 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       c.lineTo(29, -21);
       c.stroke();
     }
-    if (evolution.cranes) {
+    if (!illustrated && evolution.cranes) {
       c.beginPath();
       c.moveTo(31, -6);
       c.lineTo(31, -39);
@@ -599,7 +627,7 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       c.lineTo(47, -21);
       c.stroke();
     }
-    if (evolution.foundries) {
+    if (!illustrated && evolution.foundries) {
       c.fillStyle = "rgba(67,51,38,.82)";
       c.fillRect(-39, -29, 9, 23);
       c.strokeRect(-39, -29, 9, 23);
@@ -608,7 +636,7 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       c.arc(-34, -37, 7, 0, Math.PI * 2);
       c.fill();
     }
-    if (evolution.fortifications) {
+    if (!illustrated && evolution.fortifications) {
       c.beginPath();
       c.moveTo(-45, -4);
       c.lineTo(-45, -18);
@@ -623,40 +651,42 @@ export function createMapRendering({ WORLD, game, merchantRoutePaths }) {
       c.font = "700 18px Georgia";
       c.fillText("!", -52, -24);
     }
-    c.beginPath();
-    c.moveTo(0, -10);
-    c.lineTo(0, -34);
-    c.lineTo(20, -25);
-    c.lineTo(0, -18);
-    c.stroke();
-    c.lineWidth = 1.6;
-    c.fillStyle = "rgba(85,55,28,.72)";
-    c.fillRect(-25, -18, 8, 12);
-    c.strokeRect(-25, -18, 8, 12);
-    c.fillRect(-15, -25, 10, 19);
-    c.strokeRect(-15, -25, 10, 19);
-    c.fillStyle = "rgba(36,29,22,.26)";
-    c.fillRect(-8, -24, 3, 18);
-    c.beginPath();
-    c.moveTo(-28, -18);
-    c.lineTo(-21, -27);
-    c.lineTo(-14, -18);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(-17, -25);
-    c.lineTo(-10, -35);
-    c.lineTo(-3, -25);
-    c.stroke();
-    c.strokeStyle = "rgba(244,211,148,.74)";
-    c.lineWidth = 1.3;
-    c.beginPath();
-    c.moveTo(-28, -18);
-    c.lineTo(-21, -27);
-    c.lineTo(-17, -22);
-    c.moveTo(-17, -25);
-    c.lineTo(-10, -35);
-    c.lineTo(-6, -29);
-    c.stroke();
+    if (!illustrated) {
+      c.beginPath();
+      c.moveTo(0, -10);
+      c.lineTo(0, -34);
+      c.lineTo(20, -25);
+      c.lineTo(0, -18);
+      c.stroke();
+      c.lineWidth = 1.6;
+      c.fillStyle = "rgba(85,55,28,.72)";
+      c.fillRect(-25, -18, 8, 12);
+      c.strokeRect(-25, -18, 8, 12);
+      c.fillRect(-15, -25, 10, 19);
+      c.strokeRect(-15, -25, 10, 19);
+      c.fillStyle = "rgba(36,29,22,.26)";
+      c.fillRect(-8, -24, 3, 18);
+      c.beginPath();
+      c.moveTo(-28, -18);
+      c.lineTo(-21, -27);
+      c.lineTo(-14, -18);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(-17, -25);
+      c.lineTo(-10, -35);
+      c.lineTo(-3, -25);
+      c.stroke();
+      c.strokeStyle = "rgba(244,211,148,.74)";
+      c.lineWidth = 1.3;
+      c.beginPath();
+      c.moveTo(-28, -18);
+      c.lineTo(-21, -27);
+      c.lineTo(-17, -22);
+      c.moveTo(-17, -25);
+      c.lineTo(-10, -35);
+      c.lineTo(-6, -29);
+      c.stroke();
+    }
     c.fillStyle = "#2a1b10";
     c.font = "700 20px Georgia";
     c.textAlign = "center";
