@@ -43,7 +43,11 @@ export function renderChartPanel({
   c.drawImage(mapLayer, 0, 0, w, h);
   const f = minimapFogCtx;
   f.clearRect(0, 0, w, h);
-  f.fillStyle = "rgba(77,94,86,.96)";
+  const unchartedPaper = f.createLinearGradient(0, 0, 0, h);
+  unchartedPaper.addColorStop(0, "rgba(166,161,125,.95)");
+  unchartedPaper.addColorStop(0.55, "rgba(148,153,123,.95)");
+  unchartedPaper.addColorStop(1, "rgba(129,142,119,.95)");
+  f.fillStyle = unchartedPaper;
   f.fillRect(0, 0, w, h);
   f.globalCompositeOperation = "destination-out";
   f.globalAlpha = 0.64;
