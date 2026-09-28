@@ -38,12 +38,3 @@ export function recoverNavigablePosition({
 
   return { ...fallback };
 }
-
-export function bindBeginButton(button, begin) {
-  if (!button) throw new Error("Cannot bind the missing Begin button");
-  button.addEventListener("click", begin);
-}
-
-export function shouldShowStartupModal({ hasStartedVoyage = false } = {}) {
-  return !hasStartedVoyage;
-}

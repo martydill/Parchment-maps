@@ -450,8 +450,7 @@ body {
   }
 }
 #portPanel,
-#townPanel,
-#intro {
+#townPanel {
   pointer-events: auto;
   position: fixed;
   inset: 0;
@@ -460,15 +459,6 @@ body {
   padding: 16px;
   background: rgba(14, 9, 5, 0.62);
   backdrop-filter: blur(2px);
-}
-#intro {
-  display: grid;
-}
-.has-saved-voyage #intro {
-  display: none;
-}
-#intro .scroll {
-  padding-bottom: 88px;
 }
 .scroll {
   position: relative;
@@ -541,12 +531,6 @@ body {
 .scroll p {
   line-height: 1.56;
 }
-.world-seed-label {
-  text-align: center;
-  font-size: 13px;
-  letter-spacing: 0.05em;
-  opacity: 0.72;
-}
 .ornament {
   display: flex;
   align-items: center;
@@ -581,57 +565,6 @@ button.parchment {
   box-shadow:
     inset 0 1px rgba(255, 234, 188, 0.16),
     0 3px 8px rgba(58, 32, 14, 0.24);
-}
-.intro-actions {
-  position: fixed;
-  z-index: 2;
-  left: 50%;
-  bottom: max(28px, calc(6vh + env(safe-area-inset-bottom)));
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.intro-actions button {
-  margin: 0;
-  white-space: nowrap;
-}
-#beginButton {
-  position: relative;
-  min-height: 48px;
-  padding-left: 55px;
-  border-color: #783f32;
-  background: linear-gradient(#743b33, #4d2726);
-  box-shadow:
-    0 8px 24px rgba(48, 27, 10, 0.48),
-    0 0 0 8px rgba(230, 209, 163, 0.9);
-}
-#beginButton::before {
-  content: "✦";
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  border: 1px solid #d6a279;
-  border-radius: 50%;
-  color: #f5d5a5;
-  background: radial-gradient(circle at 35% 25%, #b35844, #6f2c27 70%);
-  box-shadow: inset 0 0 0 2px rgba(76, 22, 18, 0.36);
-  transform: translateY(-50%);
-}
-button.parchment.secondary {
-  background: linear-gradient(#e9d8ae, #cdb586);
-  color: #493926;
-  font-size: 13px;
-}
-@media (max-width: 520px) {
-  .intro-actions {
-    flex-direction: column;
-    gap: 8px;
-  }
 }
 .port-grid {
   display: grid;

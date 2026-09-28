@@ -56,12 +56,7 @@ import {
   estimateVoyageDays,
   SAILING_SECONDS_PER_DAY,
 } from "./core/voyage-time.js";
-import {
-  beginAtHomePort,
-  bindBeginButton,
-  recoverNavigablePosition,
-  shouldShowStartupModal,
-} from "./core/startup.js";
+import { beginAtHomePort, recoverNavigablePosition } from "./core/startup.js";
 import {
   ageCargo,
   bestCargoCompartment,
@@ -3205,11 +3200,6 @@ const ui = {
   plottedCourseOpen: document.getElementById("plottedCourseOpen"),
   plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
-const intro = document.getElementById("intro");
-const beginButton = document.getElementById("beginButton");
-const newMapButton = document.getElementById("newMapButton");
-document.getElementById("introWorldSeed").textContent = mapSeed;
-
 const panelContext = {
   clearCourse,
   courseBearing,
@@ -3327,35 +3317,15 @@ configurePortPanels(panelContext);
 function applyNarrativeNames() {
   document.title = `${GAME_NAME} — Encircling World V9`;
   document.getElementById("homePortLabel").textContent = PORT_NAMES.orvessaQuay;
-  document.getElementById("introGameTitle").textContent = GAME_NAME;
-  document.getElementById("introHomeRealm").textContent =
-    `the Crown of ${LAND_NAMES.orravelle}`;
-  document.getElementById("introHomePort").textContent = PORT_NAMES.orvessaQuay;
-  document.getElementById("introHomeLand").textContent = LAND_NAMES.orravelle;
-  document.getElementById("introGuildName").textContent =
-    FACTION_NAMES.syrrelwakeOarwrightPact;
-  beginButton.querySelector(".start-new-label").textContent =
-    `Begin at ${PORT_NAMES.orvessaQuay}`;
 }
 applyNarrativeNames();
 
-function revealStartedGame({
-  message = null,
-  openChart = true,
-  save = false,
-} = {}) {
-  intro.style.display = "none";
+function revealStartedGame({ message = null, save = false } = {}) {
   ui.dock.style.display = nearPort ? "block" : "none";
   ui.town.style.display = nearPort ? "block" : "none";
   revealCurrentView(true);
   if (message) showMessage(message, 4.5);
   if (save) saveGameState();
-  if (openChart) {
-    window.setTimeout(() => {
-      minimapWrap.style.display = "grid";
-      renderChart();
-    }, 0);
-  }
 }
 
 function beginGame() {
@@ -3387,18 +3357,8 @@ function resumeSavedVoyage() {
     ) || null;
   revealStartedGame({
     message: "Voyage restored from this browser.",
-    openChart: false,
   });
 }
-
-bindBeginButton(beginButton, beginGame);
-newMapButton.addEventListener("click", () => {
-  suppressSaving = true;
-  gameStarted = false;
-  localStorage.removeItem(SAVE_KEY);
-  localStorage.setItem(MAP_SEED_KEY, createDistinctMapSeed(mapSeed));
-  location.reload();
-});
 
 function cargoCount() {
   return countCargo(game, contractCargoCount());
@@ -6362,18 +6322,10 @@ buildVisibilityPolygon(true);
 camera.x = ship.x;
 camera.y = ship.y;
 updateHud();
-// The startup modal appears only once, before any voyage has been started;
-// returning to the page with a saved voyage resumes directly into the game.
-const showStartupModal = shouldShowStartupModal({
-  hasStartedVoyage: restoredSavedGame && gameStarted,
-});
-if (!showStartupModal) {
+if (restoredSavedGame && gameStarted) {
   resumeSavedVoyage();
 } else {
-  intro.style.display = "grid";
-  if (new URLSearchParams(location.search).has("autostart")) {
-    requestAnimationFrame(() => beginButton.click());
-  }
+  beginGame();
 }
 
 window.setInterval(saveGameState, 5000);

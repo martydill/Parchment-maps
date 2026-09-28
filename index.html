@@ -8,11 +8,6 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <script>
-      if (localStorage.getItem("gilded-archipelago-save")) {
-        document.documentElement.classList.add("has-saved-voyage");
-      }
-    </script>
     <link rel="stylesheet" href="./styles.css?v=15" />
   </head>
   <body>
@@ -282,81 +277,6 @@
           <use href="#ui-explore" /></svg
         ><span>Explore</span>
       </button>
-    </div>
-
-    <div id="intro">
-      <div class="scroll">
-        <h1 id="introGameTitle">Parchment Maps</h1>
-        <div class="ornament" aria-hidden="true"></div>
-        <p>
-          You inherit a narrow-hulled merchant vessel, a weathered chart, and a
-          debt owed to <span id="introHomeRealm">your home realm</span>.
-        </p>
-        <p>
-          Your voyage begins at <b id="introHomePort">your home port</b>, your
-          home port on the coast of
-          <span id="introHomeLand">your home land</span>.
-        </p>
-        <p class="world-seed-label">
-          Active generated world: <b id="introWorldSeed"></b>
-        </p>
-        <p>
-          To sail,
-          <b>drag the touch wheel toward the place you want the ship to go</b>.
-          The ship turns and moves in that direction. Release the wheel to
-          coast. On a keyboard, hold <b>WASD or the arrow keys</b> in the
-          direction you want to travel. Use the
-          <b>mouse wheel or + and - keys</b> to zoom the sea view.
-        </p>
-        <p>
-          Your chart only reveals what the crew can truly see. Visibility is
-          limited by the height of the mast and the weather, while islands block
-          the view beyond their shores. Slow near star-marked shore surveys and
-          press <b>EXPLORE</b> to send an expedition; successful surveys ink the
-          whole landmass onto your chart.
-        </p>
-        <p>
-          Pale hatched water marks shoals and dark outlined water marks squalls.
-          Slow down or steer around them before the ship reaches the dangerous
-          center. A hostile sail can appear ahead during a voyage; change course
-          to evade it before it closes for boarding.
-        </p>
-        <p>
-          Tap any charted town marker on the sea map or world chart to inspect
-          its population, political factions, resources, trade routes, and
-          market intelligence.
-        </p>
-        <p>
-          <b>Your first merchant-prince milestone:</b> complete three contracts,
-          profit from a regional shortage, build influence with
-          <span id="introGuildName">the merchant pact</span>, and use that
-          influence to charter a protected trade route.
-        </p>
-        <p>
-          <b>Fair-market update:</b> every port now posts separate buy and sell
-          quotes with broker spreads and port duties, closing same-market
-          round-trip exploits.
-        </p>
-        <p>
-          <b>The world now sails without you:</b> merchant vessels carry real
-          cargo between ports, political crises alter production and prices, and
-          paid informants can reveal opportunities before they become public
-          news.
-        </p>
-        <p>
-          <b>Encircling-world update:</b> the chart now spans many seas and
-          continents. Sailing beyond the eastern or western edge carries you
-          around the globe to the opposite side; there is no artificial wall.
-        </p>
-        <div class="intro-actions">
-          <button class="parchment" id="beginButton" type="button">
-            <span class="start-new-label">Begin at home port</span>
-          </button>
-          <button class="parchment secondary" id="newMapButton" type="button">
-            Generate another world
-          </button>
-        </div>
-      </div>
     </div>
 
     <div id="portPanel">
