@@ -25,6 +25,7 @@ test("createGameState returns independent complete state objects", () => {
   assert.equal(first.day, 1);
   assert.equal(first.holdMax, 18);
   assert.equal(first.voyageDistance, 0);
+  assert.equal(first.timeOfDay, 0.5);
   assert.equal(first.voyageDayProgress, 0);
   assert.equal(first.voyageDaysElapsed, 0);
   assert.equal(first.firstMeridianCrossed, false);

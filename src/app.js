@@ -1,5 +1,9 @@
 import { createSeaRendering } from "./sea-rendering.js";
 import {
+  drawNightAtmosphere,
+  drawShipLanterns,
+} from "./atmosphere-rendering.js";
+import {
   GAME_NAME,
   PORT_NAMES,
   LAND_NAMES,
@@ -284,7 +288,13 @@ import {
   drawWeatherEffects,
   wrappedCircleIntersectsViewport,
 } from "./rendering.js?v=3";
-import { sceneLighting } from "./core/lighting.js";
+import {
+  advanceTimeOfDay,
+  nightSightLimit,
+  normalizeTimeOfDay,
+  sceneLighting,
+  timeOfDayLabel,
+} from "./core/lighting.js";
 import {
   drawHarborBoats,
   drawPortActivity,
@@ -529,7 +539,11 @@ function weatherInSeaZone(baseWeather, position = ship) {
   };
 }
 function currentVisibilityKm(angle = ship.angle) {
-  return currentWeather(angle).visibilityKm;
+  const weather = currentWeather(angle);
+  return nightSightLimit(
+    sceneLighting(game.timeOfDay, weather.roughness, game.day),
+    weather.visibilityKm,
+  );
 }
 function currentWeather(angle = ship.angle) {
   return localWeatherAtBearing({
@@ -2691,6 +2705,11 @@ function onLand(x, y) {
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
 function buildVisibilityPolygon(force = false) {
   const baseWeather = weatherInSeaZone(getInterpolatedWeather());
+  const lighting = sceneLighting(
+    game.timeOfDay,
+    baseWeather.roughness,
+    game.day,
+  );
   const radius = currentVisibilityKm() * visibility.worldUnitsPerKm;
   const moved = Math.hypot(
     ship.x - visibility.lastX,
@@ -2711,7 +2730,7 @@ function buildVisibilityPolygon(force = false) {
     const a = (i / visibility.rays) * Math.PI * 2;
     const dx = Math.cos(a),
       dy = Math.sin(a);
-    const localRadius = directionalVisibilityRadius({
+    const weatherRadius = directionalVisibilityRadius({
       baseWeather,
       position: ship,
       angle: a,
@@ -2720,6 +2739,9 @@ function buildVisibilityPolygon(force = false) {
       horizonKm: visibility.horizonKm,
       worldUnitsPerKm: visibility.worldUnitsPerKm,
     });
+    const localRadius =
+      nightSightLimit(lighting, weatherRadius / visibility.worldUnitsPerKm) *
+      visibility.worldUnitsPerKm;
     let hit = localRadius;
     let hitLandIndex = -1;
     for (const [landIndex, land] of lands.entries()) {
@@ -2889,6 +2911,7 @@ function loadGameState() {
 
   Object.assign(game, saved.game);
   game.mapSeed = mapSeed;
+  game.timeOfDay = normalizeTimeOfDay(game.timeOfDay);
   game.firstMeridianCrossed = Boolean(game.firstMeridianCrossed);
   normalizeVoyageTimeState();
   game.windStrength = clamp(
@@ -3183,6 +3206,7 @@ const ui = {
   visibility: document.getElementById("visibilityText"),
   coins: document.getElementById("coinText"),
   day: document.getElementById("dayText"),
+  time: document.getElementById("timeText"),
   hold: document.getElementById("holdText"),
   dock: document.getElementById("dockButton"),
   town: document.getElementById("townButton"),
@@ -3677,7 +3701,7 @@ mistGradient.addColorStop(1, "rgba(189,206,188,0)");
 mistCtx.fillStyle = mistGradient;
 mistCtx.fillRect(0, 0, 192, 192);
 
-function renderFog(time) {
+function renderFog(time, lighting) {
   if (!gameStarted) return;
   buildVisibilityPolygon();
   const f = fogCtx;
@@ -3707,9 +3731,19 @@ function renderFog(time) {
   f.setTransform(DPR, 0, 0, DPR, 0, 0);
   f.clearRect(0, 0, vw, vh);
   const wash = f.createLinearGradient(0, 0, 0, vh);
-  wash.addColorStop(0, "rgba(105,119,104,.96)");
-  wash.addColorStop(0.55, "rgba(126,132,109,.95)");
-  wash.addColorStop(1, "rgba(96,108,93,.96)");
+  const sun = lighting.daylight;
+  wash.addColorStop(
+    0,
+    `rgba(${105 + sun * 77},${119 + sun * 66},${104 + sun * 57},${0.96 - sun * 0.05})`,
+  );
+  wash.addColorStop(
+    0.55,
+    `rgba(${126 + sun * 68},${132 + sun * 61},${109 + sun * 54},${0.95 - sun * 0.04})`,
+  );
+  wash.addColorStop(
+    1,
+    `rgba(${96 + sun * 75},${108 + sun * 73},${93 + sun * 62},${0.96 - sun * 0.05})`,
+  );
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
 
@@ -4087,8 +4121,8 @@ function drawNavigationalHazards(c, z) {
 }
 
 function drawHarborLights(c, lighting, z) {
-  if (lighting.dusk < 0.12) return;
-  const strength = lighting.dusk * (1 - lighting.storm * 0.2);
+  if (lighting.night < 0.12) return;
+  const strength = lighting.night * (1 - lighting.storm * 0.2);
   c.save();
   for (const port of ports) {
     if (!pointCurrentlyVisible(port.x, port.y)) continue;
@@ -4123,7 +4157,7 @@ function render() {
   const time = performance.now();
   const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
-  const lighting = sceneLighting(game.voyageDayProgress, weather.roughness);
+  const lighting = sceneLighting(game.timeOfDay, weather.roughness, game.day);
   const moving =
     !ship.anchored &&
     !currentPort &&
@@ -4200,8 +4234,40 @@ function render() {
   ctx.restore();
   ctx.restore(); // Restore world transform
 
-  renderFog(visualTime);
+  renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
+  const beaconRange = Math.max(vw, vh) + 160;
+  const lighthouses = ports
+    .filter(
+      (port) =>
+        wrappedDistance(ship.x, ship.y, port.x, port.y) < beaconRange / z,
+    )
+    .map((port, index) => ({
+      x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
+      y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
+      index,
+    }))
+    .filter(
+      (light) =>
+        light.x > -160 &&
+        light.x < vw + 160 &&
+        light.y > -160 &&
+        light.y < vh + 160,
+    );
+  const shipScreen = {
+    x: vw / 2 + (ship.x - camera.x) * z,
+    y: vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS,
+    angle: ship.angle,
+  };
+  drawNightAtmosphere(ctx, {
+    lighting,
+    width: vw,
+    height: vh,
+    ship: shipScreen,
+    lighthouses,
+    time: visualTime,
+    reducedMotion: reducedMotion.matches,
+  });
 
   // The ship and immediate docking cue remain readable above the fog layer.
   worldTransform();
@@ -4260,6 +4326,7 @@ function render() {
       reducedMotion: reducedMotion.matches,
     });
   }
+  drawShipLanterns(ctx, shipScreen, lighting);
 
   // Lamps and the docking ring sit above the weather wash, so ports and the
   // immediate approach remain discoverable as the scene darkens.
@@ -4447,7 +4514,13 @@ function update(dt) {
   // ship, assigning a route, and checking the Fleet tab from port would appear
   // to do nothing. Rivals (updateMerchantShips) stay paused at port as ambient
   // traffic, unchanged.
-  if (gameStarted) updateFleetShips(dt);
+  if (gameStarted) {
+    game.timeOfDay = advanceTimeOfDay(game.timeOfDay, dt);
+    ui.time.textContent = timeOfDayLabel(
+      sceneLighting(game.timeOfDay, currentWeather().roughness, game.day),
+    );
+    updateFleetShips(dt);
+  }
   if (
     !gameStarted ||
     currentPort ||
