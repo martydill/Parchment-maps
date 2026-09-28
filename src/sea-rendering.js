@@ -516,20 +516,6 @@ export function createSeaRendering({
       const nx = -dy;
       const ny = dx;
 
-      // Layered translucent water has soft shoulders instead of a hard ribbon.
-      for (const [spread, opacity] of [
-        [3.1, 0.07],
-        [2.15, 0.1],
-        [1.15, 0.13],
-      ]) {
-        c.strokeStyle = `rgba(31,78,76,${b.alpha * opacity})`;
-        c.lineWidth = b.width * spread;
-        c.beginPath();
-        c.moveTo(a.x, a.y);
-        c.lineTo(b.x, b.y);
-        c.stroke();
-      }
-
       // Occasional outer crests catch the light as the disturbed water spreads.
       for (const side of [-1, 1]) {
         const crest = wakeNoise(seed, side + 4);

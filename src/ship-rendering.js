@@ -539,20 +539,7 @@ function drawHullWater(c, profile, motion, heading, z) {
     }
   }
 
-  // The stern leaves a short patch of churning water that joins the trail.
-  c.fillStyle = `rgba(29,77,76,${strength * 0.2})`;
-  c.beginPath();
-  c.moveTo(-beam * 0.75, length * 0.38);
-  c.quadraticCurveTo(-beam * 1.25, length * 0.75, -beam * 0.8, length * 1.05);
-  c.quadraticCurveTo(
-    0,
-    length * (1.15 + strength * 0.1),
-    beam * 0.8,
-    length * 1.05,
-  );
-  c.quadraticCurveTo(beam * 1.25, length * 0.75, beam * 0.75, length * 0.38);
-  c.closePath();
-  c.fill();
+  // Uneven foam flecks mark the disturbed water behind the stern.
   for (let fleck = 0; fleck < 11; fleck++) {
     const distance = (fleck + Math.sin(fleck * 3.9) * 0.3) / 11;
     const cross = Math.sin(fleck * 9.13) * beam * (0.38 + distance * 0.48);
