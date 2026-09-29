@@ -287,8 +287,9 @@ import {
   drawSceneLightWash,
   drawShip,
   drawWeatherEffects,
+  portAccentColor,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=3";
+} from "./rendering.js?v=4";
 import {
   advanceTimeOfDay,
   nightSightLimit,
@@ -302,7 +303,7 @@ import {
   hasPortMiniature,
 } from "./port-miniatures.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
-import { renderChartPanel } from "./ui/chart-panel.js?v=3";
+import { renderChartPanel } from "./ui/chart-panel.js?v=4";
 import {
   configureUiPanels,
   openExploration,
@@ -311,7 +312,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=3";
+} from "./ui/panels.js?v=4";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
 
@@ -3474,7 +3475,22 @@ ui.plottedCourseClear.addEventListener("click", () => {
 });
 
 function showMessage(text, seconds = 2.2) {
+  const kind = /\b(storm|squall)\b/i.test(text)
+    ? "danger"
+    : /^LANDFALL/i.test(text)
+      ? "landfall"
+      : /\bcontracts? delivered\b/i.test(text)
+        ? "delivery"
+        : /^(DISCOVERY|EXPEDITION|STORY ARC RESOLVED|Course complete)/i.test(
+              text,
+            )
+          ? "discovery"
+          : "normal";
+  ui.message.classList.remove("show");
+  ui.message.classList.toggle("event", kind !== "normal");
+  ui.message.dataset.kind = kind;
   ui.message.textContent = text;
+  if (kind !== "normal") void ui.message.offsetWidth;
   ui.message.classList.add("show");
   messageTimer = seconds;
 }
@@ -3743,6 +3759,20 @@ mistGradient.addColorStop(0.45, "rgba(204,215,194,.16)");
 mistGradient.addColorStop(1, "rgba(189,206,188,0)");
 mistCtx.fillStyle = mistGradient;
 mistCtx.fillRect(0, 0, 192, 192);
+// One cached stipple tile gives unexplored water the same engraved paper grain
+// as the chart without drawing thousands of marks every frame.
+const fogGrainTile = document.createElement("canvas");
+fogGrainTile.width = fogGrainTile.height = 128;
+const grainCtx = fogGrainTile.getContext("2d");
+for (let index = 0; index < 480; index++) {
+  const x = (index * 73.31 + Math.sin(index * 17.7) * 31 + 128) % 128;
+  const y = (index * 47.83 + Math.sin(index * 9.3) * 23 + 128) % 128;
+  grainCtx.fillStyle = index % 6 === 0 ? "#f8e8bb" : "#4d4739";
+  grainCtx.globalAlpha = index % 6 === 0 ? 0.4 : 0.22;
+  grainCtx.fillRect(x, y, index % 7 === 0 ? 2.2 : 1, 0.7);
+}
+grainCtx.globalAlpha = 1;
+const fogGrain = fogCtx.createPattern(fogGrainTile, "repeat");
 
 function renderFog(time, lighting) {
   if (!gameStarted) return;
@@ -3778,18 +3808,22 @@ function renderFog(time, lighting) {
   const sun = lighting.daylight;
   wash.addColorStop(
     0,
-    `rgba(${105 + sun * 77},${119 + sun * 66},${104 + sun * 57},${0.96 - sun * 0.05})`,
+    `rgba(${104 + sun * 99},${111 + sun * 87},${99 + sun * 61},${0.86 - sun * 0.07})`,
   );
   wash.addColorStop(
     0.55,
-    `rgba(${126 + sun * 68},${132 + sun * 61},${109 + sun * 54},${0.95 - sun * 0.04})`,
+    `rgba(${118 + sun * 95},${119 + sun * 81},${99 + sun * 62},${0.85 - sun * 0.07})`,
   );
   wash.addColorStop(
     1,
-    `rgba(${96 + sun * 75},${108 + sun * 73},${93 + sun * 62},${0.96 - sun * 0.05})`,
+    `rgba(${95 + sun * 98},${103 + sun * 81},${88 + sun * 58},${0.86 - sun * 0.07})`,
   );
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
+  f.globalAlpha = 0.28;
+  f.fillStyle = fogGrain;
+  f.fillRect(0, 0, vw, vh);
+  f.globalAlpha = 1;
 
   // World-anchored, overlapping cloud banks avoid a screen-attached spotlight.
   // Drift is deliberately slow, like diluted ink spreading through wet paper.
@@ -3822,7 +3856,7 @@ function renderFog(time, lighting) {
   f.globalCompositeOperation = "destination-out";
   // Feather the reveal itself; an outlined polygon would recreate the old
   // bright halo. The exact visibility polygon still controls sightings.
-  f.filter = "blur(18px)";
+  f.filter = "blur(27px)";
   f.drawImage(horizonMask, 0, 0, vw, vh);
   f.restore();
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
@@ -4011,6 +4045,20 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     c.stroke();
     c.setLineDash([]);
   }
+  let labeledMerchant = null;
+  let closestMerchant = 155;
+  for (const merchant of merchantShips) {
+    if (
+      !merchantVisible(merchant) ||
+      !pointCurrentlyVisible(merchant.x, merchant.y)
+    )
+      continue;
+    const distance = wrappedDistance(ship.x, ship.y, merchant.x, merchant.y);
+    if (distance < closestMerchant) {
+      closestMerchant = distance;
+      labeledMerchant = merchant;
+    }
+  }
   for (const merchant of merchantShips) {
     if (!merchantVisible(merchant)) continue;
     const x = nearestWrappedX(merchant.x, camera.x);
@@ -4025,12 +4073,14 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
-      c.fillStyle = "rgba(47,29,15,.8)";
-      c.font = 11 / z + "px Georgia";
-      c.strokeStyle = "rgba(241,225,185,.9)";
-      c.lineWidth = 2.8 / z;
-      c.strokeText(merchant.name, x, merchant.y - 19 / z);
-      c.fillText(merchant.name, x, merchant.y - 19 / z);
+      if (merchant === labeledMerchant || selectedMerchant === merchant) {
+        c.fillStyle = "rgba(47,29,15,.9)";
+        c.font = `700 ${11 / z}px Georgia`;
+        c.strokeStyle = "rgba(241,225,185,.94)";
+        c.lineWidth = 3 / z;
+        c.strokeText(merchant.name, x, merchant.y - 22 / z);
+        c.fillText(merchant.name, x, merchant.y - 22 / z);
+      }
     }
   }
   const raider = game.seaRaid.raider;
@@ -4234,7 +4284,7 @@ function drawHarborLights(c, lighting, z) {
 }
 function drawPortLabels(c, z, shipScreen) {
   c.save();
-  c.font = "700 15px Georgia";
+  c.font = "700 14px Georgia";
   const labels = ports
     .filter(
       (port) =>
@@ -4245,21 +4295,27 @@ function drawPortLabels(c, z, shipScreen) {
       id: port.name,
       x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
       y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
-      width: Math.ceil(c.measureText(port.name).width) + 20,
-      height: 27,
+      width: Math.ceil(c.measureText(port.name).width) + 29,
+      height: 26,
       priority:
         (port.name === game.navigation.destination ? 100 : 0) +
+        (port === nearPort ? 30 : 0) +
         (port.home ? 20 : 0) +
         (pointCurrentlyVisible(port.x, port.y) ? 10 : 0),
       port,
     }));
   const blockers = [
-    { x: shipScreen.x - 42, y: shipScreen.y - 54, width: 84, height: 94 },
+    { x: shipScreen.x - 53, y: shipScreen.y - 61, width: 106, height: 112 },
     { x: 0, y: 0, width: vw, height: Math.min(vh * 0.12, 96) },
+    { x: vw - 83, y: 93, width: 83, height: 250 },
   ];
-  const course = document.getElementById("courseCard");
-  if (course?.offsetWidth) {
-    const rect = course.getBoundingClientRect();
+  for (const element of [ui.course, ui.plottedCourse, ui.message]) {
+    if (
+      !element?.offsetWidth ||
+      (element === ui.message && !element.classList.contains("show"))
+    )
+      continue;
+    const rect = element.getBoundingClientRect();
     blockers.push({
       x: rect.left,
       y: rect.top,
@@ -4299,18 +4355,23 @@ function drawPortLabels(c, z, shipScreen) {
       label.port.y,
     );
     const dim = z >= 1.08 && distance > 200 && label.priority < 20;
-    c.globalAlpha = dim ? 0.62 : label.priority >= 10 ? 0.96 : 0.78;
-    c.fillStyle = "rgba(239,220,175,.94)";
-    c.strokeStyle = "rgba(88,61,34,.75)";
-    c.lineWidth = 1;
+    c.globalAlpha = dim ? 0.53 : label.priority >= 10 ? 0.98 : 0.82;
+    c.fillStyle =
+      label.port.name === game.navigation.destination
+        ? "rgba(255,234,185,.98)"
+        : "rgba(239,220,175,.94)";
+    c.strokeStyle = portAccentColor(label.port);
+    c.lineWidth = label.priority >= 30 ? 1.6 : 1;
     c.beginPath();
     c.roundRect(label.x, label.y, label.width, label.height, 5);
     c.fill();
     c.stroke();
+    c.fillStyle = portAccentColor(label.port);
+    c.fillRect(label.x + 5, label.y + 5, 3, label.height - 10);
     c.fillStyle = "#302318";
     c.fillText(
       label.id,
-      label.x + label.width / 2,
+      label.x + label.width / 2 + 3,
       label.y + label.height / 2 + 1,
     );
   }
@@ -4460,11 +4521,13 @@ function render() {
   );
   if (nearPort) {
     const px = nearestWrappedX(nearPort.x, ship.x);
-    ctx.strokeStyle = "rgba(173,54,39,.85)";
-    ctx.lineWidth = 3 / z;
+    ctx.strokeStyle = "rgba(182,115,61,.75)";
+    ctx.lineWidth = 1.7 / z;
+    ctx.setLineDash([5 / z, 6 / z]);
     ctx.beginPath();
-    ctx.arc(px, nearPort.y, 42 + Math.sin(time / 220) * 4, 0, Math.PI * 2);
+    ctx.arc(px, nearPort.y, 28, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 
@@ -4503,10 +4566,10 @@ function render() {
   drawHarborLights(ctx, lighting, z);
   if (nearPort) {
     const px = nearestWrappedX(nearPort.x, ship.x);
-    ctx.strokeStyle = "rgba(255,225,159,.86)";
-    ctx.lineWidth = 1.4 / z;
+    ctx.strokeStyle = "rgba(255,231,172,.82)";
+    ctx.lineWidth = 0.9 / z;
     ctx.beginPath();
-    ctx.arc(px, nearPort.y, 42 + Math.sin(time / 220) * 4, 0, Math.PI * 2);
+    ctx.arc(px, nearPort.y, 29, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();
@@ -4907,6 +4970,7 @@ function update(dt) {
   if (ship.trail.length > 28) ship.trail.pop();
   if (!ship.anchored) updateSeaRaid(dt);
   checkRumorLeads();
+  const previousNearPort = nearPort;
   nearPort = null;
   let best = 78;
   for (const p of ports) {
@@ -4916,6 +4980,13 @@ function update(dt) {
       nearPort = p;
     }
   }
+  if (
+    nearPort &&
+    nearPort !== previousNearPort &&
+    game.departedFromPort !== null &&
+    !currentPort
+  )
+    showMessage(`LANDFALL · ${nearPort.name}`, 3.2);
   ui.dock.style.display = nearPort ? "block" : "none";
   ui.town.style.display = nearPort ? "block" : "none";
   nearExplorationSite = null;

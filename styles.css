@@ -130,10 +130,48 @@ body {
   text-shadow: 0 1px 0 #000;
 }
 .badge {
-  border-radius: 5px;
-  padding: 10px 13px;
+  min-width: 240px;
+  padding: 9px 13px 10px;
+  border-radius: 3px;
+  border-top-color: rgba(239, 207, 140, 0.72);
   font-size: 13px;
-  line-height: 1.38;
+  line-height: 1.25;
+  background: rgba(31, 30, 27, 0.91);
+  backdrop-filter: blur(4px);
+}
+.instrument-heading,
+.instrument-readouts {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.instrument-heading {
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(213, 179, 109, 0.28);
+  color: #f5e6c0;
+}
+.instrument-heading b {
+  font: 700 16px/1.12 var(--font-display);
+  white-space: nowrap;
+}
+.instrument-home,
+#dayText {
+  color: #d2b982;
+  font: 600 11px/1.2 var(--font-ui);
+  white-space: nowrap;
+}
+.instrument-readouts {
+  padding-top: 5px;
+  font: 700 12px/1.2 var(--font-ui);
+  color: #f2dfb3;
+  white-space: nowrap;
+}
+.instrument-secondary {
+  display: block;
+  margin-top: 4px;
+  color: #bdcfbd;
+  font: 600 11px/1.25 var(--font-ui);
   white-space: nowrap;
 }
 #message {
@@ -148,6 +186,62 @@ body {
   border-radius: 5px;
   padding: 9px 14px;
   font-size: 14px;
+}
+#message.event {
+  top: calc(max(10px, env(safe-area-inset-top)) + 74px);
+  padding: 10px 18px 10px 45px;
+  border-color: rgba(231, 195, 117, 0.86);
+  color: #fff3cd;
+  box-shadow:
+    0 9px 28px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 232, 176, 0.15);
+}
+#message.event::before {
+  content: "✦";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  transform: translateY(-50%) rotate(-12deg);
+  border: 1px solid #e8c679;
+  border-radius: 50%;
+  color: #f6dc9b;
+  font: 700 15px var(--font-display);
+}
+#message.event[data-kind="landfall"]::before {
+  content: "⚑";
+}
+#message.event[data-kind="delivery"]::before {
+  content: "✓";
+}
+#message.event[data-kind="danger"] {
+  border-color: #cf775c;
+}
+#message.event[data-kind="danger"]::before {
+  content: "!";
+  border-color: #df896b;
+  color: #ffe3cd;
+}
+#message.event.show {
+  animation: event-arrival 0.5s ease-out both;
+}
+@keyframes event-arrival {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #message.event.show {
+    animation: none;
+  }
 }
 #message.show {
   opacity: 1;
@@ -1183,12 +1277,9 @@ button.parchment {
   top: calc(max(10px, env(safe-area-inset-top)) + 263px);
 }
 #objectiveText {
-  display: block;
-  margin-top: 3px;
+  margin-top: 4px;
   font-size: 11px;
-  color: #f5d995;
-  max-width: 180px;
-  white-space: normal;
+  color: #e4ca90;
 }
 #ledgerPanel,
 #menuPanel,
@@ -2289,15 +2380,38 @@ button.parchment {
   .topbar .badge {
     flex: 1 1 0;
     min-width: 0;
-    padding: 7px 8px;
+    padding: 7px 8px 8px;
+  }
+  .instrument-heading b {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+  .instrument-home {
+    display: none;
+  }
+  .instrument-readouts {
+    gap: 6px;
     font-size: 11px;
-    line-height: 1.25;
-    white-space: normal;
-    overflow-wrap: anywhere;
+  }
+  .instrument-readouts > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .instrument-secondary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px;
   }
   #objectiveText {
-    max-width: none;
     font-size: 10px;
+  }
+  #message.event {
+    top: auto;
+    bottom: calc(190px + env(safe-area-inset-bottom));
+    width: min(88vw, 420px);
   }
   #mapButton {
     top: calc(max(10px, env(safe-area-inset-top)) + 116px);

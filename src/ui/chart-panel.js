@@ -1,6 +1,6 @@
 import { chartedCityIndicators } from "../core/chart.js";
 import { layoutMapLabels } from "../core/label-layout.js";
-import { drawShip } from "../rendering.js?v=3";
+import { drawShip } from "../rendering.js?v=4";
 
 export function renderChartPanel({
   activeRumorLeads,

@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=15" />
+    <link rel="stylesheet" href="./styles.css?v=16" />
   </head>
   <body>
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -147,24 +147,33 @@
     <canvas id="game"></canvas>
     <div id="hud">
       <div class="topbar">
-        <div class="badge">
-          <b id="shipName">Merchant Vessel</b> ·
-          <span class="small"
-            >Home: <span id="homePortLabel">Home Port</span></span
-          ><br /><span id="speedText">0 knots</span> ·
-          <span id="windText">Wind E · 14 knots</span><br /><span
-            class="small"
-            id="visibilityText"
+        <div class="badge voyage-instruments">
+          <div class="instrument-heading">
+            <b id="shipName">Merchant Vessel</b>
+            <span class="instrument-home"
+              >Home: <span id="homePortLabel">Home Port</span></span
+            >
+          </div>
+          <div class="instrument-readouts">
+            <span id="speedText">0 knots</span>
+            <span id="windText">Wind E · 14 knots</span>
+          </div>
+          <span class="instrument-secondary" id="visibilityText"
             >Clear · 12 km sight</span
           >
         </div>
-        <div class="badge">
-          <span id="coinText">120 crowns</span><br /><span id="dayText"
-            >Day 1</span
+        <div class="badge trade-instruments">
+          <div class="instrument-heading">
+            <b id="coinText">120 crowns</b>
+            <span id="dayText">Day 1</span>
+          </div>
+          <div class="instrument-readouts">
+            <span id="timeText">Daylight</span>
+            <span>Hold <span id="holdText">0/18</span></span>
+          </div>
+          <span class="instrument-secondary" id="objectiveText"
+            >0/3 contracts · shortage not reported</span
           >
-          · <span id="timeText">Daylight</span> · Hold:
-          <span id="holdText">0/18</span
-          ><span id="objectiveText">0/3 contracts · shortage not reported</span>
         </div>
       </div>
       <div id="message"></div>
@@ -870,6 +879,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=38"></script>
+    <script type="module" src="./src/app.js?v=39"></script>
   </body>
 </html>

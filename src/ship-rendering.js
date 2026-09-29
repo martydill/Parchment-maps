@@ -582,6 +582,7 @@ function drawShipModel(
   windY = 0,
   motion = sampleShipMotion(),
   lighting = sceneLighting(),
+  isPlayer = false,
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
   c.save();
@@ -820,7 +821,7 @@ function drawShipModel(
   );
   const pennantTip = projectedPoint(
     [
-      6 + motion.flutter,
+      (isPlayer ? 9 : 6) + motion.flutter,
       leadMast.y + 0.8 + motion.flutter * 1.4,
       leadMast.height - 1.1 + motion.flutter,
     ],
@@ -828,7 +829,7 @@ function drawShipModel(
     motion,
   );
   const pennantBase = projectedPoint(
-    [0, leadMast.y + 1.7, leadMast.height - 2.3],
+    [0, leadMast.y + (isPlayer ? 2.6 : 1.7), leadMast.height - 2.3],
     heading,
     motion,
   );
@@ -839,8 +840,8 @@ function drawShipModel(
   c.closePath();
   c.fillStyle = color;
   c.fill();
-  c.strokeStyle = "#3d2618";
-  c.lineWidth = 0.55 / z;
+  c.strokeStyle = isPlayer ? "#f3d58f" : "#3d2618";
+  c.lineWidth = (isPlayer ? 0.9 : 0.55) / z;
   c.stroke();
   c.restore();
 }
@@ -897,20 +898,22 @@ export function drawShip(
   const lighting = environment.lighting || sceneLighting();
   c.save();
   c.translate(x, y);
-  c.scale(1.7, 1.7);
+  const playerScale = 1.82;
+  c.scale(playerScale, playerScale);
   drawShipModel(
     c,
     vesselClass,
     0,
-    "#9c3d2c",
+    "#b84a30",
     0,
     0,
     angle + Math.PI / 2,
-    z / 1.7,
+    z / playerScale,
     Math.cos(relativeWind) * motion.billow,
     Math.sin(relativeWind) * motion.billow,
     motion,
     lighting,
+    true,
   );
   c.restore();
 }

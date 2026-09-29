@@ -16,7 +16,7 @@ import {
   clearFleetRoute,
   decommissionFleetShip,
 } from "../core/fleet.js";
-import { drawShip } from "../rendering.js?v=3";
+import { drawShip } from "../rendering.js?v=4";
 
 let panelContext;
 let acceptContract,
@@ -224,24 +224,18 @@ export function updateHud() {
     game.weatherName +
     " · " +
     (km < 10 ? km.toFixed(1) : Math.round(km)) +
-    " km sight · longitude " +
+    " km sight · " +
     Math.round((wrapX(ship.x) / WORLD.w) * 360) +
-    "°";
+    "° longitude";
   ui.coins.textContent = game.coins + " crowns";
   ui.day.textContent = "Day " + game.day;
   ui.hold.textContent = cargoCount() + "/" + game.holdMax;
   ui.objective.textContent = game.milestone.complete
-    ? "Merchant Prince · " + game.activeWorldEvents.length + " active crises"
-    : game.completedContracts +
-      "/3 contracts · shortage " +
-      (game.milestone.shortageExploited
-        ? "exploited"
-        : worldEvents.ironShortage.active
-          ? "active"
-          : "pending") +
-      " · Guild " +
-      guildStanding() +
-      "/20";
+    ? `Merchant Prince · ${game.activeWorldEvents.length} active crises`
+    : `${game.completedContracts}/3 contracts · Guild ${guildStanding()}/20`;
+  ui.objective.title = game.milestone.complete
+    ? ui.objective.textContent
+    : `${ui.objective.textContent} · shortage ${game.milestone.shortageExploited ? "exploited" : worldEvents.ironShortage.active ? "active" : "pending"}`;
   const objective = currentObjective({
     game,
     currentPortName: currentPort?.name || null,
