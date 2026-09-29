@@ -1,3 +1,4 @@
+import { updateElementProperty } from "./dom.js";
 import {
   renderCargoPlan,
   renderCustomsOffice,
@@ -202,8 +203,11 @@ export function updateHud() {
   syncPanelContext();
 
   const stats = operationalShipStats();
-  ui.speed.textContent =
-    shipSpeedKnots(ship.speed, stats.waterlineLengthFt).toFixed(1) + " knots";
+  updateElementProperty(
+    ui.speed,
+    "textContent",
+    shipSpeedKnots(ship.speed, stats.waterlineLengthFt).toFixed(1) + " knots",
+  );
   const dirs = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
   const idx =
     Math.round(
@@ -212,40 +216,60 @@ export function updateHud() {
         8,
     ) % 8;
   const currentInfo = localCurrent();
-  ui.wind.textContent =
+  updateElementProperty(
+    ui.wind,
+    "textContent",
     "Wind " +
-    dirs[idx] +
-    " · " +
-    Math.round(game.windStrength * 100) +
-    " knots" +
-    (currentInfo.label ? " · " + currentInfo.label : "");
+      dirs[idx] +
+      " · " +
+      Math.round(game.windStrength * 100) +
+      " knots" +
+      (currentInfo.label ? " · " + currentInfo.label : ""),
+  );
   const km = currentVisibilityKm();
-  ui.visibility.textContent =
+  updateElementProperty(
+    ui.visibility,
+    "textContent",
     game.weatherName +
-    " · " +
-    (km < 10 ? km.toFixed(1) : Math.round(km)) +
-    " km sight · " +
-    Math.round((wrapX(ship.x) / WORLD.w) * 360) +
-    "° longitude";
-  ui.coins.textContent = game.coins + " crowns";
-  ui.day.textContent = "Day " + game.day;
-  ui.hold.textContent = cargoCount() + "/" + game.holdMax;
-  ui.objective.textContent = game.milestone.complete
-    ? `Merchant Prince · ${game.activeWorldEvents.length} active crises`
-    : `${game.completedContracts}/3 contracts · Guild ${guildStanding()}/20`;
-  ui.objective.title = game.milestone.complete
-    ? ui.objective.textContent
-    : `${ui.objective.textContent} · shortage ${game.milestone.shortageExploited ? "exploited" : worldEvents.ironShortage.active ? "active" : "pending"}`;
+      " · " +
+      (km < 10 ? km.toFixed(1) : Math.round(km)) +
+      " km sight · " +
+      Math.round((wrapX(ship.x) / WORLD.w) * 360) +
+      "° longitude",
+  );
+  updateElementProperty(ui.coins, "textContent", game.coins + " crowns");
+  updateElementProperty(ui.day, "textContent", "Day " + game.day);
+  updateElementProperty(
+    ui.hold,
+    "textContent",
+    cargoCount() + "/" + game.holdMax,
+  );
+  updateElementProperty(
+    ui.objective,
+    "textContent",
+    game.milestone.complete
+      ? `Merchant Prince · ${game.activeWorldEvents.length} active crises`
+      : `${game.completedContracts}/3 contracts · Guild ${guildStanding()}/20`,
+  );
+  updateElementProperty(
+    ui.objective,
+    "title",
+    game.milestone.complete
+      ? ui.objective.textContent
+      : `${ui.objective.textContent} · shortage ${game.milestone.shortageExploited ? "exploited" : worldEvents.ironShortage.active ? "active" : "pending"}`,
+  );
   const objective = currentObjective({
     game,
     currentPortName: currentPort?.name || null,
     nearPortName: nearPort?.name || null,
     homePortName: HOME_PORT.name,
   });
-  ui.course.className = objective.urgency;
-  ui.courseTitle.textContent = objective.title;
-  ui.courseDetail.textContent = objective.detail;
-  ui.courseAction.textContent =
+  updateElementProperty(ui.course, "className", objective.urgency);
+  updateElementProperty(ui.courseTitle, "textContent", objective.title);
+  updateElementProperty(ui.courseDetail, "textContent", objective.detail);
+  updateElementProperty(
+    ui.courseAction,
+    "textContent",
     objective.action === "dock"
       ? "Dock now →"
       : objective.action === "trade"
@@ -256,7 +280,8 @@ export function updateHud() {
             ? "Open politics →"
             : objective.action === "ledger"
               ? "Open ledger →"
-              : "Open chart →";
+              : "Open chart →",
+  );
   let destination = getPortByName(game.navigation.destination);
   if (destination && nearPort?.name === destination.name) {
     clearCourse(game.navigation);
@@ -264,20 +289,40 @@ export function updateHud() {
     saveGameState();
     destination = null;
   }
-  ui.plottedCourse.hidden = !destination;
+  updateElementProperty(ui.plottedCourse, "hidden", !destination);
   if (destination) {
     const bearing = courseBearing(ship, destination, WORLD.w);
     const direction = compassDirection(bearing.angle);
-    ui.plottedCourseTitle.textContent = `${direction} · ${destination.name}`;
-    ui.plottedCourseDetail.textContent =
+    updateElementProperty(
+      ui.plottedCourseTitle,
+      "textContent",
+      `${direction} · ${destination.name}`,
+    );
+    updateElementProperty(
+      ui.plottedCourseDetail,
+      "textContent",
       `${Math.round(bearing.distance)} leagues remaining · ` +
-      `bearing ${Math.round(((bearing.angle * 180) / Math.PI + 360) % 360)}°`;
+        `bearing ${Math.round(((bearing.angle * 180) / Math.PI + 360) % 360)}°`,
+    );
   }
   if (ship.anchored)
-    ui.steeringStatus.textContent = "AT ANCHOR · DRAG THE WHEEL TO SAIL";
+    updateElementProperty(
+      ui.steeringStatus,
+      "textContent",
+      "AT ANCHOR · DRAG THE WHEEL TO SAIL",
+    );
   else if (Math.abs(ship.speed) < 5)
-    ui.steeringStatus.textContent = "DRAG TOWARD YOUR DESTINATION";
-  else ui.steeringStatus.textContent = "SAILING · RELEASE TO COAST";
+    updateElementProperty(
+      ui.steeringStatus,
+      "textContent",
+      "DRAG TOWARD YOUR DESTINATION",
+    );
+  else
+    updateElementProperty(
+      ui.steeringStatus,
+      "textContent",
+      "SAILING · RELEASE TO COAST",
+    );
 }
 
 export function renderMilestone(root) {

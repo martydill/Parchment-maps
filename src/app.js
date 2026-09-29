@@ -1,8 +1,10 @@
-import { createSeaRendering } from "./sea-rendering.js";
+import { createSeaRendering } from "./sea-rendering.js?v=3";
+import { createExplorationSampler } from "./exploration-mask.js";
+import { updateElementProperty } from "./ui/dom.js";
 import {
   drawNightAtmosphere,
   drawShipLanterns,
-} from "./atmosphere-rendering.js";
+} from "./atmosphere-rendering.js?v=2";
 import {
   GAME_NAME,
   PORT_NAMES,
@@ -22,8 +24,9 @@ import {
   expandPolygon,
   pointInWrappedPolygon,
   polygonCentroid,
+  rayIntersectsBounds,
   raySegmentDistance,
-} from "./core/geometry.js";
+} from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, unprojectMapPoint } from "./core/projection.js";
 import { layoutMapLabels } from "./core/label-layout.js";
 import {
@@ -316,7 +319,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=4";
+} from "./ui/panels.js?v=5";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
 
@@ -1278,6 +1281,7 @@ const {
   portMiniaturePlacements,
 });
 seaRendering.setRivers(riverPaths);
+const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
 
 const merchantNames = RIVAL_SHIP_NAMES;
 const merchantColors = [
@@ -1816,6 +1820,7 @@ function revealContractDestination(port) {
   );
   exploredCtx.fill();
   exploredCtx.restore();
+  explorationSampler.invalidate();
 }
 function makeContractOffer(origin, index) {
   const result = createContractOffer({
@@ -2711,6 +2716,24 @@ function onLand(x, y) {
 }
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
+// Coastlines do not change after map generation. Cache their geometry once
+// rather than recomputing centroids for every one of the 192 sight rays.
+const visibilityLandGeometry = lands.map(({ poly }) => {
+  const xs = poly.map(([x]) => x);
+  const ys = poly.map(([, y]) => y);
+  return {
+    poly,
+    center: polygonCentroid(poly),
+    // A small conservative margin keeps floating-point boundary hits in the
+    // exact edge tests; these bounds only reject impossible intersections.
+    bounds: {
+      left: Math.min(...xs) - 1,
+      right: Math.max(...xs) + 1,
+      top: Math.min(...ys) - 1,
+      bottom: Math.max(...ys) + 1,
+    },
+  };
+});
 function buildVisibilityPolygon(force = false) {
   const baseWeather = weatherInSeaZone(getInterpolatedWeather());
   const lighting = sceneLighting(
@@ -2752,14 +2775,25 @@ function buildVisibilityPolygon(force = false) {
       visibility.worldUnitsPerKm;
     let hit = localRadius;
     let hitLandIndex = -1;
-    for (const [landIndex, land] of lands.entries()) {
-      const cent = polygonCentroid(land.poly);
-      const nearestOffset = Math.round((ship.x - cent.x) / WORLD.w) * WORLD.w;
+    for (const [landIndex, land] of visibilityLandGeometry.entries()) {
+      const nearestOffset =
+        Math.round((ship.x - land.center.x) / WORLD.w) * WORLD.w;
       for (const offset of [
         nearestOffset - WORLD.w,
         nearestOffset,
         nearestOffset + WORLD.w,
       ]) {
+        if (
+          !rayIntersectsBounds(
+            ship.x - offset,
+            ship.y,
+            dx,
+            dy,
+            land.bounds,
+            hit,
+          )
+        )
+          continue;
         const poly = land.poly;
         for (let j = 0; j < poly.length; j++) {
           const a0 = poly[j],
@@ -2828,6 +2862,7 @@ function revealCurrentView(force = false) {
     exploredCtx.fill();
   }
   exploredCtx.restore();
+  explorationSampler.invalidate();
 }
 
 function explorationLandForSite(site) {
@@ -2877,6 +2912,7 @@ function revealExplorationSurvey(site, surveyed) {
     exploredCtx.fill();
   }
   exploredCtx.restore();
+  explorationSampler.invalidate();
 }
 
 function saveGameState() {
@@ -2903,6 +2939,7 @@ function restoreExploredMap(dataUrl) {
   image.addEventListener("load", () => {
     exploredCtx.clearRect(0, 0, exploredMask.width, exploredMask.height);
     exploredCtx.drawImage(image, 0, 0, exploredMask.width, exploredMask.height);
+    explorationSampler.invalidate();
   });
   image.src = dataUrl;
 }
@@ -3123,7 +3160,7 @@ function punchNearShoreTerrain(c) {
   c.fillStyle = "#000";
   for (const landIndex of visibility.nearShoreLandIndices) {
     const land = lands[landIndex];
-    const center = polygonCentroid(land.poly);
+    const center = visibilityLandGeometry[landIndex].center;
     const nearestOffset = Math.round((ship.x - center.x) / WORLD.w) * WORLD.w;
     for (const offset of [
       nearestOffset - WORLD.w,
@@ -3514,7 +3551,7 @@ function isWorldPointExplored(x, y) {
     0,
     Math.min(exploredMask.height - 1, Math.floor(y * FOG_MASK_SCALE)),
   );
-  return exploredCtx.getImageData(px, py, 1, 1).data[3] > 14;
+  return explorationSampler.isExplored(px, py);
 }
 function nearestKnownPort(x, y, radius) {
   let hit = null,
@@ -3845,12 +3882,22 @@ function renderFog(time, lighting) {
     (camera.y + vh / (2 * z * MAP_TILT_COS) + 200) / 160,
   );
   const columns = Math.round(WORLD.w / spacing);
+  // Keep a screen pixel of padding so edge antialiasing stays untouched.
+  const halfW = vw / (2 * z) + 1 / z;
+  const halfH = vh / (2 * z * MAP_TILT_COS) + 1 / (z * MAP_TILT_COS);
   for (let row = top; row <= bottom; row++) {
     for (let column = left; column <= right; column++) {
       const phase =
         (((column % columns) + columns) % columns) * 2.4 + row * 1.7;
       const x = column * spacing + drift + Math.sin(row * 4.1) * 65;
       const y = row * 160 + Math.sin(phase) * 45;
+      if (
+        x + 260 < camera.x - halfW ||
+        x - 260 > camera.x + halfW ||
+        y + 95 < camera.y - halfH ||
+        y - 95 > camera.y + halfH
+      )
+        continue;
       f.globalAlpha = 0.38 + Math.sin(phase) * 0.15;
       f.drawImage(mistStamp, x - 260, y - 95, 520, 190);
     }
@@ -4233,8 +4280,8 @@ function drawHarborLights(c, lighting, z) {
   const strength = lighting.night * (1 - lighting.storm * 0.2);
   c.save();
   for (const port of ports) {
-    if (!pointCurrentlyVisible(port.x, port.y)) continue;
     if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
+    if (!pointCurrentlyVisible(port.x, port.y)) continue;
     c.save();
     c.translate(nearestWrappedX(port.x, camera.x), port.y);
     for (const [x, y] of [
@@ -4268,6 +4315,9 @@ function drawHarborLights(c, lighting, z) {
   }
   c.restore();
 }
+const portLabelWidths = new Map();
+// A font becoming available can change metrics even though port names do not.
+document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
 function drawPortLabels(c, z, shipScreen) {
   c.save();
   c.font = "700 14px Georgia";
@@ -4281,7 +4331,7 @@ function drawPortLabels(c, z, shipScreen) {
       id: port.name,
       x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
       y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
-      width: Math.ceil(c.measureText(port.name).width) + 29,
+      width: portLabelWidth(c, port.name),
       height: 26,
       priority:
         (port.name === game.navigation.destination ? 100 : 0) +
@@ -4362,6 +4412,11 @@ function drawPortLabels(c, z, shipScreen) {
     );
   }
   c.restore();
+}
+function portLabelWidth(c, name) {
+  if (!portLabelWidths.has(name))
+    portLabelWidths.set(name, Math.ceil(c.measureText(name).width) + 29);
+  return portLabelWidths.get(name);
 }
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -4452,24 +4507,18 @@ function render() {
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
   const beaconRange = Math.max(vw, vh) + 160;
-  const lighthouses = ports
-    .map((port, index) => ({ port, index }))
-    .filter(
-      ({ port }) =>
-        wrappedDistance(ship.x, ship.y, port.x, port.y) < beaconRange / z,
-    )
-    .map(({ port, index }) => ({
-      x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
-      y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
-      index,
-    }))
-    .filter(
-      (light) =>
-        light.x > -160 &&
-        light.x < vw + 160 &&
-        light.y > -160 &&
-        light.y < vh + 160,
-    );
+  const lighthouses = [];
+  if (lighting.night >= 0.015) {
+    for (let index = 0; index < ports.length; index++) {
+      const port = ports[index];
+      if (wrappedDistance(ship.x, ship.y, port.x, port.y) >= beaconRange / z)
+        continue;
+      const x = vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z;
+      const y = vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS;
+      if (x > -160 && x < vw + 160 && y > -160 && y < vh + 160)
+        lighthouses.push({ x, y, index });
+    }
+  }
   const shipScreen = {
     x: vw / 2 + (ship.x - camera.x) * z,
     y: vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS,
@@ -4736,8 +4785,12 @@ function update(dt) {
   // traffic, unchanged.
   if (gameStarted) {
     game.timeOfDay = advanceTimeOfDay(game.timeOfDay, dt);
-    ui.time.textContent = timeOfDayLabel(
-      sceneLighting(game.timeOfDay, currentWeather().roughness, game.day),
+    updateElementProperty(
+      ui.time,
+      "textContent",
+      timeOfDayLabel(
+        sceneLighting(game.timeOfDay, currentWeather().roughness, game.day),
+      ),
     );
     updateFleetShips(dt);
   }

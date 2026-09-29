@@ -27,6 +27,49 @@ function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
 }
 
+// Intersect the finite ray with both axis slabs before testing polygon edges.
+// Bounds are inclusive so a grazing ray or an origin on the coast is retained.
+export function rayIntersectsBounds(px, py, dx, dy, bounds, maxDistance) {
+  let near = 0;
+  let far = maxDistance;
+  if (dx === 0) {
+    if (px < bounds.left || px > bounds.right) return false;
+  } else {
+    const a = (bounds.left - px) / dx;
+    const b = (bounds.right - px) / dx;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  if (dy === 0) {
+    if (py < bounds.top || py > bounds.bottom) return false;
+  } else {
+    const a = (bounds.top - py) / dy;
+    const b = (bounds.bottom - py) / dy;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  return near <= far;
+}
+
+// A connected rectangle is strictly inside a polygon when its center is inside
+// and no polygon edge enters it. Boundary contact is deliberately rejected.
+export function polygonContainsBounds(polygon, bounds) {
+  if (
+    !pointInPolygon(
+      (bounds.left + bounds.right) / 2,
+      (bounds.top + bounds.bottom) / 2,
+      polygon,
+    )
+  )
+    return false;
+  for (let index = 0; index < polygon.length; index++) {
+    const [ax, ay] = polygon[index];
+    const [bx, by] = polygon[(index + 1) % polygon.length];
+    if (rayIntersectsBounds(ax, ay, bx - ax, by - ay, bounds, 1)) return false;
+  }
+  return true;
+}
+
 export function raySegmentDistance(
   px,
   py,

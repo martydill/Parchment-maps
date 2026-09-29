@@ -1,4 +1,5 @@
 import { nearestWrapped } from "./core/math.js";
+import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import {
   buildWakeRibbon,
@@ -108,8 +109,39 @@ export function createSeaRendering({
               : null;
           })
           .filter(Boolean);
-    return { bounds, masks, land, surf, foam, flocks, animals, index };
+    return { bounds, masks, land, surf, foam, flocks, animals, index, poly };
   });
+  const surfaceMarks = new Map();
+  function surfaceMark(row, column, columns, spacing, rowOffset) {
+    const key = row * columns + column;
+    if (surfaceMarks.has(key)) return surfaceMarks.get(key);
+    const phase = column * 2.39 + row * 1.73;
+    const x = column * spacing + rowOffset;
+    const y = row * 48 + Math.sin(phase * 3) * 16;
+    // Enclose both strokes and the crest through every phase and wind angle,
+    // plus their maximum line widths and antialiasing at the minimum zoom.
+    const hidden = coasts.some(({ bounds, poly }) => {
+      const center = (bounds.left + bounds.right) / 2;
+      const offset = Math.round((x - center) / WORLD.w) * WORLD.w;
+      const box = {
+        left: x - offset - 64,
+        right: x - offset + 64,
+        top: y - 24,
+        bottom: y + 24,
+      };
+      if (
+        box.left < bounds.left ||
+        box.right > bounds.right ||
+        box.top < bounds.top ||
+        box.bottom > bounds.bottom
+      )
+        return false;
+      return polygonContainsBounds(poly, box);
+    });
+    const mark = { phase, y, length: 18 + (Math.sin(phase) + 1) * 15, hidden };
+    surfaceMarks.set(key, mark);
+    return mark;
+  }
   const seaLife = [];
   for (let row = 0; row < Math.floor(WORLD.h / 285); row++) {
     for (let column = 0; column < Math.floor(WORLD.w / 360); column++) {
@@ -565,29 +597,28 @@ export function createSeaRendering({
       Math.ceil((camera.y + halfH) / 48),
     );
     c.lineCap = "round";
+    const rotation = Math.sin(windAngle) * 0.12;
+    const light =
+      (lighting?.daylight ?? 1) * (1 - (lighting?.storm ?? 0) * 0.45);
     for (let row = top; row <= bottom; row++) {
+      const rowOffset = Math.sin(row * 12.7) * 25;
       for (let column = left; column <= right; column++) {
         const canonical = ((column % columns) + columns) % columns;
-        const phase = canonical * 2.39 + row * 1.73;
+        const mark = surfaceMark(row, canonical, columns, spacing, rowOffset);
+        if (mark.hidden && z >= 0.7) continue;
+        const { phase, length } = mark;
         const pulse = (Math.sin(t * (0.6 + roughness * 0.4) + phase) + 1) / 2;
-        const x =
-          column * spacing +
-          Math.sin(row * 12.7) * 25 +
-          Math.cos(t * 0.28 + phase) * 5;
-        const y =
-          row * 48 + Math.sin(phase * 3) * 16 + Math.sin(t * 0.48 + phase) * 3;
-        const length = 18 + (Math.sin(phase) + 1) * 15;
+        const x = column * spacing + rowOffset + Math.cos(t * 0.28 + phase) * 5;
+        const y = mark.y + Math.sin(t * 0.48 + phase) * 3;
         c.save();
         c.translate(x, y);
-        c.rotate(Math.sin(windAngle) * 0.12);
+        c.rotate(rotation);
         c.strokeStyle = `rgba(37,81,78,${0.035 + pulse * 0.065})`;
         c.lineWidth = 3.5;
         c.beginPath();
         c.moveTo(-length, 3);
         c.bezierCurveTo(-length * 0.3, -2, length * 0.4, 7, length, 1);
         c.stroke();
-        const light =
-          (lighting?.daylight ?? 1) * (1 - (lighting?.storm ?? 0) * 0.45);
         c.strokeStyle = `rgba(247,237,197,${(0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) * (0.42 + light * 0.58)})`;
         c.lineWidth = 0.8 / z;
         c.beginPath();
