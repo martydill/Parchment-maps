@@ -1,3 +1,5 @@
+import { sampleLighthouse } from "./core/seascape.js";
+
 const darknessCanvas = document.createElement("canvas");
 const darknessContext = darknessCanvas.getContext("2d");
 const DARKNESS_SCALE = 0.5;
@@ -112,7 +114,14 @@ export function drawNightAtmosphere(
   d.globalCompositeOperation = "destination-out";
   glow(d, ship.x, ship.y, 170, `rgba(0,0,0,${lighting.night * 0.85})`);
   for (const light of lighthouses) {
-    glow(d, light.x, light.y, 125, `rgba(0,0,0,${lighting.night * 0.9})`);
+    const { reach } = sampleLighthouse(0, light.index);
+    glow(
+      d,
+      light.x,
+      light.y,
+      reach * 0.65,
+      `rgba(0,0,0,${lighting.night * 0.9})`,
+    );
   }
   d.globalCompositeOperation = "source-over";
   c.drawImage(darknessCanvas, 0, 0, width, height);
@@ -121,8 +130,10 @@ export function drawNightAtmosphere(
   c.globalCompositeOperation = "screen";
   glow(c, ship.x, ship.y, 110, `rgba(255,180,76,${lighting.night * 0.26})`);
   for (const light of lighthouses) {
-    const sweep = reducedMotion ? 0 : time * 0.0005 + light.index * 2.4;
-    const reach = 150;
+    const { angle: sweep, reach } = sampleLighthouse(
+      reducedMotion ? 0 : time,
+      light.index,
+    );
     const beam = c.createRadialGradient(
       light.x,
       light.y,

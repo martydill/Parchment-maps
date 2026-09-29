@@ -6,6 +6,10 @@ import {
   coastFaceDepth,
   sampleCoastalBird,
   sampleCreatureAppearance,
+  coastalFlockSize,
+  sampleLighthouse,
+  sampleSeaLife,
+  sampleShoreAnimal,
 } from "../src/core/seascape.js";
 
 test("coast faces vary by island and keep small satellites low", () => {
@@ -18,21 +22,58 @@ test("coast faces vary by island and keep small satellites low", () => {
   assert.ok(coastFaceDepth(3, true) < coastFaceDepth(3));
 });
 
-test("coastal birds keep a bounded formation while circling", () => {
+test("coastal birds vary in number and formation while circling", () => {
   const still = sampleCoastalBird(0, 2, 0);
   assert.deepEqual(sampleCoastalBird(0, 2, 0), still);
   assert.notDeepEqual(sampleCoastalBird(1, 2, 0), still);
+  assert.ok(
+    new Set(Array.from({ length: 12 }, (_, index) => coastalFlockSize(index)))
+      .size >= 4,
+  );
+  assert.ok(coastalFlockSize(0) < coastalFlockSize(7));
   for (let time = -30; time <= 30; time += 0.5) {
-    for (let bird = 0; bird < 5; bird++) {
-      const pose = sampleCoastalBird(time, 3, bird);
-      assert.ok(Object.values(pose).every(Number.isFinite));
-      assert.ok(Math.abs(pose.x) <= 45);
-      assert.ok(Math.abs(pose.y) <= 25);
-      assert.ok(Math.abs(pose.wing) <= 1);
-      assert.ok(pose.size >= 6.6 && pose.size <= 8);
+    for (let flock = 0; flock < 4; flock++) {
+      for (let bird = 0; bird < coastalFlockSize(flock); bird++) {
+        const pose = sampleCoastalBird(time, flock, bird);
+        assert.ok(Object.values(pose).every(Number.isFinite));
+        assert.ok(Math.abs(pose.x) <= 85);
+        assert.ok(Math.abs(pose.y) <= 32);
+        assert.ok(Math.abs(pose.wing) <= 1);
+        assert.ok(pose.size >= 6.6 && pose.size <= 8);
+      }
     }
   }
-  assert.ok(sampleCoastalBird(0, 2, 1).y < sampleCoastalBird(0, 2, 2).y);
+  assert.notDeepEqual(sampleCoastalBird(0, 0, 2), sampleCoastalBird(0, 1, 2));
+});
+
+test("beacons have stable individual sweep speeds and ranges", () => {
+  const first = sampleLighthouse(0, 0);
+  assert.deepEqual(sampleLighthouse(0, 0), first);
+  assert.notEqual(sampleLighthouse(0, 1).reach, first.reach);
+  assert.notEqual(
+    sampleLighthouse(1000, 1).angle - sampleLighthouse(0, 1).angle,
+    sampleLighthouse(1000, 0).angle - first.angle,
+  );
+});
+
+test("sea life and shore animals move deterministically within their locations", () => {
+  assert.equal(sampleSeaLife(0, 0).visible, true);
+  assert.equal(sampleSeaLife(15, 0).visible, false);
+  assert.equal(sampleSeaLife(15, 0).opacity, 0);
+  assert.equal(sampleSeaLife(22, 0).visible, sampleSeaLife(0, 0).visible);
+  assert.ok(sampleSeaLife(0.5, 0).opacity > 0);
+  assert.ok(sampleSeaLife(10.5, 0).opacity > 0);
+  for (let index = 0; index < 8; index++) {
+    for (let time = -30; time < 30; time += 0.5) {
+      const sea = sampleSeaLife(time, index);
+      const shore = sampleShoreAnimal(time, index);
+      assert.ok(Math.abs(sea.x) <= 34 && Math.abs(sea.y) <= 12);
+      assert.ok(sea.opacity >= 0 && sea.opacity <= 1);
+      assert.ok(Math.abs(shore.x) <= 15 && Math.abs(shore.y) <= 4);
+      assert.ok([-1, 1].includes(shore.facing));
+      assert.ok(Math.abs(shore.step) <= 1);
+    }
+  }
 });
 
 test("creatures surface briefly on a repeatable staggered cycle", () => {

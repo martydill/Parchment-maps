@@ -833,21 +833,42 @@ export function createMapRendering({
     const rnd = seeded(Math.round(x * 7 + y * 13));
     c.save();
     c.translate(x, y);
-    c.rotate(-0.16);
-    c.strokeStyle = "rgba(69,55,32,.28)";
-    c.setLineDash([2, 6]);
-    c.lineWidth = 1.2;
+    // Sand washes and broken contours resemble an engraved reef shelf.
     for (let ring = 0; ring < 3; ring++) {
       c.beginPath();
-      c.ellipse(0, 0, rx - ring * 12, ry - ring * 7, 0, 0, Math.PI * 2);
+      for (let point = 0; point <= 48; point++) {
+        const angle = (point / 48) * Math.PI * 2;
+        const contour =
+          0.94 -
+          ring * 0.16 +
+          Math.sin(angle * 5 + x) * 0.07 +
+          Math.cos(angle * 9 + y) * 0.045;
+        const px = Math.cos(angle) * rx * contour;
+        const py = Math.sin(angle) * ry * contour;
+        if (point === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
+      }
+      c.closePath();
+      c.fillStyle = `rgba(194,164,102,${ring === 0 ? 0.15 : 0.06})`;
+      c.fill();
+      c.strokeStyle = `rgba(80,65,39,${0.35 - ring * 0.06})`;
+      c.lineWidth = ring === 0 ? 1.5 : 0.9;
       c.stroke();
     }
-    c.setLineDash([]);
-    c.fillStyle = "rgba(68,52,28,.25)";
-    for (let i = 0; i < 170; i++) {
+    c.fillStyle = "rgba(68,52,28,.3)";
+    for (let i = 0; i < 120; i++) {
       const a = rnd() * Math.PI * 2,
-        r = Math.sqrt(rnd());
-      c.fillRect(Math.cos(a) * rx * r, Math.sin(a) * ry * r, 1.2, 1.2);
+        r = Math.sqrt(rnd()) * 0.75;
+      const px = Math.cos(a) * rx * r;
+      const py = Math.sin(a) * ry * r;
+      if (i % 13 === 0) {
+        c.beginPath();
+        c.moveTo(px, py - 5);
+        c.lineTo(px + 5, py + 3);
+        c.lineTo(px - 6, py + 3);
+        c.closePath();
+        c.fill();
+      } else c.fillRect(px, py, 1.2, 1.2);
     }
     c.restore();
     if (label) {
