@@ -538,6 +538,20 @@ body {
   white-space: nowrap;
   text-shadow: 0 1px #000;
 }
+#fpsCounter {
+  position: absolute;
+  left: 18px;
+  bottom: calc(5px + env(safe-area-inset-bottom));
+  padding: 2px 5px;
+  border: 1px solid rgba(227, 199, 143, 0.2);
+  border-radius: 3px;
+  background: rgba(28, 27, 24, 0.42);
+  color: rgba(244, 226, 184, 0.7);
+  font: 600 10px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px #1f1a14;
+  white-space: nowrap;
+}
 @media (max-width: 520px) {
   #steeringStatus {
     bottom: calc(162px + env(safe-area-inset-bottom));

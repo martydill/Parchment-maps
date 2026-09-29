@@ -5030,7 +5030,21 @@ function update(dt) {
   updateSeaWarning();
   updateHud();
 }
+const fpsCounter = document.getElementById("fpsCounter");
+let fpsSampleStart = 0;
+let fpsFrameCount = 0;
 function loop(now) {
+  if (!fpsSampleStart || now - fpsSampleStart > 2000) {
+    fpsSampleStart = now;
+    fpsFrameCount = 0;
+  }
+  fpsFrameCount++;
+  const fpsElapsed = now - fpsSampleStart;
+  if (fpsElapsed >= 750) {
+    fpsCounter.textContent = `${Math.round((fpsFrameCount * 1000) / fpsElapsed)} FPS`;
+    fpsSampleStart = now;
+    fpsFrameCount = 0;
+  }
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   update(dt);
