@@ -291,6 +291,10 @@ import {
   wrappedCircleIntersectsViewport,
 } from "./rendering.js?v=4";
 import {
+  drawDiscoverySite,
+  drawExplorationSite,
+} from "./exploration-rendering.js";
+import {
   advanceTimeOfDay,
   nightSightLimit,
   normalizeTimeOfDay,
@@ -303,7 +307,7 @@ import {
   hasPortMiniature,
 } from "./port-miniatures.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
-import { renderChartPanel } from "./ui/chart-panel.js?v=4";
+import { renderChartPanel } from "./ui/chart-panel.js?v=5";
 import {
   configureUiPanels,
   openExploration,
@@ -3935,28 +3939,23 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     if (!progress && !visible && !isWorldPointExplored(site.x, site.y))
       continue;
     const x = nearestWrappedX(site.x, camera.x);
-    const pulse = visible && site === nearExplorationSite ? 1.15 : 1;
+    const active = visible && site === nearExplorationSite;
     c.save();
     c.translate(x, site.y);
-    c.strokeStyle =
-      progress?.status === "surveyed"
-        ? "rgba(123, 205, 160, .95)"
-        : "rgba(244, 218, 157, .86)";
-    c.fillStyle = progress ? "rgba(52, 72, 46, .84)" : "rgba(62, 45, 25, .78)";
-    c.lineWidth = 2 / z;
-    c.setLineDash(progress?.status === "surveyed" ? [] : [5 / z, 4 / z]);
-    c.beginPath();
-    c.arc(0, 0, (16 * pulse) / z, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-    c.setLineDash([]);
-    c.fillStyle = "#fff0c0";
-    c.font = 15 / z + "px Georgia";
-    c.fillText("✦", 0, -1 / z);
+    c.scale(1 / z, 1 / z);
+    drawExplorationSite(
+      c,
+      site,
+      0,
+      0,
+      active ? 54 : 48,
+      progress?.status === "surveyed",
+      active,
+    );
     if ((visible || progress) && progress?.status !== "surveyed") {
       c.fillStyle = "rgba(47,29,15,.82)";
-      c.font = `${progress ? "700 " : ""}${12 / z}px Georgia`;
-      c.fillText("shore survey", 0, -25 / z);
+      c.font = `${progress ? "700 " : ""}12px Georgia`;
+      c.fillText("shore survey", 0, -30);
     }
     c.restore();
   }
@@ -3964,40 +3963,27 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     const x = nearestWrappedX(nearDiscovery.x, camera.x);
     c.save();
     c.translate(x, nearDiscovery.y);
-    c.fillStyle = "rgba(46, 64, 60, .82)";
-    c.strokeStyle = "rgba(244, 218, 157, .95)";
-    c.lineWidth = 2 / z;
-    c.setLineDash([5 / z, 4 / z]);
-    c.beginPath();
-    c.arc(0, 0, (16 * 1.15) / z, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-    c.setLineDash([]);
-    c.fillStyle = "#fff0c0";
-    c.font = 14 / z + "px Georgia";
-    c.fillText(nearDiscovery.icon, 0, 0);
+    c.scale(1 / z, 1 / z);
+    drawDiscoverySite(c, nearDiscovery, 0, 0, 54, true);
     c.restore();
   }
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
     if (!record) continue;
-    if (!isWorldCircleInViewport(site.x, site.y, 24, z)) continue;
+    if (!isWorldCircleInViewport(site.x, site.y, 27 / z, z)) continue;
     const x = nearestWrappedX(site.x, camera.x);
     c.save();
     c.translate(x, site.y);
-    c.fillStyle =
-      record.disposition === "secret"
-        ? "rgba(65,45,25,.92)"
-        : "rgba(159,91,38,.95)";
-    c.strokeStyle = "rgba(244,218,157,.9)";
-    c.lineWidth = 2 / z;
-    c.beginPath();
-    c.arc(0, 0, 14 / z, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-    c.fillStyle = "#fff0c0";
-    c.font = 13 / z + "px Georgia";
-    c.fillText(site.icon, 0, 0);
+    c.scale(1 / z, 1 / z);
+    drawDiscoverySite(
+      c,
+      site,
+      0,
+      0,
+      43,
+      false,
+      record.disposition === "secret",
+    );
     c.restore();
   }
   if (game.laws.amberConvoy) {

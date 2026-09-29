@@ -1,6 +1,7 @@
 import { chartedCityIndicators } from "../core/chart.js";
 import { layoutMapLabels } from "../core/label-layout.js";
 import { drawShip } from "../rendering.js?v=4";
+import { drawExplorationSite } from "../exploration-rendering.js";
 
 export function renderChartPanel({
   activeRumorLeads,
@@ -249,15 +250,14 @@ function drawExplorationSites(
   for (const site of explorationSites) {
     const progress = game.exploration.sites[site.id];
     if (!progress && !isWorldPointExplored(site.x, site.y)) continue;
-    c.strokeStyle = progress?.status === "surveyed" ? "#7bcda0" : "#f4da9d";
-    c.fillStyle = progress ? "rgba(52,72,46,.88)" : "rgba(62,45,25,.82)";
-    c.lineWidth = 2;
-    c.setLineDash(progress?.status === "surveyed" ? [] : [4, 3]);
-    c.beginPath();
-    c.arc(site.x * sx, site.y * sy, 7, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-    c.setLineDash([]);
+    drawExplorationSite(
+      c,
+      site,
+      site.x * sx,
+      site.y * sy,
+      25,
+      progress?.status === "surveyed",
+    );
   }
 }
 
