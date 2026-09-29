@@ -19,7 +19,7 @@ export {
   drawMerchantShip,
   drawShip,
   shipDrawProfile,
-} from "./ship-rendering.js?v=2";
+} from "./ship-rendering.js?v=3";
 import {
   lands,
   ports,
@@ -29,6 +29,24 @@ import {
   worldMonsters,
   worldShoals,
 } from "./world-data.js";
+
+const REGIONAL_PIGMENTS = [
+  "#aa6446",
+  "#5f8279",
+  "#8c7452",
+  "#6f7890",
+  "#876b84",
+  "#7d885b",
+];
+
+export function portAccentColor(port) {
+  if (port.home) return "#bb8544";
+  const region = port.land || port.realm || port.name;
+  let hash = 0;
+  for (const character of region)
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return REGIONAL_PIGMENTS[hash % REGIONAL_PIGMENTS.length];
+}
 
 function seeded(n) {
   let t = n + 0x6d2b79f5;
@@ -660,6 +678,13 @@ export function createMapRendering({
     c.arc(0, 0, illustrated ? 5 : 8, 0, Math.PI * 2);
     c.fill();
     c.stroke();
+    c.strokeStyle = portAccentColor(p);
+    c.lineWidth = 2.2;
+    c.beginPath();
+    c.arc(0, 0, illustrated ? 10 : 13, 0, Math.PI * 2);
+    c.stroke();
+    c.strokeStyle = "#291b10";
+    c.lineWidth = 2;
     if (!illustrated && evolution.warehouses) {
       c.fillStyle = "rgba(111,66,31,.78)";
       c.fillRect(7, -21, 20, 14);
