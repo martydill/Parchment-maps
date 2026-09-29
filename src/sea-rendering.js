@@ -2,9 +2,12 @@ import { nearestWrapped } from "./core/math.js";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import {
   buildWakeRibbon,
+  coastalFlockSize,
   coastFaceDepth,
   sampleCoastalBird,
   sampleCreatureAppearance,
+  sampleSeaLife,
+  sampleShoreAnimal,
 } from "./core/seascape.js";
 
 function wakeNoise(index, salt) {
@@ -91,8 +94,35 @@ export function createSeaRendering({
               : null;
           })
           .filter(Boolean);
-    return { bounds, masks, land, surf, foam, flocks, index };
+    const animals = satellite
+      ? []
+      : [0.25, 0.67]
+          .map((fraction, animalIndex) => {
+            const mark = foam[Math.floor(foam.length * fraction)];
+            return mark && (index + animalIndex) % 3 !== 0
+              ? {
+                  x: mark.x - mark.nx * 38,
+                  y: mark.y - mark.ny * 38 - depth,
+                  index: index * 2 + animalIndex,
+                }
+              : null;
+          })
+          .filter(Boolean);
+    return { bounds, masks, land, surf, foam, flocks, animals, index };
   });
+  const seaLife = [];
+  for (let row = 0; row < Math.floor(WORLD.h / 285); row++) {
+    for (let column = 0; column < Math.floor(WORLD.w / 360); column++) {
+      const index = row * Math.floor(WORLD.w / 360) + column;
+      if (wakeNoise(index, 49) < 0.72) continue;
+      seaLife.push({
+        x: (column + 0.25 + wakeNoise(index, 50) * 0.5) * 360,
+        y: (row + 0.25 + wakeNoise(index, 51) * 0.5) * 285,
+        index,
+        kind: index % 5,
+      });
+    }
+  }
 
   function visibleCoasts(camera, vw, vh) {
     const halfW = vw / (2 * camera.zoom) + 80;
@@ -289,7 +319,7 @@ export function createSeaRendering({
     c.lineJoin = "round";
     for (const { flocks, offset } of visible) {
       for (const flock of flocks) {
-        for (let bird = 0; bird < 5; bird++) {
+        for (let bird = 0; bird < coastalFlockSize(flock.index); bird++) {
           const pose = sampleCoastalBird(time, flock.index, bird);
           const x = flock.x + offset + pose.x;
           const y = flock.y + pose.y;
@@ -320,6 +350,150 @@ export function createSeaRendering({
       }
     }
     c.restore();
+  }
+
+  function drawSeaLife(c, camera, time, halfW, halfH) {
+    for (const life of seaLife) {
+      const x = nearestWrapped(life.x, camera.x, WORLD.w);
+      if (
+        Math.abs(x - camera.x) > halfW + 75 ||
+        Math.abs(life.y - camera.y) > halfH + 75
+      )
+        continue;
+      const pose = sampleSeaLife(time, life.index);
+      if (pose.opacity <= 0) continue;
+      c.save();
+      c.translate(x + pose.x, life.y + pose.y);
+      c.globalAlpha = pose.opacity * 0.8;
+      c.lineCap = "round";
+      c.strokeStyle = "rgba(35,65,62,.8)";
+      c.fillStyle = "rgba(50,83,79,.65)";
+      c.lineWidth = 1.2;
+      if (life.kind < 3) {
+        // Loose, staggered schools read as fish at both sailing and chart zoom.
+        for (let fish = 0; fish < 7 + life.kind * 2; fish++) {
+          const fx = (fish % 4) * 13 - 23 + Math.sin(fish * 4.1) * 5;
+          const fy = Math.floor(fish / 4) * 11 - 12 + Math.cos(fish * 2.7) * 4;
+          const sway = pose.swim * (1 + (fish % 3));
+          c.beginPath();
+          c.moveTo(fx - 6, fy);
+          c.quadraticCurveTo(fx, fy - 4, fx + 7, fy + sway);
+          c.quadraticCurveTo(fx, fy + 4, fx - 6, fy);
+          c.fill();
+          c.stroke();
+          c.beginPath();
+          c.moveTo(fx - 6, fy);
+          c.lineTo(fx - 11, fy - 4 + sway);
+          c.lineTo(fx - 11, fy + 4 + sway);
+          c.closePath();
+          c.fill();
+        }
+      } else if (life.kind === 3) {
+        // A broad whale shadow, flukes, and a few broken surface glints.
+        c.beginPath();
+        c.moveTo(-34, 2);
+        c.bezierCurveTo(-18, -13, 17, -13, 33, 0);
+        c.bezierCurveTo(11, 13, -20, 14, -34, 2);
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.moveTo(-33, 1);
+        c.lineTo(-45, -10 + pose.swim * 2);
+        c.lineTo(-42, 2);
+        c.lineTo(-45, 13 + pose.swim * 2);
+        c.closePath();
+        c.fill();
+        c.strokeStyle = "rgba(246,236,196,.62)";
+        c.beginPath();
+        c.moveTo(-12, -12);
+        c.quadraticCurveTo(8, -19, 27, -9);
+        c.stroke();
+      } else {
+        // A sea turtle with four paddling flippers and a scored shell.
+        c.beginPath();
+        c.ellipse(0, 0, 16, 11, 0, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.arc(19, 0, 5, 0, Math.PI * 2);
+        c.fill();
+        for (const side of [-1, 1]) {
+          c.beginPath();
+          c.moveTo(-7, side * 8);
+          c.quadraticCurveTo(-16, side * (20 + pose.swim * 3), -23, side * 19);
+          c.moveTo(8, side * 8);
+          c.quadraticCurveTo(17, side * (21 - pose.swim * 3), 19, side * 18);
+          c.stroke();
+        }
+        c.strokeStyle = "rgba(232,216,168,.48)";
+        c.beginPath();
+        c.moveTo(-10, 0);
+        c.lineTo(10, 0);
+        c.moveTo(0, -9);
+        c.lineTo(0, 9);
+        c.stroke();
+      }
+      c.restore();
+    }
+  }
+
+  function drawShoreAnimals(c, visible, time) {
+    for (const { animals, land, offset } of visible) {
+      if (!animals.length) continue;
+      c.save();
+      c.translate(offset, 0);
+      c.clip(land);
+      for (const animal of animals) {
+        const pack =
+          animal.index % 3 === 0 ? 3 : animal.index % 3 === 1 ? 2 : 1;
+        for (let member = 0; member < pack; member++) {
+          const pose = sampleShoreAnimal(time, animal.index + member);
+          c.save();
+          c.translate(
+            animal.x + pose.x + member * 14,
+            animal.y + pose.y + member * 7,
+          );
+          c.scale(pose.facing * (1 - member * 0.13), 1 - member * 0.13);
+          c.fillStyle = "rgba(75,66,42,.76)";
+          c.strokeStyle = "rgba(46,44,30,.86)";
+          c.lineWidth = 1.2;
+          c.beginPath();
+          c.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+          c.beginPath();
+          c.moveTo(7, -2);
+          c.lineTo(13, -7);
+          c.lineTo(17, -5);
+          c.lineTo(16, -1);
+          c.lineTo(9, 2);
+          c.fill();
+          c.stroke();
+          c.beginPath();
+          for (const leg of [-6, 5]) {
+            c.moveTo(leg, 3);
+            c.lineTo(leg + pose.step * 1.5, 10);
+          }
+          c.stroke();
+          if (animal.index % 2 === 0) {
+            c.beginPath();
+            c.moveTo(14, -7);
+            c.lineTo(13, -14);
+            c.lineTo(10, -17);
+            c.moveTo(13, -13);
+            c.lineTo(18, -17);
+            c.stroke();
+          } else {
+            c.beginPath();
+            c.moveTo(-9, -1);
+            c.lineTo(-17, -4);
+            c.stroke();
+          }
+          c.restore();
+        }
+      }
+      c.restore();
+    }
   }
 
   function drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH) {
@@ -438,6 +612,7 @@ export function createSeaRendering({
       }
     }
     drawCurrentFlow(c, camera, t, roughness, halfW, halfH);
+    drawSeaLife(c, camera, t, halfW, halfH);
     creatures.forEach(([x, y, scale], index) => {
       const nearestX = nearestWrapped(x, camera.x, WORLD.w);
       if (
@@ -493,6 +668,7 @@ export function createSeaRendering({
     c.restore();
     drawRiverFlow(c, visible, t, z);
     drawCoastalBirds(c, visible, t, z);
+    drawShoreAnimals(c, visible, t);
   }
 
   function drawWake(c, trail, time, camera, vw, vh) {

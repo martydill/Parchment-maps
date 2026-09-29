@@ -4135,25 +4135,53 @@ function drawNavigationalHazards(c, z) {
     if (!isWorldCircleInViewport(sx, sy, rx, z)) continue;
     const x = nearestWrappedX(sx, camera.x);
     c.save();
+    // Irregular sand shelf and inked reef edge, rather than a hazard ellipse.
     c.beginPath();
-    c.ellipse(x, sy, rx, ry, 0, 0, Math.PI * 2);
-    c.fillStyle = "rgba(198, 167, 96, .36)";
+    for (let point = 0; point <= 32; point++) {
+      const angle = (point / 32) * Math.PI * 2;
+      const ragged =
+        0.82 + Math.sin(angle * 5 + sx) * 0.1 + Math.sin(angle * 9 + sy) * 0.07;
+      const px = x + Math.cos(angle) * rx * ragged;
+      const py = sy + Math.sin(angle) * ry * ragged;
+      if (point === 0) c.moveTo(px, py);
+      else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fillStyle = "rgba(204, 177, 115, .39)";
     c.fill();
+    c.strokeStyle = "rgba(88, 79, 51, .76)";
+    c.lineWidth = 1.5 / z;
+    c.stroke();
     c.clip();
-    c.strokeStyle = "rgba(255, 236, 185, .65)";
-    c.lineWidth = 2 / z;
-    for (let offset = -rx - ry; offset < rx + ry; offset += 17 / z) {
+    for (let band = -2; band <= 2; band++) {
+      c.strokeStyle = `rgba(247, 231, 177, ${0.24 + (2 - Math.abs(band)) * 0.07})`;
+      c.lineWidth = (3 - Math.abs(band) * 0.35) / z;
       c.beginPath();
-      c.moveTo(x + offset - ry, sy - ry);
-      c.lineTo(x + offset + ry, sy + ry);
+      c.moveTo(x - rx, sy + band * ry * 0.34);
+      c.bezierCurveTo(
+        x - rx * 0.35,
+        sy + band * ry * 0.44 - 11,
+        x + rx * 0.28,
+        sy + band * ry * 0.23 + 9,
+        x + rx,
+        sy + band * ry * 0.38,
+      );
       c.stroke();
     }
+    for (let pebble = 0; pebble < 28; pebble++) {
+      const px = x + Math.sin(pebble * 31.7 + sx) * rx * 0.76;
+      const py = sy + Math.cos(pebble * 17.3 + sy) * ry * 0.68;
+      const size = pebble % 7 === 0 ? 5 : 1.5 + (pebble % 3);
+      c.fillStyle =
+        pebble % 7 === 0 ? "rgba(73, 70, 52, .73)" : "rgba(92, 85, 59, .38)";
+      c.beginPath();
+      c.moveTo(px, py - size);
+      c.lineTo(px + size * 0.8, py + size * 0.6);
+      c.lineTo(px - size, py + size * 0.6);
+      c.closePath();
+      c.fill();
+    }
     c.restore();
-    c.beginPath();
-    c.ellipse(x, sy, rx, ry, 0, 0, Math.PI * 2);
-    c.strokeStyle = "rgba(102, 72, 36, .8)";
-    c.lineWidth = 2 / z;
-    c.stroke();
     if (pointCurrentlyVisible(sx, sy)) {
       c.fillStyle = "rgba(64, 39, 20, .9)";
       c.font = `bold ${11 / z}px Georgia`;
@@ -4378,11 +4406,12 @@ function render() {
   drawSceneLightWash(ctx, lighting, vw, vh);
   const beaconRange = Math.max(vw, vh) + 160;
   const lighthouses = ports
+    .map((port, index) => ({ port, index }))
     .filter(
-      (port) =>
+      ({ port }) =>
         wrappedDistance(ship.x, ship.y, port.x, port.y) < beaconRange / z,
     )
-    .map((port, index) => ({
+    .map(({ port, index }) => ({
       x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
       y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
       index,

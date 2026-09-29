@@ -12,14 +12,56 @@ export function sampleCreatureAppearance(time, index) {
 }
 
 export function sampleCoastalBird(time, flockIndex, birdIndex) {
-  const orbit = time * 0.42 + flockIndex * 1.79;
+  const orbit = time * (0.24 + (flockIndex % 4) * 0.07) + flockIndex * 1.79;
   const rank = Math.ceil(birdIndex / 2);
   const side = birdIndex % 2 ? -1 : 1;
+  const formation = flockIndex % 4;
+  const spread =
+    formation === 0
+      ? [rank * -10, side * rank * 7]
+      : formation === 1
+        ? [birdIndex * -8, Math.sin(birdIndex * 1.8) * 9]
+        : formation === 2
+          ? [Math.cos(birdIndex * 2.4) * 15, Math.sin(birdIndex * 2.4) * 10]
+          : [birdIndex * -9, side * 4 + birdIndex * 2];
   return {
-    x: Math.cos(orbit) * 18 - rank * 12 + Math.sin(time * 0.8 + birdIndex) * 3,
-    y: Math.sin(orbit) * 11 + side * rank * 7,
+    x: Math.cos(orbit) * 18 + spread[0] + Math.sin(time * 0.8 + birdIndex) * 3,
+    y: Math.sin(orbit) * 11 + spread[1],
     wing: Math.sin(time * 7 + flockIndex * 1.9 + birdIndex * 0.65),
-    size: 8 - rank * 0.7,
+    size: 8 - (birdIndex % 4) * 0.45,
+  };
+}
+
+export function coastalFlockSize(index) {
+  return 3 + ((index * 7 + Math.floor(index / 3)) % 6);
+}
+
+export function sampleLighthouse(time, index) {
+  return {
+    angle: time * (0.00028 + (index % 5) * 0.00011) + index * 2.4,
+    reach: 135 + (index % 4) * 38,
+  };
+}
+
+export function sampleSeaLife(time, index) {
+  const phase = (((time + index * 2.7) % 22) + 22) % 22;
+  const visible = phase < 11;
+  return {
+    visible,
+    x: Math.sin(time * 0.18 + index * 1.7) * 34,
+    y: Math.cos(time * 0.13 + index) * 12,
+    swim: Math.sin(time * 3.1 + index * 2),
+    opacity: visible ? Math.min(1, phase / 1.5, (11 - phase) / 1.5) : 0,
+  };
+}
+
+export function sampleShoreAnimal(time, index) {
+  const phase = time * (0.18 + (index % 3) * 0.06) + index * 1.9;
+  return {
+    x: Math.sin(phase) * 15,
+    y: Math.cos(phase * 0.7) * 4,
+    step: Math.sin(phase * 8),
+    facing: Math.cos(phase) >= 0 ? 1 : -1,
   };
 }
 
