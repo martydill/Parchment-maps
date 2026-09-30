@@ -21,6 +21,11 @@ function canvasContext() {
           target[property] ?? ((...args) => calls.push([property, ...args]))
         );
       },
+      set(target, property, value) {
+        if (typeof value === "string") calls.push([property, value]);
+        target[property] = value;
+        return true;
+      },
     },
   );
 }
@@ -87,6 +92,42 @@ test("a steady night view reuses mask pixels while beams keep rotating", () => {
     context.calls.filter(([name]) => name === "lineTo"),
     initialBeams,
   );
+});
+
+test("night stars reuse a fine palette without losing their twinkle", () => {
+  const colors = new Set();
+  let previousStyles;
+  let changed = false;
+  for (let frame = 0; frame < 80; frame++) {
+    const context = canvasContext();
+    const state = options();
+    state.lighting.stars = 1;
+    state.time = frame * 123;
+    drawNightAtmosphere(context, state);
+    const styles = context.calls
+      .filter(
+        ([property, style]) =>
+          property === "fillStyle" && style.startsWith("rgba(223,235,255,"),
+      )
+      .map(([, style]) => style);
+    assert.equal(styles.length, 95);
+    styles.forEach((style, index) => {
+      colors.add(style);
+      const alpha = Number(style.slice(style.lastIndexOf(",") + 1, -1));
+      const expected =
+        (0.7 + Math.sin(state.time * 0.0015 + index * 4.7) * 0.3) *
+        (0.2 + (index % 7) * 0.075);
+      assert.ok(Math.abs(alpha - expected) <= 0.65 / 254 + 1e-15);
+    });
+    if (
+      previousStyles &&
+      styles.some((style, i) => style !== previousStyles[i])
+    )
+      changed = true;
+    previousStyles = styles;
+  }
+  assert.ok(changed);
+  assert.ok(colors.size > 20 && colors.size <= 128);
 });
 
 test("mask changes invalidate immediately, including in-place state edits", () => {

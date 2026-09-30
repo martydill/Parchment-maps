@@ -186,6 +186,16 @@ function weatherRand(i, salt = 0) {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+// At most 28 clouds with four puffs each. Motion changes gradient positions,
+// but colors only change when the weather does; retain one style per puff.
+const cloudPuffStyles = Array.from({ length: 28 * 4 }, () => ({
+  inner: "",
+  middle: "",
+  outer: "",
+}));
+let cloudStyleCloud = -1;
+let cloudStyleStorm = -1;
+
 function drawWeatherClouds(
   c,
   cloud,
@@ -211,6 +221,7 @@ function drawWeatherClouds(
   const fairLightBoost = (1 - storm) * 0.58;
   const cloudAlphaFactor = (0.55 + cloud * 0.5) * (0.7 + storm * 0.5);
   const stormTint = storm > 0.4 ? 8 : 0;
+  const colorsChanged = cloudStyleCloud !== cloud || cloudStyleStorm !== storm;
 
   for (let i = 0; i < count; i++) {
     const layer = i % 3; // 0 far .. 2 near — nearer banks loom larger
@@ -238,20 +249,27 @@ function drawWeatherClouds(
     for (let j = 0; j < puffs; j++) {
       const px = x + (j / (puffs - 1) - 0.5) * rx * 0.7;
       const py = y + (j / (puffs - 1) - 0.5) * ry * 0.5;
-      const puffLight = clamp01(
-        baseLight + (weatherRand(i * 7 + j, 12) - 0.5) * 0.4,
-      );
-      const val = 45 + puffLight * 205;
-      const tint = (weatherRand(i * 5 + j, 13) - 0.5) * 18;
-      const cr = clamp255(val + tint);
-      const cg = clamp255(val + tint * 0.5);
-      const cb = clamp255(val - tint * 0.3 + stormTint);
+      const styleIndex = i * 4 + j;
+      const style = cloudPuffStyles[styleIndex];
+      if (colorsChanged) {
+        const puffLight = clamp01(
+          baseLight + (weatherRand(i * 7 + j, 12) - 0.5) * 0.4,
+        );
+        const val = 45 + puffLight * 205;
+        const tint = (weatherRand(i * 5 + j, 13) - 0.5) * 18;
+        const cr = clamp255(val + tint);
+        const cg = clamp255(val + tint * 0.5);
+        const cb = clamp255(val - tint * 0.3 + stormTint);
+        const pa = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
+        style.inner = `rgba(${cr},${cg},${cb},${pa})`;
+        style.middle = `rgba(${cr},${cg},${cb},${pa * 0.4})`;
+        style.outer = `rgba(${cr},${cg},${cb},0)`;
+      }
       const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
-      const pa = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
       const grad = c.createRadialGradient(px, py, 0, px, py, pr);
-      grad.addColorStop(0, `rgba(${cr},${cg},${cb},${pa})`);
-      grad.addColorStop(0.7, `rgba(${cr},${cg},${cb},${pa * 0.4})`);
-      grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      grad.addColorStop(0, style.inner);
+      grad.addColorStop(0.7, style.middle);
+      grad.addColorStop(1, style.outer);
       c.fillStyle = grad;
       c.beginPath();
       c.ellipse(px, py, pr, pr * 0.7, windAngle, 0, Math.PI * 2);
@@ -259,11 +277,14 @@ function drawWeatherClouds(
     }
   }
   c.restore();
+  cloudStyleCloud = cloud;
+  cloudStyleStorm = storm;
 }
 
 function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
   if (cloud < 0.1) return;
   const direction = Math.cos(windAngle) >= 0 ? 1 : -1;
+  const shadowStyle = `rgba(28,47,58,${cloud * (0.035 + storm * 0.085)})`;
   c.save();
   for (let index = 0; index < 7; index++) {
     const span = vw + 600;
@@ -276,7 +297,7 @@ function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
     c.rotate(windAngle * 0.2);
     c.scale(1, 0.55);
     const shadow = c.createRadialGradient(0, 0, 0, 0, 0, radius);
-    shadow.addColorStop(0, `rgba(28,47,58,${cloud * (0.035 + storm * 0.085)})`);
+    shadow.addColorStop(0, shadowStyle);
     shadow.addColorStop(1, "rgba(28,47,58,0)");
     c.fillStyle = shadow;
     c.beginPath();

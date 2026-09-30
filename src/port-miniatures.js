@@ -1,5 +1,10 @@
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
+import { createAlphaPalette } from "./style-palette.js";
+
+const foundryGlowStyle = createAlphaPalette("249,148,68", 0.26, 0.38, 128);
+const foundrySparkStyle = createAlphaPalette("255,183,86", 0, 0.7, 128);
+const chimneySmokeStyle = createAlphaPalette("79,73,65", 0, 0.15, 128);
 
 // The same tilted, orthographic ground plane used by the ship models. The town
 // grid turns toward its nearest coastline when a scene is drawn.
@@ -1041,13 +1046,13 @@ export function drawPortActivity(
   }
   if (scene.kind === "foundry") {
     const [x, y] = point(-12, 2, 12);
-    c.fillStyle = `rgba(249,148,68,${0.32 + Math.sin(seconds * 1.8) * 0.06})`;
+    c.fillStyle = foundryGlowStyle(0.32 + Math.sin(seconds * 1.8) * 0.06);
     c.beginPath();
     c.ellipse(x, y, 11, 4, 0, 0, Math.PI * 2);
     c.fill();
     for (let spark = 0; spark < 5; spark++) {
       const rise = (seconds * (8 + spark * 1.4) + spark * 9) % 28;
-      c.fillStyle = `rgba(255,183,86,${(1 - rise / 28) * 0.7})`;
+      c.fillStyle = foundrySparkStyle((1 - rise / 28) * 0.7);
       c.beginPath();
       c.arc(
         x + Math.sin(spark * 2.7) * rise * 0.55,
@@ -1105,7 +1110,7 @@ export function drawPortActivity(
     const [sx, sy] = point(u, v, z);
     for (let index = 0; index < 3; index++) {
       const rise = (seconds * 4 + index * 10) % 30;
-      c.fillStyle = `rgba(79,73,65,${0.15 * (1 - rise / 30)})`;
+      c.fillStyle = chimneySmokeStyle(0.15 * (1 - rise / 30));
       c.beginPath();
       c.ellipse(
         sx + Math.cos(windAngle) * rise * 0.55,

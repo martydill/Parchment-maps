@@ -13,6 +13,7 @@ function canvasContext() {
         return (...args) => calls.push([property, ...args]);
       },
       set(target, property, value) {
+        calls.push([property, value]);
         target[property] = value;
         return true;
       },
@@ -44,6 +45,40 @@ test("each merchant vessel class draws a detailed projected model", () => {
       context.calls.some(([method]) => method === "lineTo"),
       vesselClass,
     );
+  }
+});
+
+test("ship foam uses bounded colors as speed changes and disappears at anchor", () => {
+  const palettes = new Map([
+    ["35,88,86", new Set()],
+    ["255,247,213", new Set()],
+    ["255,248,213", new Set()],
+    ["255,249,218", new Set()],
+  ]);
+  for (let sample = 0; sample <= 150; sample++) {
+    const context = canvasContext();
+    drawMerchantShip(context, {
+      x: 120,
+      y: 80,
+      speed: sample,
+      vesselClass: "brig",
+      idNum: 1,
+    });
+    const foam = context.calls.filter(
+      ([property, style]) =>
+        (property === "fillStyle" || property === "strokeStyle") &&
+        [...palettes.keys()].some((rgb) => style.startsWith(`rgba(${rgb},`)),
+    );
+    if (sample < 3) assert.equal(foam.length, 0);
+    else assert.equal(foam.length, 30);
+    for (const [, style] of foam) {
+      for (const [rgb, colors] of palettes) {
+        if (style.startsWith(`rgba(${rgb},`)) colors.add(style);
+      }
+    }
+  }
+  for (const colors of palettes.values()) {
+    assert.ok(colors.size > 20 && colors.size <= 128);
   }
 });
 

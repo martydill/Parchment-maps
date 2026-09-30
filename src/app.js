@@ -1,4 +1,5 @@
 import { createSeaRendering } from "./sea-rendering.js?v=3";
+import { createAlphaPalette } from "./style-palette.js";
 import { createExplorationSampler } from "./exploration-mask.js";
 import { updateElementProperty } from "./ui/dom.js";
 import {
@@ -3197,6 +3198,13 @@ function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
   );
 }
 
+const roughSeaCrestStyle = createAlphaPalette("249,232,184", 0.1, 0.3);
+const roughSeaShadowStyle = createAlphaPalette("57,61,47", 0.12, 0.23);
+const shoalBandStyles = Array.from(
+  { length: 3 },
+  (_, strength) => `rgba(247, 231, 177, ${0.24 + strength * 0.07})`,
+);
+
 function drawAnimatedRoughSeas(c, time, z) {
   c.save();
   c.lineCap = "round";
@@ -3210,10 +3218,6 @@ function drawAnimatedRoughSeas(c, time, z) {
     // Group particles by similar transformations to reduce state changes
     const particles = roughSeaParticles[seaIndex];
     if (!particles || particles.length === 0) continue;
-
-    // Pre-calculate common values
-    const baseColor1 = [249, 232, 184];
-    const baseColor2 = [57, 61, 47];
 
     for (let i = 0; i < particles.length; i++) {
       const particle = particles[i];
@@ -3229,7 +3233,7 @@ function drawAnimatedRoughSeas(c, time, z) {
       c.scale(particle.scale, particle.scale);
 
       // First stroke
-      c.strokeStyle = `rgba(${baseColor1[0]},${baseColor1[1]},${baseColor1[2]},${0.1 + crest * 0.2})`;
+      c.strokeStyle = roughSeaCrestStyle(0.1 + crest * 0.2);
       c.lineWidth = (1.2 + crest) / z;
       c.beginPath();
       c.moveTo(-15, 3);
@@ -3238,7 +3242,7 @@ function drawAnimatedRoughSeas(c, time, z) {
       c.stroke();
 
       // Second stroke
-      c.strokeStyle = `rgba(${baseColor2[0]},${baseColor2[1]},${baseColor2[2]},${0.12 + crest * 0.11})`;
+      c.strokeStyle = roughSeaShadowStyle(0.12 + crest * 0.11);
       c.lineWidth = 1 / z;
       c.beginPath();
       c.moveTo(-10, 8);
@@ -4237,7 +4241,7 @@ function drawNavigationalHazards(c, z) {
     c.stroke();
     c.clip();
     for (let band = -2; band <= 2; band++) {
-      c.strokeStyle = `rgba(247, 231, 177, ${0.24 + (2 - Math.abs(band)) * 0.07})`;
+      c.strokeStyle = shoalBandStyles[2 - Math.abs(band)];
       c.lineWidth = (3 - Math.abs(band) * 0.35) / z;
       c.beginPath();
       c.moveTo(x - rx, sy + band * ry * 0.34);
@@ -4278,6 +4282,9 @@ function drawNavigationalHazards(c, z) {
 function drawHarborLights(c, lighting, z) {
   if (lighting.night < 0.12) return;
   const strength = lighting.night * (1 - lighting.storm * 0.2);
+  const harborGlowStyle = `rgba(255,219,139,${strength * 0.42})`;
+  const harborLampStyle = `rgba(255,229,160,${strength * 0.88})`;
+  const harborReflectionStyle = `rgba(255,205,124,${strength * 0.24})`;
   c.save();
   for (const port of ports) {
     if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
@@ -4290,18 +4297,18 @@ function drawHarborLights(c, lighting, z) {
       [15, -15],
     ]) {
       const glow = c.createRadialGradient(x, y, 0, x, y, 11 / z);
-      glow.addColorStop(0, `rgba(255,219,139,${strength * 0.42})`);
+      glow.addColorStop(0, harborGlowStyle);
       glow.addColorStop(1, "rgba(255,186,86,0)");
       c.fillStyle = glow;
       c.beginPath();
       c.arc(x, y, 11 / z, 0, Math.PI * 2);
       c.fill();
-      c.fillStyle = `rgba(255,229,160,${strength * 0.88})`;
+      c.fillStyle = harborLampStyle;
       c.beginPath();
       c.arc(x, y, 1.35 / z, 0, Math.PI * 2);
       c.fill();
     }
-    c.strokeStyle = `rgba(255,205,124,${strength * 0.24})`;
+    c.strokeStyle = harborReflectionStyle;
     c.lineCap = "round";
     for (let ripple = 0; ripple < 4; ripple++) {
       const y = 12 + ripple * 7;

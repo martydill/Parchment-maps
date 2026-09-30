@@ -1,6 +1,7 @@
 import { nearestWrapped } from "./core/math.js";
 import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
+import { createAlphaPalette } from "./style-palette.js";
 import {
   buildWakeRibbon,
   coastalFlockSize,
@@ -10,6 +11,25 @@ import {
   sampleSeaLife,
   sampleShoreAnimal,
 } from "./core/seascape.js";
+
+const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
+// Finer opacity steps preserve the subtle response to daylight and storms.
+const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.35, 128);
+const lightBandInnerStyle = createAlphaPalette("255,235,181", 0, 0.16, 128);
+const lightBandOuterStyle = createAlphaPalette("244,227,181", 0, 0.064, 128);
+const surfStyle = createAlphaPalette("248,237,195", 0, 0.22);
+const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.396);
+const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.36);
+const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.27, 128);
+const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.322, 128);
+const currentShadowStyles = Array.from(
+  { length: 4 },
+  (_, strength) => `rgba(38,104,107,${0.055 + strength * 0.009})`,
+);
+const currentFoamStyles = Array.from(
+  { length: 4 },
+  (_, strength) => `rgba(238,236,193,${0.2 + strength * 0.035})`,
+);
 
 function wakeNoise(index, salt) {
   const value = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
@@ -204,12 +224,12 @@ export function createSeaRendering({
         c.beginPath();
         c.moveTo(-205, cross + drift);
         c.bezierCurveTo(-70, cross - 18, 70, cross + 20, 205, cross + drift);
-        c.strokeStyle = `rgba(38,104,107,${0.055 + (3 - Math.abs(lane)) * 0.009})`;
+        c.strokeStyle = currentShadowStyles[3 - Math.abs(lane)];
         c.lineWidth = 7 + roughness * 2;
         c.stroke();
         c.setLineDash([19, 23, 4, 42]);
         c.lineDashOffset = -time * (13 + roughness * 13) - lane * 31;
-        c.strokeStyle = `rgba(238,236,193,${0.2 + (3 - Math.abs(lane)) * 0.035})`;
+        c.strokeStyle = currentFoamStyles[3 - Math.abs(lane)];
         c.lineWidth = 1.4 / camera.zoom;
         c.stroke();
       }
@@ -559,8 +579,8 @@ export function createSeaRendering({
         const glow = c.createRadialGradient(0, 0, 5, 0, 0, width);
         const alpha =
           strength * (0.55 + (Math.sin(t * 0.7 + phase) + 1) * 0.22);
-        glow.addColorStop(0, `rgba(255,235,181,${alpha})`);
-        glow.addColorStop(0.55, `rgba(244,227,181,${alpha * 0.4})`);
+        glow.addColorStop(0, lightBandInnerStyle(alpha));
+        glow.addColorStop(0.55, lightBandOuterStyle(alpha * 0.4));
         glow.addColorStop(1, "rgba(244,227,181,0)");
         c.fillStyle = glow;
         c.beginPath();
@@ -613,13 +633,16 @@ export function createSeaRendering({
         c.save();
         c.translate(x, y);
         c.rotate(rotation);
-        c.strokeStyle = `rgba(37,81,78,${0.035 + pulse * 0.065})`;
+        c.strokeStyle = surfaceShadowStyle(0.035 + pulse * 0.065);
         c.lineWidth = 3.5;
         c.beginPath();
         c.moveTo(-length, 3);
         c.bezierCurveTo(-length * 0.3, -2, length * 0.4, 7, length, 1);
         c.stroke();
-        c.strokeStyle = `rgba(247,237,197,${(0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) * (0.42 + light * 0.58)})`;
+        c.strokeStyle = surfaceGlintStyle(
+          (0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) *
+            (0.42 + light * 0.58),
+        );
         c.lineWidth = 0.8 / z;
         c.beginPath();
         c.moveTo(-length * 0.8, 0);
@@ -658,7 +681,7 @@ export function createSeaRendering({
       c.lineJoin = "round";
       for (let layer = 0; layer < 2; layer++) {
         const pulse = (t * 0.16 + layer * 0.5) % 1;
-        c.strokeStyle = `rgba(248,237,195,${Math.sin(pulse * Math.PI) * 0.22})`;
+        c.strokeStyle = surfStyle(Math.sin(pulse * Math.PI) * 0.22);
         c.lineWidth = 4 + pulse * 16;
         c.setLineDash([12, 9, 3, 17]);
         c.lineDashOffset = -t * 2;
@@ -676,7 +699,7 @@ export function createSeaRendering({
         const reach = 3 + pulse * (8 + roughness * 6);
         const x = mark.x + mark.nx * reach;
         const y = mark.y + mark.ny * reach;
-        c.strokeStyle = `rgba(255,244,206,${(pulse - 0.28) * 0.55})`;
+        c.strokeStyle = foamStrokeStyle((pulse - 0.28) * 0.55);
         c.lineWidth = (0.8 + pulse * 1.2) / z;
         c.beginPath();
         c.moveTo(x - mark.tx * 6, y - mark.ty * 6);
@@ -688,7 +711,7 @@ export function createSeaRendering({
         );
         c.stroke();
         if (pulse > 0.8) {
-          c.fillStyle = `rgba(255,247,213,${(pulse - 0.8) * 1.8})`;
+          c.fillStyle = foamFillStyle((pulse - 0.8) * 1.8);
           c.beginPath();
           c.arc(x + mark.nx * 5, y + mark.ny * 5, 1.2 / z, 0, Math.PI * 2);
           c.fill();
@@ -731,7 +754,7 @@ export function createSeaRendering({
         const lateral = (a.width + b.width) * (0.35 + crest * 0.23);
         const x = a.x + dx * length * along + nx * lateral * side;
         const y = a.y + dy * length * along + ny * lateral * side;
-        c.strokeStyle = `rgba(250,244,211,${b.alpha * (0.38 + crest * 0.18)})`;
+        c.strokeStyle = wakeStrokeStyle(b.alpha * (0.38 + crest * 0.18));
         c.lineWidth = (1 + b.alpha * 0.8) / camera.zoom;
         c.beginPath();
         c.moveTo(x - dx * 4, y - dy * 4);
@@ -752,7 +775,7 @@ export function createSeaRendering({
         const cross = (wakeNoise(seed, fleck + 23) - 0.5) * b.width * 1.5;
         const x = a.x + dx * length * along + nx * cross;
         const y = a.y + dy * length * along + ny * cross;
-        c.fillStyle = `rgba(255,249,221,${b.alpha * (0.25 + scatter * 0.42)})`;
+        c.fillStyle = wakeFillStyle(b.alpha * (0.25 + scatter * 0.42));
         c.beginPath();
         c.ellipse(
           x,

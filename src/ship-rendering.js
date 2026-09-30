@@ -2,8 +2,19 @@ import { sampleShipMotion } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
+import { createAlphaPalette } from "./style-palette.js";
 
 export { getShipModelProfile as shipDrawProfile } from "./core/ship-models.js";
+
+const bowWaterStyle = createAlphaPalette("35,88,86", 0, 0.16, 128);
+const bowFoamStyle = createAlphaPalette("255,247,213", 0, 0.24, 128);
+const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
+const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
+const CONTACT_SHADOWS = [
+  [1.35, "rgba(29,52,42,0.035)"],
+  [1.16, "rgba(29,52,42,0.06)"],
+  [1, "rgba(29,52,42,0.13)"],
+];
 
 const HULL_STATIONS = Object.freeze([
   [-0.5, 0.05],
@@ -503,7 +514,7 @@ function drawHullWater(c, profile, motion, heading, z) {
 
   // The bow pushes a shallow, dark wedge outward before foam gathers on its lip.
   for (const side of [-1, 1]) {
-    c.fillStyle = `rgba(35,88,86,${strength * 0.16})`;
+    c.fillStyle = bowWaterStyle(strength * 0.16);
     c.beginPath();
     c.moveTo(side * beam * 0.3, -length * 0.5);
     c.quadraticCurveTo(
@@ -524,7 +535,7 @@ function drawHullWater(c, profile, motion, heading, z) {
       const spread = (fleck + Math.sin(fleck * 2.4) * 0.25) / 7;
       const x = side * (beam * (0.38 + spread * 0.62) + strength * spread * 4);
       const y = -length * (0.49 - spread * 0.36);
-      c.fillStyle = `rgba(255,247,213,${strength * (0.12 + (1 - spread) * 0.12)})`;
+      c.fillStyle = bowFoamStyle(strength * (0.12 + (1 - spread) * 0.12));
       c.beginPath();
       c.ellipse(
         x,
@@ -545,7 +556,7 @@ function drawHullWater(c, profile, motion, heading, z) {
     const cross = Math.sin(fleck * 9.13) * beam * (0.38 + distance * 0.48);
     const x = cross + motion.flutter * 0.25;
     const y = length * (0.48 + distance * 0.65);
-    c.fillStyle = `rgba(255,248,213,${strength * (0.18 + (1 - distance) * 0.22)})`;
+    c.fillStyle = sternFoamStyle(strength * (0.18 + (1 - distance) * 0.22));
     c.beginPath();
     c.ellipse(
       x,
@@ -558,7 +569,7 @@ function drawHullWater(c, profile, motion, heading, z) {
     );
     c.fill();
     if (fleck % 4 === 0) {
-      c.strokeStyle = `rgba(255,249,218,${strength * (0.2 - distance * 0.08)})`;
+      c.strokeStyle = sternCrestStyle(strength * (0.2 - distance * 0.08));
       c.lineWidth = 0.9 / z;
       c.beginPath();
       c.moveTo(x - 2.2, y + 0.8);
@@ -590,12 +601,8 @@ function drawShipModel(
   drawHullWater(c, profile, motion, heading, z);
   // Soft contact shadow stays on the water as the hull rises and falls.
   // The contact shadow falls southeast of the shared northwest light.
-  for (const [spread, alpha] of [
-    [1.35, 0.035],
-    [1.16, 0.06],
-    [1, 0.13],
-  ]) {
-    c.fillStyle = `rgba(29,52,42,${alpha})`;
+  for (const [spread, style] of CONTACT_SHADOWS) {
+    c.fillStyle = style;
     c.beginPath();
     c.ellipse(
       -LIGHT_DIRECTION.x * 5,

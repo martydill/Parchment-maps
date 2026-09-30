@@ -1,4 +1,7 @@
 import { sampleLighthouse } from "./core/seascape.js";
+import { createAlphaPalette } from "./style-palette.js";
+
+const starStyle = createAlphaPalette("223,235,255", 0, 0.65, 128);
 
 const darknessCanvas = document.createElement("canvas");
 const darknessContext = darknessCanvas.getContext("2d");
@@ -103,7 +106,7 @@ function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
       ? 0.8
       : 0.7 + Math.sin(time * 0.0015 + index * 4.7) * 0.3;
     const alpha = lighting.stars * twinkle * (0.2 + (index % 7) * 0.075);
-    c.fillStyle = `rgba(223,235,255,${alpha})`;
+    c.fillStyle = starStyle(alpha);
     c.beginPath();
     c.arc(x, y, index % 11 === 0 ? 1.5 : 0.8, 0, Math.PI * 2);
     c.fill();
@@ -151,6 +154,9 @@ export function drawNightAtmosphere(
   c.save();
   c.globalCompositeOperation = "screen";
   glow(c, ship.x, ship.y, 110, `rgba(255,180,76,${lighting.night * 0.26})`);
+  const beamStyle = `rgba(255,223,151,${lighting.night * 0.1})`;
+  const lighthouseGlowStyle = `rgba(255,206,110,${lighting.night * 0.32})`;
+  const lighthouseLampStyle = `rgba(255,242,187,${lighting.night})`;
   for (const light of lighthouses) {
     const { angle: sweep, reach } = sampleLighthouse(
       reducedMotion ? 0 : time,
@@ -178,7 +184,7 @@ export function drawNightAtmosphere(
         light.y,
         reach,
       );
-      beam.addColorStop(0, `rgba(255,223,151,${lighting.night * 0.1})`);
+      beam.addColorStop(0, beamStyle);
       beam.addColorStop(1, "rgba(255,223,151,0)");
       c.fillStyle = beam;
       c.beginPath();
@@ -198,13 +204,7 @@ export function drawNightAtmosphere(
         height,
       )
     )
-      glow(
-        c,
-        light.x,
-        light.y,
-        65,
-        `rgba(255,206,110,${lighting.night * 0.32})`,
-      );
+      glow(c, light.x, light.y, 65, lighthouseGlowStyle);
     if (
       intersectsScreen(
         light.x - 3.5,
@@ -215,7 +215,7 @@ export function drawNightAtmosphere(
         height,
       )
     ) {
-      c.fillStyle = `rgba(255,242,187,${lighting.night})`;
+      c.fillStyle = lighthouseLampStyle;
       c.beginPath();
       c.arc(light.x, light.y, 3.5, 0, Math.PI * 2);
       c.fill();
@@ -237,15 +237,10 @@ function paintDarkness(lighting, width, height, ship, lighthouses) {
   d.fillRect(0, 0, width, height);
   d.globalCompositeOperation = "destination-out";
   glow(d, ship.x, ship.y, 170, `rgba(0,0,0,${lighting.night * 0.85})`);
+  const lighthouseRevealStyle = `rgba(0,0,0,${lighting.night * 0.9})`;
   for (const light of lighthouses) {
     const { reach } = sampleLighthouse(0, light.index);
-    glow(
-      d,
-      light.x,
-      light.y,
-      reach * 0.65,
-      `rgba(0,0,0,${lighting.night * 0.9})`,
-    );
+    glow(d, light.x, light.y, reach * 0.65, lighthouseRevealStyle);
   }
   d.globalCompositeOperation = "source-over";
 }
@@ -254,11 +249,13 @@ export function drawShipLanterns(c, ship, lighting) {
   if (lighting.night < 0.08) return;
   c.save();
   c.globalCompositeOperation = "screen";
+  const lanternGlowStyle = `rgba(255,187,75,${lighting.night * 0.55})`;
+  const lanternLampStyle = `rgba(255,237,167,${lighting.night * 0.95})`;
   for (const offset of [-13, 13]) {
     const x = ship.x + Math.cos(ship.angle) * offset;
     const y = ship.y + Math.sin(ship.angle) * offset * 0.9;
-    glow(c, x, y, 35, `rgba(255,187,75,${lighting.night * 0.55})`);
-    c.fillStyle = `rgba(255,237,167,${lighting.night * 0.95})`;
+    glow(c, x, y, 35, lanternGlowStyle);
+    c.fillStyle = lanternLampStyle;
     c.beginPath();
     c.arc(x, y, 2.2, 0, Math.PI * 2);
     c.fill();

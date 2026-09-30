@@ -39,3 +39,62 @@ test("reduced motion retains storm atmosphere without a frozen lightning flash",
     !fills.some((fill) => String(fill).startsWith("rgba(222,230,255,")),
   );
 });
+
+test("cloud colors remain exact during motion and refresh when weather changes", () => {
+  function render(overrides = {}) {
+    const gradients = [];
+    const context = new Proxy(
+      {
+        createRadialGradient(...geometry) {
+          const stops = [];
+          gradients.push({ geometry, stops });
+          return { addColorStop: (...stop) => stops.push(stop) };
+        },
+        createLinearGradient() {
+          return { addColorStop() {} };
+        },
+      },
+      { get: (target, property) => target[property] ?? (() => {}) },
+    );
+    drawWeatherEffects(context, {
+      name: "Overcast",
+      roughness: 0.5,
+      visibilityKm: 12,
+      vw: 800,
+      vh: 600,
+      time: 0,
+      reducedMotion: true,
+      ...overrides,
+    });
+    return gradients.filter(({ stops }) =>
+      stops.some(([position]) => position === 0.7),
+    );
+  }
+  const first = render();
+  const moving = render({ time: 1000, vw: 1000, vh: 800, windAngle: 0.8 });
+  assert.equal(first.length, 93);
+  assert.deepEqual(
+    moving.map(({ stops }) => stops),
+    first.map(({ stops }) => stops),
+  );
+  assert.notDeepEqual(
+    moving.map(({ geometry }) => geometry),
+    first.map(({ geometry }) => geometry),
+  );
+  const fair = render({ roughness: 0.25 });
+  assert.notDeepEqual(
+    fair.map(({ stops }) => stops),
+    first.map(({ stops }) => stops),
+  );
+  assert.deepEqual(
+    render().map(({ stops }) => stops),
+    first.map(({ stops }) => stops),
+  );
+  for (const { stops } of first) {
+    const alphas = stops.map(([, color]) =>
+      Number(color.slice(color.lastIndexOf(",") + 1, -1)),
+    );
+    assert.equal(alphas[1], alphas[0] * 0.4);
+    assert.equal(alphas[2], 0);
+  }
+});
