@@ -8,9 +8,9 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=17" />
+    <link rel="stylesheet" href="./styles.css?v=18" />
   </head>
-  <body>
+  <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
       <defs>
         <symbol id="ui-chart" viewBox="0 0 24 24">
@@ -145,6 +145,21 @@
       </defs>
     </svg>
     <canvas id="game"></canvas>
+    <div id="mapOpening" aria-label="Opening your parchment chart">
+      <canvas id="mapOpeningScene" aria-hidden="true"></canvas>
+      <div class="map-opening-caption" aria-hidden="true">
+        <span>The captain’s chart</span>
+        <p>A new horizon awaits.</p>
+        <i></i>
+      </div>
+      <button
+        id="skipMapOpening"
+        type="button"
+        aria-label="Skip map opening animation"
+      >
+        Skip intro <span aria-hidden="true">→</span>
+      </button>
+    </div>
     <div id="hud">
       <div class="topbar">
         <div class="badge voyage-instruments">
@@ -906,6 +921,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=44"></script>
+    <script type="module" src="./src/app.js?v=49"></script>
   </body>
 </html>

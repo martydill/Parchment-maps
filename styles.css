@@ -99,6 +99,87 @@ body {
   height: 0;
   overflow: hidden;
 }
+#mapOpening {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  background: #21150e;
+  touch-action: none;
+}
+#mapOpening[hidden] {
+  display: none;
+}
+#mapOpeningScene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.map-opening-caption {
+  position: absolute;
+  bottom: max(5.5vh, 28px);
+  left: 20%;
+  right: 20%;
+  text-align: center;
+  color: #e7d1a3;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 2px 8px #140a04;
+}
+.map-opening-caption span {
+  font: 500 clamp(9px, 1vw, 12px)/1.3 var(--font-ui);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+.map-opening-caption p {
+  margin: 9px 0 13px;
+  font: italic clamp(19px, 2.4vw, 30px)/1.2 var(--font-display);
+}
+.map-opening-caption i {
+  display: block;
+  width: 80px;
+  height: 1px;
+  margin: auto;
+  background: linear-gradient(90deg, transparent, #c4a36a, transparent);
+}
+#skipMapOpening {
+  position: absolute;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #c9a56845;
+  border-radius: 2px;
+  background: #1b120dcc;
+  color: #e6cda0;
+  font: 500 11px/1.2 var(--font-ui);
+  letter-spacing: 0.12em;
+}
+#skipMapOpening span {
+  margin-left: 14px;
+}
+#hud {
+  transition: opacity 0.65s ease;
+}
+.map-opening #hud {
+  opacity: 0;
+}
+@media (max-width: 600px) {
+  .map-opening-caption {
+    bottom: max(74px, 8vh);
+    left: 8%;
+    right: 8%;
+  }
+  #skipMapOpening {
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #hud {
+    transition: none;
+  }
+}
 #hud {
   position: fixed;
   inset: 0;

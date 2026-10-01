@@ -24,6 +24,19 @@ if (!stylesheetTag.test(html) || !moduleTag.test(html)) {
   throw new Error("Could not find the expected stylesheet and module tags");
 }
 
+// Embed the cinematic materials so the downloadable game remains self-contained.
+let embeddedJavascript = javascript;
+for (const path of [
+  "assets/map-opening/table-weathered.jpg",
+  "assets/map-opening/parchment-weathered.jpg",
+]) {
+  const data = await readFile(path);
+  embeddedJavascript = embeddedJavascript.replaceAll(
+    `./${path}`,
+    `data:image/jpeg;base64,${data.toString("base64")}`,
+  );
+}
+
 const packagedHtml = html
   .replace(
     stylesheetTag,
@@ -33,7 +46,7 @@ const packagedHtml = html
   .replace(
     moduleTag,
     (_, indentation) =>
-      `${indentation}<script>\n${javascript.replaceAll("</script", "<\\/script")}\n${indentation}</script>`,
+      `${indentation}<script>\n${embeddedJavascript.replaceAll("</script", "<\\/script")}\n${indentation}</script>`,
   );
 
 await mkdir(dirname(outputPath), { recursive: true });

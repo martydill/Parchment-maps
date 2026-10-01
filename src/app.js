@@ -328,10 +328,12 @@ import {
 } from "./ui/panels.js?v=5";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
+import { createMapOpening } from "./map-opening.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const DPR = Math.min(2, window.devicePixelRatio || 1);
+let mapOpening = null;
 const MAP_SEED_KEY = "gilded-archipelago-map-seed";
 const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
 const mapSeed = storedMapSeed || createDistinctMapSeed("");
@@ -5216,8 +5218,11 @@ function loop(now) {
   }
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  update(dt);
-  render();
+  if (mapOpening?.active) mapOpening.render(now);
+  else {
+    update(dt);
+    render();
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -6825,6 +6830,31 @@ if (restoredSavedGame && gameStarted) {
 } else {
   beginGame();
 }
+
+// Capture the actual starting view so the cinematic lands on the same ship,
+// chart, camera, and weather for both new games and restored voyages.
+portLabelPanelBounds.refresh();
+render();
+mapOpening = createMapOpening({
+  source: canvas,
+  overlay: document.getElementById("mapOpening"),
+  scene: document.getElementById("mapOpeningScene"),
+  caption: document.querySelector(".map-opening-caption"),
+  skip: document.getElementById("skipMapOpening"),
+  hud: document.getElementById("hud"),
+  reducedMotion,
+  onComplete() {
+    keys.clear();
+    last = performance.now();
+    render();
+  },
+});
+addEventListener("resize", () => {
+  if (!mapOpening.active) return;
+  portLabelPanelBounds.refresh();
+  render();
+  mapOpening.resize();
+});
 
 window.setInterval(saveGameState, 5000);
 window.addEventListener("pagehide", saveGameState);
