@@ -1,12 +1,50 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { createSeaRendering } from "../src/sea-rendering.js";
 
 function recordingContext() {
   const calls = [];
+  const strokes = [];
+  const states = [];
+  let path = [];
   const context = new Proxy(
     {
-      createRadialGradient() {
+      globalAlpha: 1,
+      beginPath() {
+        calls.push(["beginPath"]);
+        path = [];
+      },
+      moveTo(...args) {
+        calls.push(["moveTo", ...args]);
+        path.push(["moveTo", ...args]);
+      },
+      lineTo(...args) {
+        calls.push(["lineTo", ...args]);
+        path.push(["lineTo", ...args]);
+      },
+      bezierCurveTo(...args) {
+        calls.push(["bezierCurveTo", ...args]);
+        path.push(["bezierCurveTo", ...args]);
+      },
+      stroke(...args) {
+        calls.push(["stroke", ...args]);
+        strokes.push({
+          style: this.strokeStyle,
+          width: this.lineWidth,
+          alpha: this.globalAlpha,
+          path: [...path],
+        });
+      },
+      save() {
+        calls.push(["save"]);
+        states.push(this.globalAlpha);
+      },
+      restore() {
+        calls.push(["restore"]);
+        this.globalAlpha = states.pop();
+      },
+      createRadialGradient(...args) {
+        calls.push(["createRadialGradient", ...args]);
         return {
           addColorStop: (...args) => calls.push(["addColorStop", ...args]),
         };
@@ -24,8 +62,26 @@ function recordingContext() {
       },
     },
   );
-  return { context, calls };
+  return { context, calls, strokes };
 }
+
+const stampCanvases = [];
+const previousDocument = globalThis.document;
+globalThis.document = {
+  createElement() {
+    const recording = recordingContext();
+    const canvas = {
+      getContext: () => recording.context,
+      calls: recording.calls,
+    };
+    stampCanvases.push(canvas);
+    return canvas;
+  },
+};
+after(() => {
+  if (previousDocument === undefined) delete globalThis.document;
+  else globalThis.document = previousDocument;
+});
 
 const options = {
   camera: { x: 500, y: 400, zoom: 1 },
@@ -129,4 +185,185 @@ test("current lanes reuse their exact fixed opacities at every phase", () => {
       );
     }
   }
+});
+
+test("sea light stamps retain their centers and reuse textures across motion and wrapping", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const first = recordingContext();
+  first.context.globalAlpha = 0.5;
+  renderer.drawSurface(first.context, options);
+  const draws = first.calls.filter(([name]) => name === "drawImage");
+  assert.ok(draws.length > 0);
+  const count = stampCanvases.length;
+  for (const [, stamp, , , diameter] of draws) {
+    const gradient = stamp.calls.find(
+      ([name]) => name === "createRadialGradient",
+    );
+    assert.ok(
+      Math.abs((gradient[3] / gradient[6]) * (diameter / 2) - 5) < 1e-12,
+    );
+    assert.deepEqual(
+      stamp.calls.filter(([name]) => name === "addColorStop"),
+      [
+        ["addColorStop", 0, "rgba(255,235,181,1)"],
+        ["addColorStop", 0.55, "rgba(244,227,181,0.4)"],
+        ["addColorStop", 1, "rgba(244,227,181,0)"],
+      ],
+    );
+  }
+  for (let frame = 1; frame <= 60; frame++) {
+    const next = recordingContext();
+    renderer.drawSurface(next.context, {
+      ...options,
+      time: frame * 16,
+      camera: { ...options.camera, x: options.camera.x + 1000 },
+    });
+    assert.equal(stampCanvases.length, count);
+    assert.ok(!next.calls.some(([name]) => name === "createRadialGradient"));
+    assert.deepEqual(
+      next.calls
+        .filter(([name]) => name === "drawImage")
+        .map(([, stamp]) => stamp),
+      draws.map(([, stamp]) => stamp),
+    );
+  }
+  assert.equal(first.context.globalAlpha, 0.5);
+});
+
+const waveStrokes = ({ strokes }) =>
+  strokes.filter(({ style }) => /^rgba\((37,81,78|247,237,197),/.test(style));
+
+test("hundreds of waves share opacity paths and one layer rotation", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 4800, h: 3200 },
+    lands: [],
+  });
+  const recording = recordingContext();
+  renderer.drawSurface(recording.context, {
+    ...options,
+    camera: { x: 2400, y: 1600, zoom: 0.7 },
+    vw: 1280,
+    vh: 800,
+    lighting: { daylight: 0 },
+  });
+  const waves = waveStrokes(recording);
+  const shadows = waves.filter(({ width }) => width === 3.5);
+  const glints = waves.filter(
+    ({ width, alpha }) => width !== 3.5 && alpha === 1,
+  );
+  const marks = shadows.reduce((count, { path }) => count + path.length / 2, 0);
+  assert.ok(marks > 500);
+  assert.ok(waves.length <= 20 + 128 + 128);
+  assert.ok(waves.length < marks / 2);
+  assert.equal(shadows.length, 20);
+  assert.equal(new Set(shadows.map(({ style }) => style)).size, shadows.length);
+  assert.ok(glints.some(({ path }) => path.length > 2));
+  assert.equal(recording.calls.filter(([name]) => name === "rotate").length, 1);
+  assert.ok(
+    recording.calls.filter(([name]) => name === "save").length < marks / 10,
+  );
+  for (const { path } of waves) {
+    for (let index = 0; index < path.length; index += 2) {
+      assert.equal(
+        path[index][0],
+        "moveTo",
+        "marks must not connect to each other",
+      );
+      assert.ok(["lineTo", "bezierCurveTo"].includes(path[index + 1][0]));
+    }
+  }
+});
+
+test("batch rotation preserves the original wave geometry and state", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const recording = recordingContext();
+  recording.context.globalAlpha = 0.4;
+  const time = 2700;
+  const windAngle = 1.2;
+  renderer.drawSurface(recording.context, {
+    ...options,
+    time,
+    windAngle,
+    lighting: { daylight: 0 },
+  });
+  const shadows = waveStrokes(recording).filter(({ width }) => width === 3.5);
+  const rotation = Math.sin(windAngle) * 0.12;
+  const cos = Math.cos(rotation),
+    sin = Math.sin(rotation);
+  // The row-4, column-2 mark is visible in this viewport. Check its start and
+  // control points against the original per-mark translate/rotate geometry.
+  const phase = 2 * 2.39 + 4 * 1.73;
+  const length = 18 + (Math.sin(phase) + 1) * 15;
+  const t = time / 1000;
+  const x =
+    2 * (1000 / 11) + Math.sin(4 * 12.7) * 25 + Math.cos(t * 0.28 + phase) * 5;
+  const y = 4 * 48 + Math.sin(phase * 3) * 16 + Math.sin(t * 0.48 + phase) * 3;
+  const expected = [
+    [-length, 3],
+    [-length * 0.3, -2],
+    [length * 0.4, 7],
+    [length, 1],
+  ].map(([px, py]) => [x + px * cos - py * sin, y + px * sin + py * cos]);
+  const points = shadows.flatMap(({ path }) => {
+    const curves = [];
+    for (let index = 0; index < path.length; index += 2) {
+      const coordinates = [
+        ...path[index].slice(1),
+        ...path[index + 1].slice(1),
+      ];
+      curves.push(
+        Array.from({ length: 4 }, (_, point) => {
+          const px = coordinates[point * 2],
+            py = coordinates[point * 2 + 1];
+          return [px * cos - py * sin, px * sin + py * cos];
+        }),
+      );
+    }
+    return curves;
+  });
+  assert.ok(
+    points.some((curve) =>
+      curve.every(
+        ([px, py], index) =>
+          Math.abs(px - expected[index][0]) < 1e-10 &&
+          Math.abs(py - expected[index][1]) < 1e-10,
+      ),
+    ),
+  );
+  assert.ok(shadows.every(({ alpha }) => alpha === 0.4));
+  const crests = waveStrokes(recording).filter(
+    ({ path }) => path[1]?.[0] === "lineTo",
+  );
+  assert.ok(crests.length > 0);
+  assert.ok(crests.every(({ alpha }) => alpha === 1));
+  assert.equal(recording.context.globalAlpha, 0.4);
+});
+
+test("wave buffers discard old marks when the viewport shrinks or becomes empty", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const render = (overrides) => {
+    const recording = recordingContext();
+    renderer.drawSurface(recording.context, {
+      ...options,
+      lighting: { daylight: 0 },
+      ...overrides,
+    });
+    return waveStrokes(recording);
+  };
+  const large = render({ vw: 1800, vh: 1000 });
+  const small = render({ vw: 100, vh: 100 });
+  const pointCount = (waves) =>
+    waves.reduce((count, { path }) => count + path.length, 0);
+  assert.ok(pointCount(small) < pointCount(large));
+  assert.equal(render({ camera: { x: 500, y: 4000, zoom: 1 } }).length, 0);
+  assert.deepEqual(render({ vw: 100, vh: 100 }), small);
 });

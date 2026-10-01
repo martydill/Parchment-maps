@@ -9,6 +9,7 @@ import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { coastFaceDepth } from "./core/seascape.js";
 import { LIGHT_DIRECTION } from "./core/lighting.js";
+import { createRadialStamp } from "./radial-stamp.js";
 import { drawPortMiniature } from "./port-miniatures.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
@@ -186,15 +187,17 @@ function weatherRand(i, salt = 0) {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-// At most 28 clouds with four puffs each. Motion changes gradient positions,
-// but colors only change when the weather does; retain one style per puff.
+// At most 28 clouds with four puffs each. Rebuild a puff's stamp only when
+// its pigment changes; motion and thickness use transforms and globalAlpha.
 const cloudPuffStyles = Array.from({ length: 28 * 4 }, () => ({
-  inner: "",
-  middle: "",
-  outer: "",
+  rgb: "",
+  alpha: 0,
+  stamp: null,
 }));
 let cloudStyleCloud = -1;
 let cloudStyleStorm = -1;
+let cloudShadowStamp;
+const fogBankStamps = [];
 
 function drawWeatherClouds(
   c,
@@ -222,6 +225,7 @@ function drawWeatherClouds(
   const cloudAlphaFactor = (0.55 + cloud * 0.5) * (0.7 + storm * 0.5);
   const stormTint = storm > 0.4 ? 8 : 0;
   const colorsChanged = cloudStyleCloud !== cloud || cloudStyleStorm !== storm;
+  const baseAlpha = c.globalAlpha;
 
   for (let i = 0; i < count; i++) {
     const layer = i % 3; // 0 far .. 2 near — nearer banks loom larger
@@ -260,20 +264,29 @@ function drawWeatherClouds(
         const cr = clamp255(val + tint);
         const cg = clamp255(val + tint * 0.5);
         const cb = clamp255(val - tint * 0.3 + stormTint);
-        const pa = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
-        style.inner = `rgba(${cr},${cg},${cb},${pa})`;
-        style.middle = `rgba(${cr},${cg},${cb},${pa * 0.4})`;
-        style.outer = `rgba(${cr},${cg},${cb},0)`;
+        style.alpha = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
+        const rgb = `${cr},${cg},${cb}`;
+        if (style.rgb !== rgb) {
+          style.rgb = rgb;
+          style.stamp = createRadialStamp({
+            canvas: style.stamp || undefined,
+            aspectRatio: 0.7,
+            size: 192,
+            stops: [
+              [0, `rgba(${rgb},1)`],
+              [0.7, `rgba(${rgb},0.4)`],
+              [1, `rgba(${rgb},0)`],
+            ],
+          });
+        }
       }
       const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
-      const grad = c.createRadialGradient(px, py, 0, px, py, pr);
-      grad.addColorStop(0, style.inner);
-      grad.addColorStop(0.7, style.middle);
-      grad.addColorStop(1, style.outer);
-      c.fillStyle = grad;
-      c.beginPath();
-      c.ellipse(px, py, pr, pr * 0.7, windAngle, 0, Math.PI * 2);
-      c.fill();
+      c.save();
+      c.translate(px, py);
+      c.rotate(windAngle);
+      c.globalAlpha = baseAlpha * style.alpha;
+      c.drawImage(style.stamp, -pr, -pr, pr * 2, pr * 2);
+      c.restore();
     }
   }
   c.restore();
@@ -284,8 +297,14 @@ function drawWeatherClouds(
 function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
   if (cloud < 0.1) return;
   const direction = Math.cos(windAngle) >= 0 ? 1 : -1;
-  const shadowStyle = `rgba(28,47,58,${cloud * (0.035 + storm * 0.085)})`;
+  cloudShadowStamp ||= createRadialStamp({
+    stops: [
+      [0, "rgba(28,47,58,1)"],
+      [1, "rgba(28,47,58,0)"],
+    ],
+  });
   c.save();
+  c.globalAlpha *= cloud * (0.035 + storm * 0.085);
   for (let index = 0; index < 7; index++) {
     const span = vw + 600;
     const drift = (time * (0.012 + index * 0.001) * direction) % span;
@@ -296,13 +315,7 @@ function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
     c.translate(x, y);
     c.rotate(windAngle * 0.2);
     c.scale(1, 0.55);
-    const shadow = c.createRadialGradient(0, 0, 0, 0, 0, radius);
-    shadow.addColorStop(0, shadowStyle);
-    shadow.addColorStop(1, "rgba(28,47,58,0)");
-    c.fillStyle = shadow;
-    c.beginPath();
-    c.arc(0, 0, radius, 0, Math.PI * 2);
-    c.fill();
+    c.drawImage(cloudShadowStamp, -radius, -radius, radius * 2, radius * 2);
     c.restore();
   }
   c.restore();
@@ -351,6 +364,7 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   const count = 4 + Math.round(fog * 5);
   const baseAlpha = fog;
   const span = vw + 500;
+  const inheritedAlpha = c.globalAlpha;
 
   for (let i = 0; i < count; i++) {
     const speed = 0.004 + weatherRand(i, 11) * 0.01;
@@ -361,13 +375,16 @@ function drawWeatherFog(c, fog, vw, vh, time) {
     const rx = 220 + weatherRand(i, 14) * 220;
     const ry = 90 + weatherRand(i, 15) * 70;
     const a = (0.05 + weatherRand(i, 16) * 0.06) * baseAlpha;
-    const bank = c.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-    bank.addColorStop(0, `rgba(224,228,232,${a})`);
-    bank.addColorStop(1, "rgba(224,228,232,0)");
-    c.fillStyle = bank;
-    c.beginPath();
-    c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-    c.fill();
+    // Each bank's aspect ratio is deterministic and independent of weather.
+    fogBankStamps[i] ||= createRadialStamp({
+      aspectRatio: ry / rx,
+      stops: [
+        [0, "rgba(224,228,232,1)"],
+        [1, "rgba(224,228,232,0)"],
+      ],
+    });
+    c.globalAlpha = inheritedAlpha * a;
+    c.drawImage(fogBankStamps[i], x - rx, y - rx, rx * 2, rx * 2);
   }
   c.restore();
 }

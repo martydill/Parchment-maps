@@ -2,6 +2,7 @@ import { nearestWrapped } from "./core/math.js";
 import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import { createAlphaPalette } from "./style-palette.js";
+import { createRadialStamp } from "./radial-stamp.js";
 import {
   buildWakeRibbon,
   coastalFlockSize,
@@ -15,8 +16,6 @@ import {
 const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
 // Finer opacity steps preserve the subtle response to daylight and storms.
 const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.35, 128);
-const lightBandInnerStyle = createAlphaPalette("255,235,181", 0, 0.16, 128);
-const lightBandOuterStyle = createAlphaPalette("244,227,181", 0, 0.064, 128);
 const surfStyle = createAlphaPalette("248,237,195", 0, 0.22);
 const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.396);
 const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.36);
@@ -30,6 +29,46 @@ const currentFoamStyles = Array.from(
   { length: 4 },
   (_, strength) => `rgba(238,236,193,${0.2 + strength * 0.035})`,
 );
+
+const shadowCurve = [-1, 3, -0.3, -2, 0.4, 7, 1, 1];
+const glintCurve = [-0.8, 0, -0.35, -3, 0.25, 3, 0.72, -1];
+const crestLine = [-0.2, 5, 0.45, 6];
+
+function appendWaveMark(batches, style, shape, x, y, length) {
+  let batch = batches.get(style);
+  if (!batch) {
+    batch = { points: [], count: 0 };
+    batches.set(style, batch);
+  }
+  // Retain the numeric buffers between frames instead of allocating a path
+  // or point object for each mark. Each curve starts its own subpath.
+  for (let index = 0; index < shape.length; index += 2) {
+    batch.points[batch.count++] = x + shape[index] * length;
+    batch.points[batch.count++] = y + shape[index + 1];
+  }
+}
+
+function strokeWaveBatches(c, batches, stride) {
+  for (const [style, { points, count }] of batches) {
+    if (!count) continue;
+    c.strokeStyle = style;
+    c.beginPath();
+    for (let index = 0; index < count; index += stride) {
+      c.moveTo(points[index], points[index + 1]);
+      if (stride === 4) c.lineTo(points[index + 2], points[index + 3]);
+      else
+        c.bezierCurveTo(
+          points[index + 2],
+          points[index + 3],
+          points[index + 4],
+          points[index + 5],
+          points[index + 6],
+          points[index + 7],
+        );
+    }
+    c.stroke();
+  }
+}
 
 function wakeNoise(index, salt) {
   const value = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
@@ -132,6 +171,10 @@ export function createSeaRendering({
     return { bounds, masks, land, surf, foam, flocks, animals, index, poly };
   });
   const surfaceMarks = new Map();
+  const lightBandStamps = new Map();
+  const waveShadows = new Map();
+  const waveGlints = new Map();
+  const waveCrests = new Map();
   function surfaceMark(row, column, columns, spacing, rowOffset) {
     const key = row * columns + column;
     if (surfaceMarks.has(key)) return surfaceMarks.get(key);
@@ -562,6 +605,7 @@ export function createSeaRendering({
     const bottom = Math.ceil((camera.y + halfH + 60) / 170);
     c.save();
     c.globalCompositeOperation = "screen";
+    const baseAlpha = c.globalAlpha;
     for (let row = top; row <= bottom; row++) {
       for (let column = left; column <= right; column++) {
         const canonical = ((column % columns) + columns) % columns;
@@ -572,20 +616,34 @@ export function createSeaRendering({
           Math.sin(t * 0.12 + phase) * 14;
         const y = row * 170 + Math.cos(phase * 1.4) * 36;
         const width = 145 + (Math.sin(phase * 2.3) + 1) * 50;
+        // Width is fixed for each wrapped tile. Cache its normalized five-unit
+        // center as well as the ramp, rather than approximating it by scaling.
+        const key = row * columns + canonical;
+        let stamp = lightBandStamps.get(key);
+        if (!stamp) {
+          stamp = createRadialStamp({
+            innerRadius: 5 / width,
+            stops: [
+              [0, "rgba(255,235,181,1)"],
+              [0.55, "rgba(244,227,181,0.4)"],
+              [1, "rgba(244,227,181,0)"],
+            ],
+          });
+          lightBandStamps.set(key, stamp);
+        }
         c.save();
         c.translate(x, y);
         c.rotate(windAngle * 0.18 + Math.sin(phase) * 0.12);
         c.scale(1, 0.23);
-        const glow = c.createRadialGradient(0, 0, 5, 0, 0, width);
         const alpha =
           strength * (0.55 + (Math.sin(t * 0.7 + phase) + 1) * 0.22);
-        glow.addColorStop(0, lightBandInnerStyle(alpha));
-        glow.addColorStop(0.55, lightBandOuterStyle(alpha * 0.4));
-        glow.addColorStop(1, "rgba(244,227,181,0)");
-        c.fillStyle = glow;
-        c.beginPath();
-        c.arc(0, 0, width, 0, Math.PI * 2);
-        c.fill();
+        // Retain the existing 128-step opacity palette without color strings.
+        const opacityStep = Math.max(
+          0,
+          Math.min(127, Math.round((alpha / 0.16) * 127)),
+        );
+        c.globalAlpha = baseAlpha * ((opacityStep / 127) * 0.16);
+        c.drawImage(stamp, -width, -width, width * 2, width * 2);
         c.restore();
       }
     }
@@ -618,8 +676,12 @@ export function createSeaRendering({
     );
     c.lineCap = "round";
     const rotation = Math.sin(windAngle) * 0.12;
+    const rotationCos = Math.cos(rotation);
+    const rotationSin = Math.sin(rotation);
     const light =
       (lighting?.daylight ?? 1) * (1 - (lighting?.storm ?? 0) * 0.45);
+    for (const batches of [waveShadows, waveGlints, waveCrests])
+      for (const batch of batches.values()) batch.count = 0;
     for (let row = top; row <= bottom; row++) {
       const rowOffset = Math.sin(row * 12.7) * 25;
       for (let column = left; column <= right; column++) {
@@ -630,41 +692,55 @@ export function createSeaRendering({
         const pulse = (Math.sin(t * (0.6 + roughness * 0.4) + phase) + 1) / 2;
         const x = column * spacing + rowOffset + Math.cos(t * 0.28 + phase) * 5;
         const y = mark.y + Math.sin(t * 0.48 + phase) * 3;
-        c.save();
-        c.translate(x, y);
-        c.rotate(rotation);
-        c.strokeStyle = surfaceShadowStyle(0.035 + pulse * 0.065);
-        c.lineWidth = 3.5;
-        c.beginPath();
-        c.moveTo(-length, 3);
-        c.bezierCurveTo(-length * 0.3, -2, length * 0.4, 7, length, 1);
-        c.stroke();
-        c.strokeStyle = surfaceGlintStyle(
+        // Counter-rotate each center so one shared layer rotation preserves
+        // the original translate(x, y) / rotate(rotation) geometry.
+        const centerX = x * rotationCos + y * rotationSin;
+        const centerY = y * rotationCos - x * rotationSin;
+        appendWaveMark(
+          waveShadows,
+          surfaceShadowStyle(0.035 + pulse * 0.065),
+          shadowCurve,
+          centerX,
+          centerY,
+          length,
+        );
+        const glintAlpha =
           (0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) *
-            (0.42 + light * 0.58),
+          (0.42 + light * 0.58);
+        appendWaveMark(
+          waveGlints,
+          surfaceGlintStyle(glintAlpha),
+          glintCurve,
+          centerX,
+          centerY,
+          length,
         );
-        c.lineWidth = 0.8 / z;
-        c.beginPath();
-        c.moveTo(-length * 0.8, 0);
-        c.bezierCurveTo(
-          -length * 0.35,
-          -3,
-          length * 0.25,
-          3,
-          length * 0.72,
-          -1,
-        );
-        c.stroke();
         if (pulse > 0.65) {
-          c.globalAlpha = (pulse - 0.65) * 1.8;
-          c.beginPath();
-          c.moveTo(-length * 0.2, 5);
-          c.lineTo(length * 0.45, 6);
-          c.stroke();
+          const quantizedGlint =
+            (Math.max(0, Math.min(127, Math.round((glintAlpha / 0.35) * 127))) /
+              127) *
+            0.35;
+          appendWaveMark(
+            waveCrests,
+            surfaceGlintStyle(quantizedGlint * (pulse - 0.65) * 1.8),
+            crestLine,
+            centerX,
+            centerY,
+            length,
+          );
         }
-        c.restore();
       }
     }
+    c.save();
+    c.rotate(rotation);
+    c.lineWidth = 3.5;
+    strokeWaveBatches(c, waveShadows, 8);
+    c.lineWidth = 0.8 / z;
+    strokeWaveBatches(c, waveGlints, 8);
+    // Crests previously replaced globalAlpha rather than inheriting it.
+    c.globalAlpha = 1;
+    strokeWaveBatches(c, waveCrests, 4);
+    c.restore();
     drawCurrentFlow(c, camera, t, roughness, halfW, halfH);
     drawSeaLife(c, camera, t, halfW, halfH);
     creatures.forEach(([x, y, scale], index) => {

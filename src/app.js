@@ -1,7 +1,7 @@
 import { createSeaRendering } from "./sea-rendering.js?v=3";
 import { createAlphaPalette } from "./style-palette.js";
 import { createExplorationSampler } from "./exploration-mask.js";
-import { updateElementProperty } from "./ui/dom.js";
+import { createElementBoundsCache, updateElementProperty } from "./ui/dom.js";
 import {
   drawNightAtmosphere,
   drawShipLanterns,
@@ -3270,9 +3270,10 @@ function resize() {
   canvas.style.width = vw + "px";
   canvas.style.height = vh + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  fogCanvas.width = Math.floor(vw * DPR);
-  fogCanvas.height = Math.floor(vh * DPR);
-  fogCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Soft fog needs only CSS resolution; the main canvas scales it for display.
+  fogCanvas.width = vw;
+  fogCanvas.height = vh;
+  fogCtx.setTransform(1, 0, 0, 1, 0, 0);
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
   vignetteGradient = ctx.createRadialGradient(
@@ -3313,6 +3314,36 @@ const ui = {
   plottedCourseOpen: document.getElementById("plottedCourseOpen"),
   plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
+const portLabelPanels = [ui.course, ui.plottedCourse, ui.message].filter(
+  Boolean,
+);
+const portLabelPanelBounds = createElementBoundsCache(portLabelPanels);
+const panelResizeObserver = new ResizeObserver((entries) => {
+  for (const { target } of entries) portLabelPanelBounds.invalidate(target);
+});
+const panelMutationObserver = new MutationObserver((records) => {
+  for (const panel of portLabelPanels) {
+    if (records.some(({ target }) => panel.contains(target)))
+      portLabelPanelBounds.invalidate(panel);
+  }
+});
+for (const panel of portLabelPanels) {
+  panelResizeObserver.observe(panel, { box: "border-box" });
+  panelMutationObserver.observe(panel, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["class", "hidden", "style"],
+  });
+}
+addEventListener("resize", () => portLabelPanelBounds.invalidate());
+document.fonts?.addEventListener("loadingdone", () =>
+  portLabelPanelBounds.invalidate(),
+);
+ui.message.addEventListener("animationend", () =>
+  portLabelPanelBounds.invalidate(ui.message),
+);
 const panelContext = {
   clearCourse,
   courseBearing,
@@ -3847,7 +3878,7 @@ function renderFog(time, lighting) {
   punchNearShoreTerrain(h);
   h.restore();
 
-  f.setTransform(DPR, 0, 0, DPR, 0, 0);
+  f.setTransform(1, 0, 0, 1, 0, 0);
   f.clearRect(0, 0, vw, vh);
   const wash = f.createLinearGradient(0, 0, 0, vh);
   const sun = lighting.daylight;
@@ -4352,19 +4383,10 @@ function drawPortLabels(c, z, shipScreen) {
     { x: 0, y: 0, width: vw, height: Math.min(vh * 0.12, 96) },
     { x: vw - 83, y: 93, width: 83, height: 250 },
   ];
-  for (const element of [ui.course, ui.plottedCourse, ui.message]) {
-    if (
-      !element?.offsetWidth ||
-      (element === ui.message && !element.classList.contains("show"))
-    )
-      continue;
-    const rect = element.getBoundingClientRect();
-    blockers.push({
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height,
-    });
+  for (const element of portLabelPanels) {
+    if (element === ui.message && !element.classList.contains("show")) continue;
+    const bounds = portLabelPanelBounds.get(element);
+    if (bounds) blockers.push(bounds);
   }
   for (const port of labels)
     blockers.push({ x: port.x - 10, y: port.y - 10, width: 20, height: 20 });
@@ -5080,6 +5102,7 @@ const fpsCounter = document.getElementById("fpsCounter");
 let fpsSampleStart = 0;
 let fpsFrameCount = 0;
 function loop(now) {
+  portLabelPanelBounds.refresh();
   if (!fpsSampleStart || now - fpsSampleStart > 2000) {
     fpsSampleStart = now;
     fpsFrameCount = 0;
