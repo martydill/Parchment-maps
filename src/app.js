@@ -28,7 +28,12 @@ import {
   rayIntersectsBounds,
   raySegmentDistance,
 } from "./core/geometry.js?v=3";
-import { MAP_TILT_COS, unprojectMapPoint } from "./core/projection.js";
+import {
+  MAP_TILT_COS,
+  unprojectMapPoint,
+  visibleWorldCopies,
+} from "./core/projection.js";
+import { createRadialStamp } from "./radial-stamp.js";
 import { layoutMapLabels } from "./core/label-layout.js";
 import {
   edgeInwardVector,
@@ -1320,9 +1325,9 @@ function wrappedDistance(x1, y1, x2, y2) {
   return calculateWrappedDistance(x1, y1, x2, y2, WORLD.w);
 }
 function worldCopiesNear(reference = camera.x) {
-  const base = Math.floor(reference / WORLD.w) * WORLD.w;
-  return [base - WORLD.w, base, base + WORLD.w];
+  return visibleWorldCopies(reference, vw, camera.zoom, WORLD.w);
 }
+
 const clampNumber = clamp;
 function addNews(title, body) {
   recordNews(game, title, body);
@@ -2717,6 +2722,12 @@ function onLand(x, y) {
 }
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
+for (const particles of roughSeaParticles) {
+  for (const particle of particles) {
+    particle.cosScale = Math.cos(particle.rotation) * particle.scale;
+    particle.sinScale = Math.sin(particle.rotation) * particle.scale;
+  }
+}
 // Coastlines do not change after map generation. Cache their geometry once
 // rather than recomputing centroids for every one of the 192 sight rays.
 const visibilityLandGeometry = lands.map(({ poly }) => {
@@ -3205,17 +3216,62 @@ const shoalBandStyles = Array.from(
   (_, strength) => `rgba(247, 231, 177, ${0.24 + strength * 0.07})`,
 );
 
+const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
+  const shelf = new Path2D();
+  for (let point = 0; point <= 32; point++) {
+    const angle = (point / 32) * Math.PI * 2;
+    const ragged =
+      0.82 + Math.sin(angle * 5 + sx) * 0.1 + Math.sin(angle * 9 + sy) * 0.07;
+    const px = Math.cos(angle) * rx * ragged;
+    const py = Math.sin(angle) * ry * ragged;
+    if (point === 0) shelf.moveTo(px, py);
+    else shelf.lineTo(px, py);
+  }
+  shelf.closePath();
+
+  const bands = [];
+  for (let band = -2; band <= 2; band++) {
+    const p = new Path2D();
+    p.moveTo(-rx, band * ry * 0.34);
+    p.bezierCurveTo(
+      -rx * 0.35,
+      band * ry * 0.44 - 11,
+      rx * 0.28,
+      band * ry * 0.23 + 9,
+      rx,
+      band * ry * 0.38,
+    );
+    bands.push({
+      path: p,
+      style: shoalBandStyles[2 - Math.abs(band)],
+      baseWidth: 3 - Math.abs(band) * 0.35,
+    });
+  }
+
+  const pebblePrimary = new Path2D();
+  const pebbleSecondary = new Path2D();
+  for (let pebble = 0; pebble < 28; pebble++) {
+    const px = Math.sin(pebble * 31.7 + sx) * rx * 0.76;
+    const py = Math.cos(pebble * 17.3 + sy) * ry * 0.68;
+    const size = pebble % 7 === 0 ? 5 : 1.5 + (pebble % 3);
+    const target = pebble % 7 === 0 ? pebblePrimary : pebbleSecondary;
+    target.moveTo(px, py - size);
+    target.lineTo(px + size * 0.8, py + size * 0.6);
+    target.lineTo(px - size, py + size * 0.6);
+    target.closePath();
+  }
+
+  return { sx, sy, rx, ry, name, shelf, bands, pebblePrimary, pebbleSecondary };
+});
+
 function drawAnimatedRoughSeas(c, time, z) {
   c.save();
   c.lineCap = "round";
-  // Batch rendering by reducing state changes - process all particles for each sea
   for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
     const sea = roughSeas[seaIndex];
     if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
       continue;
     const nearestX = nearestWrappedX(sea.x, camera.x);
-
-    // Group particles by similar transformations to reduce state changes
     const particles = roughSeaParticles[seaIndex];
     if (!particles || particles.length === 0) continue;
 
@@ -3226,30 +3282,48 @@ function drawAnimatedRoughSeas(c, time, z) {
       const y =
         sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
       const crest = (Math.sin(phase) + 1) * 0.5;
-
-      c.save();
-      c.translate(x, y);
-      c.rotate(particle.rotation);
-      c.scale(particle.scale, particle.scale);
+      const cos = particle.cosScale;
+      const sin = particle.sinScale;
 
       // First stroke
       c.strokeStyle = roughSeaCrestStyle(0.1 + crest * 0.2);
       c.lineWidth = (1.2 + crest) / z;
+      const c1y = -7 - crest * 3;
+      const c2y = -2 - crest * 2;
       c.beginPath();
-      c.moveTo(-15, 3);
-      c.quadraticCurveTo(-8, -7 - crest * 3, -1, 1);
-      c.quadraticCurveTo(6, 9, 14, -2 - crest * 2);
+      c.moveTo(x - 15 * cos - 3 * sin, y - 15 * sin + 3 * cos);
+      c.quadraticCurveTo(
+        x - 8 * cos - c1y * sin,
+        y - 8 * sin + c1y * cos,
+        x - 1 * cos - 1 * sin,
+        y - 1 * sin + 1 * cos,
+      );
+      c.quadraticCurveTo(
+        x + 6 * cos - 9 * sin,
+        y + 6 * sin + 9 * cos,
+        x + 14 * cos - c2y * sin,
+        y + 14 * sin + c2y * cos,
+      );
       c.stroke();
 
       // Second stroke
       c.strokeStyle = roughSeaShadowStyle(0.12 + crest * 0.11);
       c.lineWidth = 1 / z;
       c.beginPath();
-      c.moveTo(-10, 8);
-      c.quadraticCurveTo(-3, 4, 4, 8);
-      c.quadraticCurveTo(10, 12, 16, 7);
+      c.moveTo(x - 10 * cos - 8 * sin, y - 10 * sin + 8 * cos);
+      c.quadraticCurveTo(
+        x - 3 * cos - 4 * sin,
+        y - 3 * sin + 4 * cos,
+        x + 4 * cos - 8 * sin,
+        y + 4 * sin + 8 * cos,
+      );
+      c.quadraticCurveTo(
+        x + 10 * cos - 12 * sin,
+        y + 10 * sin + 12 * cos,
+        x + 16 * cos - 7 * sin,
+        y + 16 * sin + 7 * cos,
+      );
       c.stroke();
-      c.restore();
     }
   }
   c.restore();
@@ -3826,6 +3900,8 @@ function screenToWorld(clientX, clientY) {
 // blurring a full-resolution world canvas. Exploration/save masks are unchanged.
 const horizonMask = document.createElement("canvas");
 const horizonCtx = horizonMask.getContext("2d");
+const blurredHorizonMask = document.createElement("canvas");
+const blurredHorizonCtx = blurredHorizonMask.getContext("2d");
 const mistStamp = document.createElement("canvas");
 mistStamp.width = mistStamp.height = 192;
 const mistCtx = mistStamp.getContext("2d");
@@ -3938,13 +4014,25 @@ function renderFog(time, lighting) {
     }
   }
   f.restore();
+  if (
+    blurredHorizonMask.width !== width ||
+    blurredHorizonMask.height !== height
+  ) {
+    blurredHorizonMask.width = width;
+    blurredHorizonMask.height = height;
+  }
+  blurredHorizonCtx.setTransform(1, 0, 0, 1, 0, 0);
+  blurredHorizonCtx.clearRect(0, 0, width, height);
+  // Feather the reveal at half scale; an outlined polygon would recreate the
+  // bright halo. Blurring the 0.5x mask is ~8x cheaper than full-viewport blur.
+  blurredHorizonCtx.filter = "blur(14px)";
+  blurredHorizonCtx.drawImage(horizonMask, 0, 0);
+
   f.save();
   f.globalCompositeOperation = "destination-out";
-  // Feather the reveal itself; an outlined polygon would recreate the old
-  // bright halo. The exact visibility polygon still controls sightings.
-  f.filter = "blur(27px)";
-  f.drawImage(horizonMask, 0, 0, vw, vh);
+  f.drawImage(blurredHorizonMask, 0, 0, vw, vh);
   f.restore();
+
   ctx.drawImage(fogCanvas, 0, 0, vw, vh);
 }
 
@@ -4233,6 +4321,20 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
   }
   c.restore();
 }
+let harborGlowStamp = null;
+function getHarborGlowStamp() {
+  if (!harborGlowStamp) {
+    harborGlowStamp = createRadialStamp({
+      stops: [
+        [0, "rgba(255,219,139,1)"],
+        [1, "rgba(255,186,86,0)"],
+      ],
+      size: 64,
+    });
+  }
+  return harborGlowStamp;
+}
+
 function drawNavigationalHazards(c, z) {
   c.save();
   for (const sea of roughSeas) {
@@ -4249,62 +4351,32 @@ function drawNavigationalHazards(c, z) {
     c.stroke();
   }
   c.setLineDash([]);
-  for (const [sx, sy, rx, ry, name] of worldShoals) {
-    if (!isWorldCircleInViewport(sx, sy, rx, z)) continue;
-    const x = nearestWrappedX(sx, camera.x);
+  for (const shoal of cachedShoals) {
+    if (!isWorldCircleInViewport(shoal.sx, shoal.sy, shoal.rx, z)) continue;
+    const x = nearestWrappedX(shoal.sx, camera.x);
     c.save();
-    // Irregular sand shelf and inked reef edge, rather than a hazard ellipse.
-    c.beginPath();
-    for (let point = 0; point <= 32; point++) {
-      const angle = (point / 32) * Math.PI * 2;
-      const ragged =
-        0.82 + Math.sin(angle * 5 + sx) * 0.1 + Math.sin(angle * 9 + sy) * 0.07;
-      const px = x + Math.cos(angle) * rx * ragged;
-      const py = sy + Math.sin(angle) * ry * ragged;
-      if (point === 0) c.moveTo(px, py);
-      else c.lineTo(px, py);
-    }
-    c.closePath();
+    c.translate(x, shoal.sy);
     c.fillStyle = "rgba(204, 177, 115, .39)";
-    c.fill();
+    c.fill(shoal.shelf);
     c.strokeStyle = "rgba(88, 79, 51, .76)";
     c.lineWidth = 1.5 / z;
-    c.stroke();
-    c.clip();
-    for (let band = -2; band <= 2; band++) {
-      c.strokeStyle = shoalBandStyles[2 - Math.abs(band)];
-      c.lineWidth = (3 - Math.abs(band) * 0.35) / z;
-      c.beginPath();
-      c.moveTo(x - rx, sy + band * ry * 0.34);
-      c.bezierCurveTo(
-        x - rx * 0.35,
-        sy + band * ry * 0.44 - 11,
-        x + rx * 0.28,
-        sy + band * ry * 0.23 + 9,
-        x + rx,
-        sy + band * ry * 0.38,
-      );
-      c.stroke();
+    c.stroke(shoal.shelf);
+    c.clip(shoal.shelf);
+    for (const { path, style, baseWidth } of shoal.bands) {
+      c.strokeStyle = style;
+      c.lineWidth = baseWidth / z;
+      c.stroke(path);
     }
-    for (let pebble = 0; pebble < 28; pebble++) {
-      const px = x + Math.sin(pebble * 31.7 + sx) * rx * 0.76;
-      const py = sy + Math.cos(pebble * 17.3 + sy) * ry * 0.68;
-      const size = pebble % 7 === 0 ? 5 : 1.5 + (pebble % 3);
-      c.fillStyle =
-        pebble % 7 === 0 ? "rgba(73, 70, 52, .73)" : "rgba(92, 85, 59, .38)";
-      c.beginPath();
-      c.moveTo(px, py - size);
-      c.lineTo(px + size * 0.8, py + size * 0.6);
-      c.lineTo(px - size, py + size * 0.6);
-      c.closePath();
-      c.fill();
-    }
+    c.fillStyle = "rgba(73, 70, 52, .73)";
+    c.fill(shoal.pebblePrimary);
+    c.fillStyle = "rgba(92, 85, 59, .38)";
+    c.fill(shoal.pebbleSecondary);
     c.restore();
-    if (pointCurrentlyVisible(sx, sy)) {
+    if (pointCurrentlyVisible(shoal.sx, shoal.sy)) {
       c.fillStyle = "rgba(64, 39, 20, .9)";
       c.font = `bold ${11 / z}px Georgia`;
       c.textAlign = "center";
-      c.fillText(name || "Shallows", x, sy - ry - 8 / z);
+      c.fillText(shoal.name || "Shallows", x, shoal.sy - shoal.ry - 8 / z);
     }
   }
   c.restore();
@@ -4313,28 +4385,38 @@ function drawNavigationalHazards(c, z) {
 function drawHarborLights(c, lighting, z) {
   if (lighting.night < 0.12) return;
   const strength = lighting.night * (1 - lighting.storm * 0.2);
-  const harborGlowStyle = `rgba(255,219,139,${strength * 0.42})`;
+  const stamp = getHarborGlowStamp();
+  const glowRadius = 11 / z;
   const harborLampStyle = `rgba(255,229,160,${strength * 0.88})`;
   const harborReflectionStyle = `rgba(255,205,124,${strength * 0.24})`;
+  const baseAlpha = c.globalAlpha;
   c.save();
   for (const port of ports) {
     if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
     if (!pointCurrentlyVisible(port.x, port.y)) continue;
     c.save();
     c.translate(nearestWrappedX(port.x, camera.x), port.y);
+    c.globalAlpha = baseAlpha * strength * 0.42;
     for (const [x, y] of [
       [-22, -14],
       [-10, -21],
       [15, -15],
     ]) {
-      const glow = c.createRadialGradient(x, y, 0, x, y, 11 / z);
-      glow.addColorStop(0, harborGlowStyle);
-      glow.addColorStop(1, "rgba(255,186,86,0)");
-      c.fillStyle = glow;
-      c.beginPath();
-      c.arc(x, y, 11 / z, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = harborLampStyle;
+      c.drawImage(
+        stamp,
+        x - glowRadius,
+        y - glowRadius,
+        glowRadius * 2,
+        glowRadius * 2,
+      );
+    }
+    c.globalAlpha = baseAlpha;
+    c.fillStyle = harborLampStyle;
+    for (const [x, y] of [
+      [-22, -14],
+      [-10, -21],
+      [15, -15],
+    ]) {
       c.beginPath();
       c.arc(x, y, 1.35 / z, 0, Math.PI * 2);
       c.fill();
@@ -4353,6 +4435,7 @@ function drawHarborLights(c, lighting, z) {
   }
   c.restore();
 }
+
 const portLabelWidths = new Map();
 // A font becoming available can change metrics even though port names do not.
 document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
@@ -4447,6 +4530,9 @@ function portLabelWidth(c, name) {
     portLabelWidths.set(name, Math.ceil(c.measureText(name).width) + 29);
   return portLabelWidths.get(name);
 }
+const shipScreen = { x: 0, y: 0, angle: 0 };
+const activeLighthouses = [];
+
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, vw, vh);
@@ -4461,25 +4547,26 @@ function render() {
     !selectedTown &&
     !selectedMerchant &&
     !pendingCombat;
-  const stern = {
-    x: ship.x - Math.cos(ship.angle) * 24,
-    y: ship.y - Math.sin(ship.angle) * 24,
-    strength: Math.min(1, ship.speed / ship.maxSpeed),
-    time,
-  };
+  const sternX = ship.x - Math.cos(ship.angle) * 24;
+  const sternY = ship.y - Math.sin(ship.angle) * 24;
   if (
     moving &&
     ship.speed > 3 &&
     (!wakeTrail.length ||
       (time - wakeTrail[0].time > 65 &&
-        wrappedDistance(stern.x, stern.y, wakeTrail[0].x, wakeTrail[0].y) > 3))
+        wrappedDistance(sternX, sternY, wakeTrail[0].x, wakeTrail[0].y) > 3))
   ) {
     if (
       wakeTrail.length &&
-      wrappedDistance(stern.x, stern.y, wakeTrail[0].x, wakeTrail[0].y) > 100
+      wrappedDistance(sternX, sternY, wakeTrail[0].x, wakeTrail[0].y) > 100
     )
       wakeTrail.length = 0;
-    wakeTrail.unshift(stern);
+    wakeTrail.unshift({
+      x: sternX,
+      y: sternY,
+      strength: Math.min(1, ship.speed / ship.maxSpeed),
+      time,
+    });
   }
   while (
     wakeTrail.length &&
@@ -4493,10 +4580,25 @@ function render() {
     ctx.translate(-camera.x, -camera.y);
   };
 
-  // World layer rendering
+  // World layer rendering: blit only visible slice of each world copy
   worldTransform();
-  for (const offset of worldCopiesNear(camera.x))
-    ctx.drawImage(mapLayer, offset, 0);
+  const halfW = vw / (2 * z);
+  const halfH = vh / (2 * z * MAP_TILT_COS);
+  for (const offset of worldCopiesNear(camera.x)) {
+    const margin = 2;
+    const sx = Math.max(0, Math.floor(camera.x - halfW - offset - margin));
+    const sy = Math.max(0, Math.floor(camera.y - halfH - margin));
+    const right = Math.min(
+      WORLD.w,
+      Math.ceil(camera.x + halfW - offset + margin),
+    );
+    const bottom = Math.min(WORLD.h, Math.ceil(camera.y + halfH + margin));
+    const sw = right - sx;
+    const sh = bottom - sy;
+    if (sw > 0 && sh > 0) {
+      ctx.drawImage(mapLayer, sx, sy, sw, sh, offset + sx, sy, sw, sh);
+    }
+  }
   seaRendering.drawSurface(ctx, {
     camera,
     vw,
@@ -4536,7 +4638,7 @@ function render() {
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
   const beaconRange = Math.max(vw, vh) + 160;
-  const lighthouses = [];
+  activeLighthouses.length = 0;
   if (lighting.night >= 0.015) {
     for (let index = 0; index < ports.length; index++) {
       const port = ports[index];
@@ -4545,20 +4647,18 @@ function render() {
       const x = vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z;
       const y = vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS;
       if (x > -160 && x < vw + 160 && y > -160 && y < vh + 160)
-        lighthouses.push({ x, y, index });
+        activeLighthouses.push({ x, y, index });
     }
   }
-  const shipScreen = {
-    x: vw / 2 + (ship.x - camera.x) * z,
-    y: vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS,
-    angle: ship.angle,
-  };
+  shipScreen.x = vw / 2 + (ship.x - camera.x) * z;
+  shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
+  shipScreen.angle = ship.angle;
   drawNightAtmosphere(ctx, {
     lighting,
     width: vw,
     height: vh,
     ship: shipScreen,
-    lighthouses,
+    lighthouses: activeLighthouses,
     time: visualTime,
     reducedMotion: reducedMotion.matches,
   });

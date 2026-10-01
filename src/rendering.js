@@ -218,6 +218,9 @@ function drawWeatherClouds(
   const rollSpeed = 0.022 + windStrength * 0.05 + storm * 0.05;
   const sway = Math.sin(windAngle);
   c.save();
+  c.rotate(windAngle);
+  const cos = Math.cos(-windAngle);
+  const sin = Math.sin(-windAngle);
 
   // Pre-calculate common values to reduce redundant calculations
   const stormLightBoost = storm * 0.12;
@@ -281,14 +284,13 @@ function drawWeatherClouds(
         }
       }
       const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
-      c.save();
-      c.translate(px, py);
-      c.rotate(windAngle);
+      const unrotX = px * cos - py * sin;
+      const unrotY = px * sin + py * cos;
       c.globalAlpha = baseAlpha * style.alpha;
-      c.drawImage(style.stamp, -pr, -pr, pr * 2, pr * 2);
-      c.restore();
+      c.drawImage(style.stamp, unrotX - pr, unrotY - pr, pr * 2, pr * 2);
     }
   }
+
   c.restore();
   cloudStyleCloud = cloud;
   cloudStyleStorm = storm;
