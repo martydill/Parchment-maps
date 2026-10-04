@@ -1,3 +1,4 @@
+import { planMarketOrder } from "../core/market-order.js";
 import { updateElementProperty } from "./dom.js";
 import {
   renderCargoPlan,
@@ -45,13 +46,13 @@ let acceptContract,
   availableMarketGoods,
   buyPermit,
   buyPriceFor,
+  pricingOptions,
   calculateShipIdentity,
   canTrade,
   cargoCapacities,
   cargoCondition,
   cargoCount,
   cargoLotDescription,
-  cargoValueMultiplier,
   closeDiscoveryDetails,
   compassDirection,
   completeLegacyCapstone,
@@ -137,13 +138,13 @@ function syncPanelContext() {
     availableMarketGoods,
     buyPermit,
     buyPriceFor,
+    pricingOptions,
     calculateShipIdentity,
     canTrade,
     cargoCapacities,
     cargoCondition,
     cargoCount,
     cargoLotDescription,
-    cargoValueMultiplier,
     closeDiscoveryDetails,
     compassDirection,
     completeLegacyCapstone,
@@ -585,128 +586,298 @@ export function renderPortSystems() {
   renderPolitics();
   renderShipyard();
   renderReadiness();
+  panelContext.renderHarborPresentation();
   renderMilestone(document.getElementById("milestonePort"));
 }
 
+let marketKeys = [];
+let marketSelection = {
+  port: null,
+  key: null,
+  direction: "buy",
+  quantity: 1,
+  filter: "all",
+};
+
 export function renderMarket() {
   syncPanelContext();
-
+  if (marketSelection.port !== currentPort.name) {
+    marketSelection = {
+      port: currentPort.name,
+      key: null,
+      direction: "buy",
+      quantity: 1,
+      filter: "all",
+    };
+    document.getElementById("marketReceipt").textContent = "";
+  }
   document.getElementById("portCoins").textContent = game.coins + " crowns";
   document.getElementById("portHold").textContent =
     cargoCount() + "/" + game.holdMax;
   const market = document.getElementById("market");
-  market.innerHTML = "";
-  const regional = game.regionalEconomy[currentPort.name];
+  market.replaceChildren();
   const available = availableMarketGoods(
-    regional,
+    game.regionalEconomy[currentPort.name],
     productionChains,
     Object.keys(goods),
   );
-  Object.keys(goods).forEach((key) => {
-    if (!available.has(key)) return;
-    const state = economyState(currentPort, key),
-      legalStatus = legalStatusAt(currentPort, key),
-      law = lawDetails(legalStatus),
-      buyQuote = tradeQuote(buyPriceFor(currentPort, key), legalStatus, "buy"),
-      baseSellQuote = tradeQuote(
-        sellPriceFor(currentPort, key),
-        legalStatus,
-        "sell",
-      ),
-      lots = game.cargoLots.filter((lot) => lot.key === key),
-      nextLot = lots[0],
-      sellQuote = nextLot
-        ? Math.max(
-            1,
-            Math.round(
-              baseSellQuote *
-                cargoValueMultiplier(nextLot, currentPort.name, goods[key]),
-            ),
-          )
-        : baseSellQuote,
-      condition = economyCondition(currentPort, key);
-    const tradeAccess = canTrade({
-      state: game.legal,
-      portName: currentPort.name,
-      good: key,
-      status: legalStatus,
-      day: game.day,
-      units: game.cargo[key],
-    });
+  // Goods already aboard remain sellable even when local production collapses.
+  const keys = Object.keys(goods).filter(
+    (key) => available.has(key) || game.cargo[key] > 0,
+  );
+  marketKeys = keys;
+  if (!keys.includes(marketSelection.key)) marketSelection.key = keys[0];
+  document.querySelectorAll(".market-filters button").forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.filter === marketSelection.filter),
+    );
+    button.onclick = () => {
+      marketSelection.filter = button.dataset.filter;
+      renderMarket();
+      document
+        .querySelector(
+          `.market-filters [data-filter="${marketSelection.filter}"]`,
+        )
+        .focus();
+    };
+  });
+  let visible = 0;
+  for (const key of keys) {
+    const state = economyState(currentPort, key);
+    const status = legalStatusAt(currentPort, key);
+    const condition = economyCondition(currentPort, key);
+    if (marketSelection.filter === "aboard" && !game.cargo[key]) continue;
+    if (
+      marketSelection.filter === "demand" &&
+      !["Shortage", "Tight"].includes(condition)
+    )
+      continue;
+    if (marketSelection.filter === "restricted" && status === "legal") continue;
+    visible++;
     const row = document.createElement("div");
-    row.className = "trade-row";
-    const klass =
-      condition === "Shortage"
-        ? "condition-shortage"
-        : condition === "Surplus" || condition === "Glut"
-          ? "condition-surplus"
-          : "";
-    const label = document.createElement("div");
-    label.className = "trade-good";
-    label.innerHTML =
-      `<span class="resource-icon-frame" title="${goods[key].name}">` +
-      `<svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"></use></svg>` +
-      "</span>" +
-      '<span class="trade-good-details"><b>' +
-      goods[key].name +
-      '</b><span class="small">Buy ' +
-      buyQuote +
-      " · Sell " +
-      sellQuote +
-      " crowns · aboard " +
-      game.cargo[key] +
-      '</span><span class="market-stock"><span class="market-condition ' +
-      klass +
-      '">' +
-      condition +
-      `</span> · <span class="legal-status legal-${legalStatus}">${law.label}</span> · ` +
-      Math.floor(state.stock) +
-      " units in market</span>" +
-      (lots.length
-        ? '<span class="cargo-manifest">' +
-          lots
-            .map((lot, index) => {
-              const value = Math.round(
-                cargoValueMultiplier(lot, currentPort.name, goods[key]) * 100,
-              );
-              const condition = cargoCondition(lot, goods[key]);
-              return `<span class="cargo-quality quality-${lot.quality} condition-${condition.id}"><b>#${index + 1}</b> ${cargoLotDescription(lot)} · ${value}% market value</span>`;
-            })
-            .join("") +
-          "</span>"
-        : "") +
-      "</span>";
-    const buy = document.createElement("button");
-    buy.textContent = "Buy " + buyQuote;
-    buy.title = "Buy one for " + buyQuote + " crowns";
-    buy.disabled =
-      !tradeAccess.ok ||
-      game.coins < buyQuote ||
-      cargoCount() >= game.holdMax ||
-      state.stock < 1;
-    buy.onclick = () => {
-      const access = canTrade({
-        state: game.legal,
-        portName: currentPort.name,
-        good: key,
-        status: legalStatus,
-        day: game.day,
-        units: game.cargo[key],
-      });
-      if (!access.ok) return showMessage(access.reason);
-      const livePrice = tradeQuote(
-        buyPriceFor(currentPort, key),
-        legalStatus,
-        "buy",
+    row.className =
+      "exchange-row" + (marketSelection.key === key ? " selected" : "");
+    const label = document.createElement("button");
+    label.type = "button";
+    label.className = "exchange-good";
+    label.setAttribute("aria-pressed", String(marketSelection.key === key));
+    label.innerHTML = `<span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"/></svg></span><span><b>${goods[key].name}</b><small>${Math.floor(state.stock)} local · ${game.cargo[key]} aboard</small><span class="market-condition ${condition === "Shortage" || condition === "Tight" ? "condition-shortage" : condition === "Surplus" || condition === "Glut" ? "condition-surplus" : ""}">${condition}</span> <small class="legal-status legal-${status}">${lawDetails(status).label}</small></span>`;
+    label.onclick = () => {
+      marketSelection.key = key;
+      marketSelection.quantity = 1;
+      renderMarket();
+      document.getElementById("orderQuantity").focus();
+    };
+    row.append(label);
+    for (const direction of ["buy", "sell"]) {
+      const plan = marketOrder(key, direction, 1);
+      const price =
+        plan.total ??
+        tradeQuote(
+          direction === "buy"
+            ? buyPriceFor(currentPort, key)
+            : sellPriceFor(currentPort, key),
+          status,
+          direction,
+        );
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "exchange-price";
+      button.innerHTML = `<small>${direction === "buy" ? "Buy" : "Sell"}</small><b>${price}</b>`;
+      button.setAttribute(
+        "aria-label",
+        `Preview ${direction} ${goods[key].name}`,
       );
-      if (game.coins < livePrice) return showMessage("Not enough crowns.");
-      if (cargoCount() >= game.holdMax) return showMessage("The hold is full.");
-      if (state.stock < 1)
-        return showMessage("The market has no more " + goods[key].name + ".");
-      game.coins -= livePrice;
+      button.onclick = () => {
+        marketSelection.key = key;
+        marketSelection.direction = direction;
+        marketSelection.quantity = 1;
+        renderMarket();
+        document.getElementById("orderQuantity").focus();
+      };
+      row.append(button);
+    }
+    market.append(row);
+  }
+  if (!visible)
+    market.innerHTML =
+      '<p class="empty-note">No goods match this filter. Choose All goods to view the exchange.</p>';
+  renderMarketOrder();
+}
+
+export function openMarketGood(key) {
+  syncPanelContext();
+  panelContext.openHarborService("market", "market");
+  marketSelection.key = key;
+  marketSelection.direction = "buy";
+  marketSelection.quantity = 1;
+  marketSelection.filter = "all";
+  renderMarket();
+  if (marketSelection.key !== key) {
+    const root = document.getElementById("marketOrder");
+    root.innerHTML = `<div class="town-kicker">Exchange listing</div><h3>${goods[key].name}</h3><p class="small">This manufactured good is not listed here yet. Invest in its workshop to unlock exchange listings.</p><button class="parchment" type="button">View local workshops →</button>`;
+    const workshop = root.querySelector("button");
+    workshop.onclick = () =>
+      panelContext.openHarborService("market", "productionChains");
+    workshop.focus();
+    return;
+  }
+  document.getElementById("orderQuantity").focus();
+}
+
+function marketOrder(key, direction, quantity) {
+  return planMarketOrder({
+    direction,
+    quantity,
+    pricing: pricingOptions(currentPort, key),
+    legal: game.legal,
+    status: legalStatusAt(currentPort, key),
+    lots: game.cargoLots,
+    coins: game.coins,
+    holdUsed: cargoCount(),
+    holdMax: game.holdMax,
+  });
+}
+
+function renderMarketOrder() {
+  const root = document.getElementById("marketOrder");
+  const { key, direction, quantity } = marketSelection;
+  if (!key) {
+    root.innerHTML =
+      '<p class="empty-note">No goods are available at this exchange.</p>';
+    return;
+  }
+  const status = legalStatusAt(currentPort, key);
+  root.innerHTML = `<div class="town-kicker">Transaction preview</div><div class="order-good"><span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"/></svg></span><h3>${goods[key].name}</h3></div><label class="order-good-picker">Choose goods<select id="orderGoodPicker"></select></label><div class="order-directions" role="group" aria-label="Transaction direction"><button type="button" data-direction="buy" aria-pressed="${direction === "buy"}">Buy</button><button type="button" data-direction="sell" aria-pressed="${direction === "sell"}">Sell</button></div><label class="quantity-label" for="orderQuantity">Quantity</label><div class="order-quantity"><button type="button" id="orderLess" aria-label="Decrease quantity">−</button><input id="orderQuantity" type="number" min="1" max="70" step="1" value="${quantity}" inputmode="numeric"><button type="button" id="orderMore" aria-label="Increase quantity">+</button><button type="button" id="orderMax">Max</button></div><div id="orderSummary" class="order-summary" aria-live="polite"></div><button class="parchment order-confirm" type="button" id="confirmOrder"></button><div id="orderReason" class="order-reason" role="status"></div><p class="small">Each unit changes the next price. Duties and cargo quality are included.</p><div class="order-manifest"></div>`;
+  const picker = root.querySelector("#orderGoodPicker");
+  for (const goodKey of marketKeys) {
+    const option = document.createElement("option");
+    option.value = goodKey;
+    option.textContent = goods[goodKey].name;
+    option.selected = goodKey === key;
+    picker.append(option);
+  }
+  picker.onchange = () => {
+    marketSelection.key = picker.value;
+    marketSelection.quantity = 1;
+    renderMarket();
+    document.getElementById("orderGoodPicker").focus();
+  };
+  root.querySelectorAll("[data-direction]").forEach((button) => {
+    button.onclick = () => {
+      marketSelection.direction = button.dataset.direction;
+      renderMarketOrder();
+      root
+        .querySelector(`[data-direction="${marketSelection.direction}"]`)
+        .focus();
+    };
+  });
+  const input = root.querySelector("input");
+  const change = (value) => {
+    marketSelection.quantity = value;
+    input.value = value;
+    updateOrderPreview();
+  };
+  input.oninput = () => {
+    marketSelection.quantity = input.valueAsNumber;
+    updateOrderPreview();
+  };
+  root.querySelector("#orderLess").onclick = () =>
+    change(Math.max(1, (input.valueAsNumber || 1) - 1));
+  root.querySelector("#orderMore").onclick = () =>
+    change(Math.min(70, (input.valueAsNumber || 0) + 1));
+  root.querySelector("#orderMax").onclick = () => {
+    let maximum = 0;
+    for (let count = 1; count <= 70; count++) {
+      if (!marketOrder(key, marketSelection.direction, count).ok) break;
+      maximum = count;
+    }
+    change(Math.max(1, maximum));
+  };
+  root.querySelector("#confirmOrder").onclick = executeMarketOrder;
+  const access = canTrade({
+    state: game.legal,
+    portName: currentPort.name,
+    good: key,
+    status,
+    day: game.day,
+    units: game.cargo[key],
+  });
+  if (
+    status === "licensed" &&
+    !access.ok &&
+    !game.legal.portBans[currentPort.name]
+  ) {
+    const permit = document.createElement("button");
+    permit.type = "button";
+    permit.className = "parchment";
+    permit.textContent = "Obtain permit · 35 crowns";
+    permit.disabled = game.coins < 35;
+    permit.onclick = () => {
+      const result = buyPermit(
+        game.legal,
+        currentPort.name,
+        key,
+        game.day,
+        game.coins,
+      );
+      if (!result.ok) return showMessage(result.reason);
+      game.coins = result.coins;
+      document.getElementById("marketReceipt").textContent =
+        `Permit issued for ${goods[key].name} through Day ${result.expiresDay}.`;
+      renderPortSystems();
+      updateHud();
+      saveGameState();
+    };
+    root.append(permit);
+  }
+  const manifest = root.querySelector(".order-manifest");
+  const lots = game.cargoLots.filter((lot) => lot.key === key);
+  if (lots.length) {
+    const details = document.createElement("details");
+    details.innerHTML = `<summary>Cargo manifest · ${lots.length} aboard</summary>`;
+    lots.forEach((lot) => {
+      const line = document.createElement("p");
+      line.className = "small";
+      line.textContent =
+        cargoLotDescription(lot) +
+        " · " +
+        cargoCondition(lot, goods[key]).label;
+      details.append(line);
+    });
+    manifest.append(details);
+  }
+  updateOrderPreview();
+}
+
+function updateOrderPreview() {
+  const { key, direction, quantity } = marketSelection;
+  const plan = marketOrder(key, direction, quantity);
+  document.getElementById("orderSummary").innerHTML =
+    `<div><span>${direction === "buy" ? "Total cost" : "Sale proceeds"}</span><strong>${plan.total === undefined ? "—" : plan.total} <small>crowns</small></strong></div><div><span>Purse after</span><b>${plan.ok ? plan.coinsAfter : "—"}</b></div><div><span>Hold after</span><b>${plan.ok ? plan.holdAfter : "—"} / ${game.holdMax}</b></div>`;
+  const confirm = document.getElementById("confirmOrder");
+  confirm.disabled = !plan.ok;
+  confirm.textContent = `${direction === "buy" ? "Buy" : "Sell"} ${Number.isInteger(quantity) ? quantity : ""} · ${plan.total === undefined ? "—" : plan.total} crowns`;
+  document.getElementById("orderReason").textContent = plan.ok
+    ? "Ready to confirm"
+    : plan.reason;
+  document.getElementById("orderReason").classList.toggle("blocked", !plan.ok);
+}
+
+function executeMarketOrder() {
+  syncPanelContext();
+  const { key, direction, quantity } = marketSelection;
+  const plan = marketOrder(key, direction, quantity);
+  if (!plan.ok) {
+    updateOrderPreview();
+    return;
+  }
+  if (direction === "buy") {
+    plan.prices.forEach((cost) => {
       const lot = createCargoLot({
         key,
-        cost: livePrice,
+        cost,
         origin: currentPort.name,
         day: game.day,
         sequence: game.cargoLots.length,
@@ -718,95 +889,59 @@ export function renderMarket() {
         game.cargoLots,
       );
       game.cargoLots.push(lot);
-      syncCargoCounts(game, goods);
-      state.stock -= 1;
-      renderPortSystems();
-      updateHud();
-    };
-    const sell = document.createElement("button");
-    sell.textContent = "Sell " + sellQuote;
-    sell.title = "Sell one for " + sellQuote + " crowns";
-    sell.disabled = game.cargo[key] <= 0 || !tradeAccess.ok;
-    sell.onclick = () => {
-      if (game.cargo[key] <= 0) return showMessage("None aboard.");
-      const lotIndex = game.cargoLots.findIndex((lot) => lot.key === key);
-      const lot = game.cargoLots[lotIndex];
-      const livePrice = Math.max(
-          1,
-          Math.round(
-            tradeQuote(sellPriceFor(currentPort, key), legalStatus, "sell") *
-              cargoValueMultiplier(lot, currentPort.name, goods[key]),
-          ),
-        ),
-        cost = lot.cost ?? goods[key].base;
-      game.cargoLots.splice(lotIndex, 1);
-      syncCargoCounts(game, goods);
-      game.coins += livePrice;
-      state.stock += 1;
-      const competition = recordPlayerCompetition(game.rivals, {
-        port: currentPort.name,
-        goodKey: key,
-        day: game.day,
-      });
-      game.rivals = competition.state;
-      if (competition.rivalId) {
-        const rival = RIVAL_CAPTAINS.find(
-          (entry) => entry.id === competition.rivalId,
-        );
-        addNews(
-          `Market contested with ${rival.house}`,
-          `Your ${goods[key].name} sale in ${currentPort.name} undercut a recent delivery by ${rival.captain}.`,
-        );
-      }
-      const e = worldEvents.ironShortage;
-      if (e.active && currentPort.name === e.port && key === e.good) {
-        game.milestone.shortageProfit += Math.max(0, livePrice - cost);
-        if (
-          game.milestone.shortageProfit >= 50 &&
-          !game.milestone.shortageExploited
-        ) {
-          game.milestone.shortageExploited = true;
-          addNews(
-            "A timely market coup",
-            `Your iron sales into ${PORT_NAMES.orvessaQuay}’s emergency earned enough profit to prove the value of a protected route.`,
-          );
-          showMessage(
-            "SHORTAGE EXPLOITED · Your iron sales have strengthened the Guild’s petition.",
-            4,
-          );
-        }
-      }
-      updateMilestoneCompletion();
-      renderPortSystems();
-      updateHud();
-    };
-    row.append(label, buy, sell);
-    if (
-      legalStatus === "licensed" &&
-      !tradeAccess.ok &&
-      !game.legal.portBans[currentPort.name]
-    ) {
-      const permit = document.createElement("button");
-      permit.textContent = "Permit 35";
-      permit.disabled = game.coins < 35;
-      permit.onclick = () => {
-        const result = buyPermit(
-          game.legal,
-          currentPort.name,
-          key,
-          game.day,
-          game.coins,
-        );
-        if (!result.ok) return showMessage(result.reason);
-        game.coins = result.coins;
-        showMessage(`Permit issued through Day ${result.expiresDay}.`);
-        renderPortSystems();
-        updateHud();
-      };
-      row.append(permit);
+    });
+  } else {
+    const sold = new Set(plan.soldLots);
+    game.cargoLots = game.cargoLots.filter((lot) => !sold.has(lot));
+    const competition = recordPlayerCompetition(game.rivals, {
+      port: currentPort.name,
+      goodKey: key,
+      day: game.day,
+    });
+    game.rivals = competition.state;
+    if (competition.rivalId) {
+      const rival = RIVAL_CAPTAINS.find(
+        (entry) => entry.id === competition.rivalId,
+      );
+      addNews(
+        `Market contested with ${rival.house}`,
+        `Your ${goods[key].name} sale in ${currentPort.name} undercut a recent delivery by ${rival.captain}.`,
+      );
     }
-    market.append(row);
-  });
+    const event = worldEvents.ironShortage;
+    if (event.active && currentPort.name === event.port && key === event.good) {
+      game.milestone.shortageProfit += plan.soldLots.reduce(
+        (sum, lot, index) =>
+          sum + Math.max(0, plan.prices[index] - (lot.cost ?? goods[key].base)),
+        0,
+      );
+      if (
+        game.milestone.shortageProfit >= 50 &&
+        !game.milestone.shortageExploited
+      ) {
+        game.milestone.shortageExploited = true;
+        addNews(
+          "A timely market coup",
+          `Your iron sales into ${PORT_NAMES.orvessaQuay}’s emergency proved the value of a protected route.`,
+        );
+        showMessage(
+          "SHORTAGE EXPLOITED · Your sales strengthened the Guild’s petition.",
+          4,
+        );
+      }
+    }
+  }
+  game.coins = plan.coinsAfter;
+  economyState(currentPort, key).stock = plan.stockAfter;
+  syncCargoCounts(game, goods);
+  if (direction === "sell") updateMilestoneCompletion();
+  document.getElementById("marketReceipt").textContent =
+    `${direction === "buy" ? "Purchased" : "Sold"} ${quantity} ${goods[key].name} · ${plan.total} crowns · ${plan.holdAfter}/${game.holdMax} hold.`;
+  marketSelection.quantity = 1;
+  renderPortSystems();
+  updateHud();
+  saveGameState();
+  document.getElementById("orderQuantity").focus();
 }
 
 export function renderLedger() {

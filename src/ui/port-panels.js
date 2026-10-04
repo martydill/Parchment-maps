@@ -1,3 +1,5 @@
+import { renderVesselInspection } from "./vessel-inspection.js";
+import { productionPreview } from "../core/production-preview.js";
 import {
   CARGO_COMPARTMENTS,
   cargoLotDescription,
@@ -152,11 +154,7 @@ function upgradeAffinities(item) {
   if (!item.affinities.length) return "No specialist alignment";
   return item.affinities.map((id) => SHIP_IDENTITIES[id].name).join(" · ");
 }
-function formatChainGoods(entries) {
-  return Object.entries(entries)
-    .map(([key, units]) => units + " " + goods[key].name)
-    .join(" + ");
-}
+
 function localWarehouseStanding() {
   return Math.max(
     0,
@@ -430,6 +428,7 @@ export function renderPortOpportunities() {
       tab: "vessel",
     },
   ];
+  if (damaged) rows.unshift(rows.pop());
   root.innerHTML = "";
   for (const row of rows) {
     const item = document.createElement("div");
@@ -437,7 +436,14 @@ export function renderPortOpportunities() {
     item.innerHTML = `<div><b>${row.title}</b><span class="small">${row.detail}</span></div>`;
     const button = document.createElement("button");
     button.className = "parchment";
-    button.textContent = row.action ? "Buy" : "Open";
+    button.type = "button";
+    button.textContent = row.action
+      ? "Buy lead"
+      : row.tab === "trade"
+        ? "Review"
+        : row.tab === "market"
+          ? "Trade"
+          : "Prepare";
     button.onclick = row.action
       ? row.action
       : () =>
@@ -712,16 +718,12 @@ export function renderReadiness() {
   });
   root.innerHTML =
     `<div class="ship-stats">Plan: ${routePlan.label} · ${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
-    `<div class="crew-grid">${Object.entries(ops.crew.groups)
+    `<div id="vesselInspection"></div><div class="crew-grid">${Object.entries(
+      ops.crew.groups,
+    )
       .map(
         ([role, group]) =>
           `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} exp · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
-      )
-      .join("")}</div>` +
-    `<div class="component-grid">${Object.entries(SHIP_COMPONENTS)
-      .map(
-        ([key, component]) =>
-          `<div class="component-condition ${ops.components[key] < 40 ? "critical" : ""}"><span>${component.label}</span><b>${Math.round(ops.components[key])}%</b></div>`,
       )
       .join("")}</div>` +
     estimates
@@ -731,6 +733,30 @@ export function renderReadiness() {
         return `<div class="standing-row"><span><b>${estimate.destination}</b><span class="small">${estimate.days}d · arrive Day ${estimate.arrivalDay} · ${estimate.provisionsNeeded} provisions · ~${estimate.conditionRisk}% wear</span>${warnings.length ? warnings.map((warning) => `<span class="readiness-warning">⚠ ${warning}</span>`).join("") : '<span class="readiness-ready">✓ Ready to sail</span>'}</span></div>`;
       })
       .join("");
+  renderVesselInspection(document.getElementById("vesselInspection"), {
+    game,
+    portName: currentPort.name,
+    vessel: SHIP_CLASSES[game.shipUpgrades.activeClass],
+    capacities: cargoCapacities(),
+    onRepair(key) {
+      const result = repairShipComponent(game.operations, game.coins, key);
+      if (!result.ok || !result.repaired) return;
+      game.operations = result.operations;
+      game.coins = result.coins;
+      applyShipUpgrades();
+      showMessage(
+        `Repaired ${SHIP_COMPONENTS[key].label.toLowerCase()} by ${Number(result.repaired.toFixed(2))} points.`,
+      );
+      renderPortSystems();
+      updateHud();
+      saveGameState();
+      document
+        .querySelector(`#vesselInspection [data-component="${key}"]`)
+        .focus();
+    },
+    onCargo: () => panelContext.openHarborService("market", "cargoPlan"),
+    onRefit: () => panelContext.openHarborService("vessel", "shipyard"),
+  });
   const planner = document.createElement("div");
   planner.className = "route-plan-grid";
   for (const plan of Object.values(ROUTE_PLANS)) {
@@ -745,6 +771,7 @@ export function renderReadiness() {
       game.operations.routePlan = plan.id;
       showMessage(`${plan.label} set for the next passage.`);
       renderReadiness();
+      panelContext.renderHarborPresentation();
       saveGameState();
     };
     planner.append(button);
@@ -823,28 +850,6 @@ export function renderReadiness() {
     recruiting.append(button);
   }
   root.append(recruiting);
-  const componentActions = document.createElement("div");
-  componentActions.className = "component-repairs";
-  for (const [key, component] of Object.entries(SHIP_COMPONENTS)) {
-    const button = document.createElement("button");
-    button.className = "parchment";
-    button.textContent = `Repair ${component.label}`;
-    button.disabled =
-      game.coins < component.repairCost || ops.components[key] >= 100;
-    button.onclick = () => {
-      const result = repairShipComponent(game.operations, game.coins, key);
-      game.operations = result.operations;
-      game.coins = result.coins;
-      applyShipUpgrades();
-      showMessage(
-        `Repaired ${component.label.toLowerCase()} by ${result.repaired} point${result.repaired === 1 ? "" : "s"}.`,
-      );
-      renderPortSystems();
-      updateHud();
-    };
-    componentActions.append(button);
-  }
-  root.append(componentActions);
 }
 
 export function renderProductionChains() {
@@ -876,24 +881,46 @@ export function renderProductionChains() {
           ? "Input-starved"
           : "Operating"
         : "Awaiting daily cycle";
-    const recipe =
-      report?.recipeId === "standard"
-        ? "standard recipe"
-        : chain.alternatives?.find(
-            (alternative) => alternative.id === report?.recipeId,
-          )?.label || "standard recipe";
-    card.innerHTML =
-      "<div><b>" +
-      chain.name +
-      '</b><span class="small">' +
-      formatChainGoods(chain.inputs) +
-      " → " +
-      formatChainGoods(chain.outputs) +
-      `</span><span class="small">${recipe} · quality ${Math.round((report?.quality || 1) * 100)}%${report?.fuelLimited ? " · fuel-starved" : ""}</span></div><span class="contract-tag">` +
-      status +
-      " · " +
-      Math.round(efficiency * 100) +
-      `%</span>${industry.magnate ? `<span class="small magnate">Local power: ${industry.magnate}, ${industry.investment >= 2 ? "rival magnate" : "rising proprietor"}</span>` : ""}`;
+    const preview = productionPreview(chain, game.economy[currentPort.name]);
+    const cycleMetrics = [];
+    if (Number.isFinite(report?.utilization))
+      cycleMetrics.push(`${Math.round(report.utilization * 100)}% utilization`);
+    if (Number.isFinite(report?.batches))
+      cycleMetrics.push(`${report.batches.toFixed(2)} batches`);
+    if (Number.isFinite(report?.quality))
+      cycleMetrics.push(`${Math.round(report.quality * 100)}% quality`);
+    if (report?.fuelLimited) cycleMetrics.push("fuel limited");
+    const lastCycle = cycleMetrics.length
+      ? `Last cycle: ${cycleMetrics.join(" · ")}`
+      : "No completed daily cycle recorded yet.";
+    card.classList.add("production-diagram-card");
+    card.innerHTML = `<div class="production-diagram-heading"><div><div class="town-kicker">Local production</div><h4>${chain.name}</h4></div><span class="contract-tag">${status} · ${Math.round(efficiency * 100)}% base capacity</span></div><div class="production-flow"><div class="production-flow-inputs"><span class="production-flow-label">Inputs per batch</span></div><span class="production-flow-arrow" aria-hidden="true">→</span><div class="production-workshop"><svg aria-hidden="true" viewBox="0 0 64 64"><path d="M8 54V28l16 8V24l16 10V12h9v42Z M49 28h7v26H8 M15 45h5m7 0h5m8 0h5 M40 8h9"/></svg><b>${chain.name}</b><small>Next: ${preview.recipeLabel}</small><span>${industry.investment}/3 investment</span></div><span class="production-flow-arrow" aria-hidden="true">→</span><div class="production-flow-outputs"><span class="production-flow-label">Base output per batch</span></div></div><div class="production-explanation"><span>${preview.limited ? "Inputs below one full batch; partial production may still run." : "Inputs cover one full batch."} ${industry.collapsed ? "Restore this workshop to resume production." : industry.investment === 0 ? "Invest to list its manufactured goods in the exchange." : "Manufactured goods are listed in the exchange."}</span><small>Actual daily output also depends on labor, infrastructure, quality, and fuel.</small></div><div class="production-cycle-report">${lastCycle}</div>${industry.magnate ? `<span class="small magnate">Local power: ${industry.magnate}, ${industry.investment >= 2 ? "rival magnate" : "rising proprietor"}</span>` : ""}`;
+    const formatUnits = (units) => Number(units.toFixed(2)).toString();
+    for (const input of preview.inputs) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className =
+        "production-good" + (input.shortfall ? " input-limited" : "");
+      button.innerHTML = `<span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${input.key}"/></svg></span><span><b>${goods[input.key].name}</b><small>${formatUnits(input.required)} needed${input.fuel ? " · includes fuel" : ""}</small><small>${formatUnits(input.stock)} in market${input.shortfall ? ` · ${formatUnits(input.shortfall)} short` : " · supplied"}</small></span>`;
+      button.setAttribute(
+        "aria-label",
+        `Inspect ${goods[input.key].name} in the market${input.shortfall ? "; stock below one batch" : ""}`,
+      );
+      button.onclick = () => panelContext.openMarketGood(input.key);
+      card.querySelector(".production-flow-inputs").append(button);
+    }
+    for (const output of preview.outputs) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "production-good production-output";
+      button.innerHTML = `<span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${output.key}"/></svg></span><span><b>${goods[output.key].name}</b><small>${formatUnits(output.units)} base units</small></span>`;
+      button.setAttribute(
+        "aria-label",
+        `Inspect ${goods[output.key].name} in the market`,
+      );
+      button.onclick = () => panelContext.openMarketGood(output.key);
+      card.querySelector(".production-flow-outputs").append(button);
+    }
     const invest = document.createElement("button");
     const cost = investmentCost(industry);
     invest.className = "parchment";
@@ -924,6 +951,7 @@ export function renderProductionChains() {
       );
       renderPortSystems();
       updateHud();
+      saveGameState();
     };
     card.append(invest);
     root.append(card);

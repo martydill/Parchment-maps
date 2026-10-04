@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=18" />
+    <link rel="stylesheet" href="./styles.css?v=20" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -305,9 +305,15 @@
       </button>
     </div>
 
-    <div id="portPanel">
+    <div
+      id="portPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portName"
+    >
       <div class="scroll port-scroll">
         <header class="port-header">
+          <div class="town-kicker" id="portRealm">Harbor master’s register</div>
           <h2 id="portName">Port</h2>
           <p id="portFlavor"></p>
           <div class="port-grid">
@@ -339,9 +345,77 @@
         </nav>
         <div class="port-body">
           <section class="port-panel active" data-tab="harbor" role="tabpanel">
-            <div class="detail-card port-opportunities-card">
-              <h3>What can I do here?</h3>
-              <div id="portOpportunities"></div>
+            <div class="harbor-arrival">
+              <div class="harbor-scene">
+                <div class="scene-caption">
+                  <span class="town-kicker">The waterfront</span
+                  ><span id="harborSceneStatus"></span>
+                </div>
+                <canvas
+                  id="harborIllustration"
+                  width="840"
+                  height="440"
+                  aria-label="Illustrated harbor"
+                ></canvas>
+                <nav class="harbor-services" aria-label="Harbor services">
+                  <button
+                    type="button"
+                    data-service="market"
+                    data-target="market"
+                  >
+                    <svg aria-hidden="true"><use href="#resource-grain" /></svg
+                    ><span>Market square<small>Buy & sell</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    data-service="market"
+                    data-target="warehouse"
+                  >
+                    <svg aria-hidden="true"><use href="#resource-timber" /></svg
+                    ><span>Warehouse<small>Store cargo</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    data-service="vessel"
+                    data-target="voyageReadiness"
+                  >
+                    <svg aria-hidden="true"><use href="#ui-ship" /></svg
+                    ><span>Shipyard<small>Repair & refit</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    data-service="trade"
+                    data-target="contractBoard"
+                  >
+                    <svg aria-hidden="true"><use href="#ui-ledger" /></svg
+                    ><span>Guildhall<small>Commissions</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    data-service="trade"
+                    data-target="intelOffice"
+                  >
+                    <svg aria-hidden="true"><use href="#resource-wine" /></svg
+                    ><span>Whisper network<small>Reports & rumors</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    data-service="harbor"
+                    data-target="customsOffice"
+                  >
+                    <svg aria-hidden="true"><use href="#ui-town" /></svg
+                    ><span>Customs house<small>Law & permits</small></span>
+                  </button>
+                </nav>
+                <div class="scene-footnote">
+                  Select a service to conduct business
+                </div>
+              </div>
+              <div class="detail-card port-opportunities-card">
+                <div class="town-kicker">Captain’s priorities</div>
+                <h3>Make this visit count</h3>
+                <div id="portOpportunities"></div>
+              </div>
             </div>
             <div id="portEvolution" class="port-evolution"></div>
             <div id="portEvent"></div>
@@ -352,8 +426,49 @@
           </section>
           <section class="port-panel" data-tab="market" role="tabpanel">
             <div class="detail-card">
-              <h3>Market</h3>
-              <div id="market"></div>
+              <div class="market-heading">
+                <div>
+                  <div class="town-kicker">The trading floor</div>
+                  <h3>Market exchange</h3>
+                </div>
+                <span class="small">Prices include local duties</span>
+              </div>
+              <div
+                class="market-filters"
+                role="group"
+                aria-label="Filter market goods"
+              >
+                <button type="button" data-filter="all" aria-pressed="true">
+                  All goods
+                </button>
+                <button type="button" data-filter="aboard" aria-pressed="false">
+                  Aboard
+                </button>
+                <button type="button" data-filter="demand" aria-pressed="false">
+                  In demand
+                </button>
+                <button
+                  type="button"
+                  data-filter="restricted"
+                  aria-pressed="false"
+                >
+                  Restricted
+                </button>
+              </div>
+              <div
+                id="marketReceipt"
+                class="market-receipt"
+                role="status"
+                aria-live="polite"
+              ></div>
+              <div class="market-workspace">
+                <div id="market"></div>
+                <section
+                  id="marketOrder"
+                  class="market-order"
+                  aria-label="Transaction preview"
+                ></section>
+              </div>
             </div>
             <div class="detail-card">
               <h3>Cargo plan</h3>
@@ -401,13 +516,13 @@
           </section>
           <section class="port-panel" data-tab="vessel" role="tabpanel">
             <div class="detail-card">
+              <h3>Voyage readiness</h3>
+              <div id="voyageReadiness"></div>
+            </div>
+            <div class="detail-card">
               <h3>Shipyard & fleet</h3>
               <div id="shipStats" class="ship-stats"></div>
               <div id="shipyard"></div>
-            </div>
-            <div class="detail-card">
-              <h3>Voyage readiness</h3>
-              <div id="voyageReadiness"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="politics" role="tabpanel">
@@ -427,7 +542,8 @@
             </div>
           </section>
         </div>
-        <div class="port-close-wrap">
+        <div class="port-close-wrap departure-bar">
+          <div id="departureReadiness" class="departure-readiness"></div>
           <button class="parchment" id="closePort">Cast Off</button>
         </div>
       </div>
@@ -451,37 +567,28 @@
       </div>
     </div>
 
-    <div id="townPanel">
-      <div class="scroll town-scroll">
+    <div
+      id="townPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="townName"
+    >
+      <div class="scroll town-scroll town-atlas">
         <header class="port-header town-header">
           <div class="town-kicker" id="townRealm">Realm</div>
           <h2 id="townName">Town</h2>
           <p id="townFlavor"></p>
-          <div class="town-summary-grid">
-            <div class="summary-item">
-              <b>Population</b><span id="townPopulation"></span>
-            </div>
-            <div class="summary-item">
-              <b>Government</b><span id="townGovernment"></span>
-            </div>
-            <div class="summary-item">
-              <b>Prosperity</b><span id="townProsperity"></span>
-            </div>
-            <div class="summary-item">
-              <b>Security</b><span id="townSecurity"></span>
-            </div>
-            <div class="summary-item">
-              <b>Dominant faction</b><span id="townDominantFaction"></span>
-            </div>
-          </div>
         </header>
         <nav class="port-tabs" role="tablist" aria-label="Town sections">
           <button
             type="button"
             class="port-tab active"
-            data-tab="politics"
+            data-tab="overview"
             role="tab"
           >
+            Overview
+          </button>
+          <button type="button" class="port-tab" data-tab="politics" role="tab">
             Politics
           </button>
           <button type="button" class="port-tab" data-tab="commerce" role="tab">
@@ -494,9 +601,45 @@
         <div class="port-body">
           <section
             class="port-panel active"
-            data-tab="politics"
+            data-tab="overview"
             role="tabpanel"
           >
+            <div class="town-overview-scene">
+              <canvas
+                id="townIllustration"
+                width="1200"
+                height="320"
+                aria-label="Illustrated town"
+              ></canvas>
+              <div class="atlas-seal" id="townSeal" aria-hidden="true"></div>
+              <div class="atlas-scene-caption">
+                <span class="town-kicker">Captain’s atlas</span
+                ><span id="townSceneStatus"></span>
+              </div>
+            </div>
+            <div id="townOverview"></div>
+            <details class="atlas-census">
+              <summary>Civic register · population & government</summary>
+              <div class="town-summary-grid">
+                <div class="summary-item">
+                  <b>Population</b><span id="townPopulation"></span>
+                </div>
+                <div class="summary-item">
+                  <b>Government</b><span id="townGovernment"></span>
+                </div>
+                <div class="summary-item">
+                  <b>Prosperity</b><span id="townProsperity"></span>
+                </div>
+                <div class="summary-item">
+                  <b>Security</b><span id="townSecurity"></span>
+                </div>
+                <div class="summary-item">
+                  <b>Dominant faction</b><span id="townDominantFaction"></span>
+                </div>
+              </div>
+            </details>
+          </section>
+          <section class="port-panel" data-tab="politics" role="tabpanel">
             <div class="detail-card">
               <h3>Political factions</h3>
               <div id="townFactions"></div>
@@ -921,6 +1064,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=49"></script>
+    <script type="module" src="./src/app.js?v=51"></script>
   </body>
 </html>

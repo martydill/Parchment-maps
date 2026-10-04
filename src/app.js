@@ -131,6 +131,7 @@ import {
 import {
   applyComponentDamage,
   adjustedIntelCost,
+  estimateVoyageReadiness,
   combatEnemyProfile,
   componentEfficiency,
   contractOutcome,
@@ -312,6 +313,7 @@ import {
 } from "./core/lighting.js";
 import {
   drawHarborBoats,
+  drawPortMiniature,
   drawPortActivity,
   hasPortMiniature,
 } from "./port-miniatures.js";
@@ -319,13 +321,14 @@ import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
 import {
   configureUiPanels,
+  openMarketGood,
   openExploration,
   renderDiscoveryPanel,
   renderLedger,
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=5";
+} from "./ui/panels.js?v=7";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js";
 import { createMapOpening } from "./map-opening.js";
@@ -3446,6 +3449,10 @@ const panelContext = {
   availableMarketGoods,
   buyPermit,
   buyPriceFor,
+  pricingOptions,
+  renderHarborPresentation,
+  openHarborService,
+  openMarketGood,
   calculateShipIdentity,
   canTrade,
   cargoCapacities,
@@ -3709,6 +3716,368 @@ function marketAssessment(port, key) {
   const label = ratio < 0.84 ? "Bargain" : ratio > 1.22 ? "Expensive" : "Fair";
   return { buy, sell, label };
 }
+
+function portVoyageEstimate(origin, destination) {
+  const laneDistance = routeDistanceBetween(origin.name, destination.name);
+  const distance =
+    laneDistance ??
+    wrappedDistance(origin.x, origin.y, destination.x, destination.y);
+  const stats = operationalShipStats();
+  const crew = crewVoyageModifiers(game.operations.crew);
+  return {
+    ...estimateVoyageReadiness(
+      distance,
+      {
+        ...stats,
+        stormResistance: stats.stormResistance * crew.stormResistance,
+        crewProvisionMultiplier: crew.provisionMultiplier,
+      },
+      game.operations.routePlan,
+    ),
+    distance: Math.round(distance),
+    direct: laneDistance === null,
+  };
+}
+
+function openHarborService(tab, target) {
+  const panel = document.getElementById("portPanel");
+  activateSectionTabs(panel, tab);
+  const section = document.getElementById(target)?.closest(".detail-card");
+  if (section) {
+    const body = panel.querySelector(".port-body");
+    body.scrollTop +=
+      section.getBoundingClientRect().top -
+      body.getBoundingClientRect().top -
+      12;
+    section.tabIndex = -1;
+    section.focus({ preventScroll: true });
+  }
+}
+
+function renderHarborPresentation() {
+  if (!currentPort) return;
+  document.getElementById("portRealm").textContent =
+    `${currentPort.realm} · Day ${game.day}`;
+  document.getElementById("harborSceneStatus").textContent =
+    currentPort.security;
+  document
+    .getElementById("harborIllustration")
+    .setAttribute(
+      "aria-label",
+      `Illustration of ${currentPort.name}’s waterfront`,
+    );
+  drawMenuPort(document.getElementById("harborIllustration"), currentPort, 0);
+  document.querySelectorAll("[data-service]").forEach((button) => {
+    button.onclick = () =>
+      openHarborService(button.dataset.service, button.dataset.target);
+  });
+  renderDepartureReadiness();
+}
+
+function renderDepartureReadiness() {
+  const root = document.getElementById("departureReadiness");
+  const destination = getPortByName(game.navigation.destination);
+  const estimate =
+    destination && destination !== currentPort
+      ? portVoyageEstimate(currentPort, destination)
+      : null;
+  const ops = game.operations;
+  const shortage = estimate
+    ? Math.max(0, estimate.provisionsNeeded - ops.provisions)
+    : 0;
+  root.innerHTML = `<label class="town-kicker" for="departureDestination">Next passage</label><select id="departureDestination" aria-label="Next destination"><option value="">Choose a destination</option></select><div class="departure-metrics"><button type="button" data-readiness="provisions" class="${shortage ? "needs-attention" : ""}">Stores <b>${ops.provisions}/30</b></button><button type="button" data-readiness="condition" class="${ops.condition < 60 ? "needs-attention" : ""}">Vessel <b>${Math.round(ops.condition)}%</b></button><span>${estimate ? `~${estimate.days} days · ${estimate.provisionsNeeded} stores${estimate.direct ? " · direct estimate" : ""}` : "Plot your next passage"}</span></div><span class="departure-status ${shortage || ops.condition < 40 ? "needs-attention" : ""}">${shortage ? `Need ${shortage} more provisions before this passage` : ops.condition < 40 ? "Critical vessel damage · visit the shipyard" : estimate ? "Stores cover the passage · weather may change" : "Select a port to estimate voyage supplies"}</span>`;
+  const select = root.querySelector("select");
+  for (const port of ports
+    .filter(
+      (port) =>
+        port !== currentPort &&
+        (port.home ||
+          port === destination ||
+          isWorldPointExplored(port.x, port.y)),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    const option = document.createElement("option");
+    option.value = port.name;
+    option.textContent = port.name;
+    option.selected = destination === port;
+    select.append(option);
+  }
+  select.onchange = () => {
+    if (select.value)
+      plotCourse(
+        game.navigation,
+        select.value,
+        ports.map((port) => port.name),
+      );
+    else clearCourse(game.navigation);
+    updateHud();
+    renderDepartureReadiness();
+    saveGameState();
+    document.getElementById("departureDestination").focus();
+  };
+  root.querySelectorAll("[data-readiness]").forEach((button) => {
+    button.onclick = () => openHarborService("vessel", "voyageReadiness");
+  });
+}
+
+function renderTownOverview(port) {
+  const root = document.getElementById("townOverview");
+  const knownPorts = ports.filter(
+    (candidate) =>
+      candidate === port || isWorldPointExplored(candidate.x, candidate.y),
+  );
+  const accessible = (candidate, key) =>
+    canTrade({
+      state: game.legal,
+      portName: candidate.name,
+      good: key,
+      status: legalStatusAt(candidate, key),
+      day: game.day,
+      units: 0,
+    }).ok;
+  const candidate = findBestTradeOpportunity(
+    Object.keys(goods),
+    knownPorts,
+    (source, key) =>
+      accessible(source, key) &&
+      economyState(source, key).stock >= 1 &&
+      availableMarketGoods(
+        game.regionalEconomy[source.name],
+        productionChains,
+        Object.keys(goods),
+      ).has(key)
+        ? tradeQuote(
+            buyPriceFor(source, key),
+            legalStatusAt(source, key),
+            "buy",
+          )
+        : Infinity,
+    (destination, key) =>
+      accessible(destination, key)
+        ? tradeQuote(
+            sellPriceFor(destination, key),
+            legalStatusAt(destination, key),
+            "sell",
+          )
+        : -Infinity,
+  );
+  const opportunity = candidate?.margin > 0 ? candidate : null;
+  const selling = game.cargoLots
+    .filter(
+      (lot) =>
+        canTrade({
+          state: game.legal,
+          portName: port.name,
+          good: lot.key,
+          status: legalStatusAt(port, lot.key),
+          day: game.day,
+          units: game.cargo[lot.key],
+        }).ok,
+    )
+    .map((lot) => ({
+      key: lot.key,
+      value: Math.max(
+        1,
+        Math.round(
+          tradeQuote(
+            sellPriceFor(port, lot.key),
+            legalStatusAt(port, lot.key),
+            "sell",
+          ) * cargoValueMultiplier(lot, port.name, goods[lot.key]),
+        ),
+      ),
+    }))
+    .sort((a, b) => b.value - a.value)[0];
+  const reason = selling
+    ? `Sell ${goods[selling.key].name}`
+    : opportunity?.buy === port.name
+      ? `Source ${goods[opportunity.key].name}`
+      : opportunity?.sell === port.name
+        ? `Bring ${goods[opportunity.key].name}`
+        : "Explore the local exchange";
+  const detail = selling
+    ? `Your next lot could fetch ${selling.value} crowns here. Prices respond to each delivery.`
+    : opportunity?.buy === port.name
+      ? `${opportunity.sell} offers an indicative ${opportunity.margin}-crown spread per unit, after duties, before cargo quality and voyage costs.`
+      : opportunity?.sell === port.name
+        ? `Compare this market with ${opportunity.buy} before loading your hold.`
+        : `Known exports: ${port.exports.slice(0, 3).join(", ")}.`;
+  const origin = currentPort || nearPort;
+  const atPort = origin === port;
+  const estimate = origin && !atPort ? portVoyageEstimate(origin, port) : null;
+  const standing = Math.max(
+    ...port.factions.map((f) => game.factionStanding[f.name] || 0),
+  );
+  const privilege = factionPrivilege(standing);
+  root.innerHTML = `<div class="atlas-overview-grid"><article class="atlas-opportunity"><div class="town-kicker">A reason to call here</div><h3>${reason}</h3><p>${detail}</p><button class="parchment" type="button" data-town-section="market">Inspect prices →</button></article><article class="atlas-passage"><div class="town-kicker">Captain’s passage</div><h3>${atPort ? "You are in this harbor" : estimate ? `~${estimate.days} days at sea` : "Chart your approach"}</h3><p>${estimate ? `From ${origin.name} · ${estimate.distance} leagues · ${estimate.provisionsNeeded} provisions${estimate.direct ? ". Direct estimate; actual sailing may take longer." : ". Estimated along the charted trade lane."}` : atPort ? "Dock to trade, commission a vessel, or prepare the next voyage." : `${Math.round(wrappedDistance(ship.x, ship.y, port.x, port.y))} leagues from your ship. Inspect the chart before departing.`}</p><span class="atlas-note">${estimate ? `${game.operations.provisions >= estimate.provisionsNeeded ? "Stores cover this passage" : `Load ${estimate.provisionsNeeded - game.operations.provisions} more provisions`}` : "Your course is shown on the world chart"}</span></article></div><div class="atlas-section-heading"><div><div class="town-kicker">Local exchange</div><h3>Demand & supply</h3></div><span class="small">Live estimates · Day ${game.day}</span></div><div id="townDemand" class="town-demand"></div><div class="atlas-overview-grid"><article class="atlas-conditions"><div class="town-kicker">Before you arrive</div><h3>Law & local standing</h3><p>${currentLawText(port)}</p><span class="atlas-note">${privilege.label} · ${standing} standing · ${privilege.privilege}</span><button class="parchment" type="button" data-town-section="politics">Inspect factions →</button></article><article class="atlas-connections"><div class="town-kicker">Charted connections</div><h3>Where next?</h3><div id="townConnections"></div></article></div>`;
+  const available = availableMarketGoods(
+    game.regionalEconomy[port.name],
+    productionChains,
+    Object.keys(goods),
+  );
+  const demand = Object.keys(goods)
+    .filter((key) => available.has(key))
+    .sort(
+      (a, b) =>
+        Math.abs(
+          1 - economyState(port, b).stock / economyState(port, b).target,
+        ) -
+        Math.abs(
+          1 - economyState(port, a).stock / economyState(port, a).target,
+        ),
+    )
+    .slice(0, 3);
+  const demandRoot = document.getElementById("townDemand");
+  for (const key of demand) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "demand-card";
+    const status = legalStatusAt(port, key);
+    const condition = economyCondition(port, key);
+    button.innerHTML = `<span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"/></svg></span><b>${goods[key].name}</b><span class="market-condition ${["Shortage", "Tight"].includes(condition) ? "condition-shortage" : ["Surplus", "Glut"].includes(condition) ? "condition-surplus" : ""}">${condition}</span><small>Buy ${tradeQuote(buyPriceFor(port, key), status, "buy")} · Sell ${tradeQuote(sellPriceFor(port, key), status, "sell")}</small><small>${lawDetails(status).label}</small>`;
+    button.onclick = () =>
+      activateSectionTabs(document.getElementById("townPanel"), "market");
+    demandRoot.append(button);
+  }
+  root.querySelectorAll("[data-town-section]").forEach((button) => {
+    button.onclick = () =>
+      activateSectionTabs(
+        document.getElementById("townPanel"),
+        button.dataset.townSection,
+      );
+  });
+  const connections = document.getElementById("townConnections");
+  for (const route of routesFrom(port.name)) {
+    const destination = getPortByName(
+      route.a === port.name ? route.b : route.a,
+    );
+    if (!isWorldPointExplored(destination.x, destination.y)) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "atlas-route";
+    const passage = portVoyageEstimate(port, destination);
+    button.innerHTML = `<svg viewBox="0 0 52 24" aria-hidden="true"><circle cx="4" cy="18" r="3"/><path d="M7 18Q22 18 25 9T45 5"/><circle cx="48" cy="5" r="3"/></svg><span><b>${destination.name}</b><small>~${passage.days} days · ${passage.provisionsNeeded} stores</small></span><span aria-hidden="true">→</span>`;
+    button.onclick = () => openTownDetails(destination, true);
+    connections.append(button);
+  }
+  if (!connections.children.length)
+    connections.innerHTML =
+      '<p class="small">Sail farther to reveal connected ports on your chart.</p>';
+  document.getElementById("townSeal").textContent = port.name
+    .split(/\s+/)
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join("");
+  document.getElementById("townSceneStatus").textContent =
+    `${port.prosperity} prosperity · ${port.security}`;
+  document
+    .getElementById("townIllustration")
+    .setAttribute("aria-label", `Illustration of ${port.name}`);
+  drawMenuPort(document.getElementById("townIllustration"), port, 0);
+}
+
+// Menu artwork shares the chart's architecture and reflects actual regional
+// development. Unillustrated ports use a matching architectural archetype.
+function drawMenuPort(surface, port, time) {
+  const c = surface.getContext("2d");
+  const width = surface.width,
+    height = surface.height;
+  c.clearRect(0, 0, width, height);
+  const wash = c.createLinearGradient(0, 0, width, height);
+  wash.addColorStop(0, "#e6d4ac");
+  wash.addColorStop(0.45, "#f0e3c0");
+  wash.addColorStop(1, "#c3b789");
+  c.fillStyle = wash;
+  c.fillRect(0, 0, width, height);
+  c.fillStyle = "#92a79b";
+  c.beginPath();
+  c.moveTo(0, height * 0.7);
+  c.bezierCurveTo(
+    width * 0.3,
+    height * 0.68,
+    width * 0.4,
+    height * 0.95,
+    width,
+    height * 0.62,
+  );
+  c.lineTo(width, height);
+  c.lineTo(0, height);
+  c.fill();
+  c.strokeStyle = "rgba(245,235,199,.38)";
+  c.lineWidth = 1.4;
+  for (let row = 0; row < 7; row++) {
+    c.beginPath();
+    for (let x = 0; x <= width; x += 12) {
+      const y =
+        height * 0.8 + row * 12 + Math.sin(x / 50 + time / 1500 + row) * 3;
+      if (!x) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    }
+    c.stroke();
+  }
+  c.strokeStyle = "rgba(89,68,42,.15)";
+  c.beginPath();
+  c.arc(width * 0.5, height * 0.5, height * 0.43, 0, Math.PI * 2);
+  c.moveTo(24, height * 0.5);
+  c.lineTo(width - 24, height * 0.5);
+  c.stroke();
+  const resources = port.resources.join(" ").toLowerCase();
+  const illustration = hasPortMiniature(port.name)
+    ? port.name
+    : /iron|coal|ore|mine/.test(resources)
+      ? PORT_NAMES.drazhOvek
+      : /timber|grain|field/.test(resources)
+        ? PORT_NAMES.vesperport
+        : /pearl|fish|glass/.test(resources)
+          ? PORT_NAMES.mirravel
+          : PORT_NAMES.heliovar;
+  c.save();
+  c.translate(width * 0.5, height * 0.76);
+  c.scale(height / 175, height / 175);
+  drawPortMiniature(
+    c,
+    illustration,
+    portEvolution(game.regionalEconomy[port.name]),
+  );
+  drawPortActivity(c, illustration, time, 2, game.windAngle);
+  c.restore();
+  c.save();
+  c.translate(width * 0.8, height * 0.82);
+  c.scale(1.7, 1.7);
+  drawHarborBoats(c, illustration, time, 2, game.windAngle, 0, 1);
+  c.restore();
+}
+
+let lastPortPanelFrame = 0;
+function animatePortPanels(now) {
+  if (reducedMotion.matches || now - lastPortPanelFrame < 100) return;
+  lastPortPanelFrame = now;
+  if (
+    currentPort &&
+    document.getElementById("portPanel").style.display === "grid" &&
+    document
+      .querySelector('#portPanel .port-panel[data-tab="harbor"]')
+      .classList.contains("active")
+  )
+    drawMenuPort(
+      document.getElementById("harborIllustration"),
+      currentPort,
+      now,
+    );
+  if (
+    selectedTown &&
+    document.getElementById("townPanel").style.display === "grid" &&
+    document
+      .querySelector('#townPanel .port-panel[data-tab="overview"]')
+      .classList.contains("active")
+  )
+    drawMenuPort(
+      document.getElementById("townIllustration"),
+      selectedTown,
+      now,
+    );
+}
+
 function openTownDetails(port, _fromChart = false) {
   if (!port) return;
   selectedTown = port;
@@ -3876,14 +4245,20 @@ function openTownDetails(port, _fromChart = false) {
   courseButton.dataset.action = isCurrentCourse ? "clear" : "plot";
   // No point plotting a course to the port you're already docked at.
   courseButton.style.display = nearPort === port ? "none" : "block";
-  // Each town dossier opens on the Politics tab (factions and current law),
-  // with Commerce and Market one tap away.
-  activateSectionTabs(document.getElementById("townPanel"), "politics");
+  renderTownOverview(port);
+  activateSectionTabs(document.getElementById("townPanel"), "overview");
   document.getElementById("townPanel").style.display = "grid";
+  document.querySelector("#townPanel .port-tab.active").focus();
 }
 function closeTownDetails() {
   document.getElementById("townPanel").style.display = "none";
   selectedTown = null;
+  if (
+    currentPort &&
+    document.getElementById("portPanel").style.display === "grid"
+  )
+    document.querySelector("#portPanel .port-tab.active").focus();
+  else (nearPort ? ui.town : mapButton).focus();
 }
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -5222,6 +5597,7 @@ function loop(now) {
   else {
     update(dt);
     render();
+    animatePortPanels(now);
   }
   requestAnimationFrame(loop);
 }
@@ -5240,6 +5616,13 @@ function changeZoom(direction) {
 }
 
 addEventListener("keydown", (e) => {
+  if (
+    e.defaultPrevented ||
+    e.target.closest?.(
+      "input, textarea, select, button, summary, a, [contenteditable='true']",
+    )
+  )
+    return;
   const zoomIn = e.key === "+" || e.key === "=" || e.code === "NumpadAdd";
   const zoomOut = e.key === "-" || e.key === "_" || e.code === "NumpadSubtract";
   if (zoomIn || zoomOut) {
@@ -5630,6 +6013,7 @@ function openPort() {
   // current events, and customs standing — is seen before trading.
   activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
+  document.querySelector("#portPanel .port-tab.active").focus();
   updateHud();
 }
 
@@ -6675,11 +7059,57 @@ document.getElementById("closePort").addEventListener("click", () => {
   );
 });
 
+for (const panelId of ["portPanel", "townPanel"]) {
+  const panel = document.getElementById(panelId);
+  panel.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !event.target.closest("select, input")) {
+      event.preventDefault();
+      document
+        .getElementById(panelId === "portPanel" ? "closePort" : "closeTown")
+        .click();
+      if (panelId === "portPanel") ui.dock.focus();
+    }
+    if (event.key !== "Tab") return;
+    const controls = [
+      ...panel.querySelectorAll(
+        "button:not(:disabled), input, select, summary, a[href]",
+      ),
+    ].filter(
+      (control) => control.tabIndex >= 0 && control.getClientRects().length,
+    );
+    const first = controls[0],
+      last = controls[controls.length - 1];
+    if (
+      (event.shiftKey && document.activeElement === first) ||
+      (!event.shiftKey && document.activeElement === last)
+    ) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  });
+}
+
 document.querySelectorAll(".port-tabs").forEach((bar) => {
   const root = bar.closest("#portPanel, #townPanel, #shipPanel, #ledgerPanel");
   bar.addEventListener("click", (event) => {
     const btn = event.target.closest(".port-tab");
     if (btn) activateSectionTabs(root, btn.dataset.tab);
+  });
+  bar.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = [...bar.querySelectorAll(".port-tab")];
+    const index = tabs.indexOf(document.activeElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+            tabs.length;
+    activateSectionTabs(root, tabs[next].dataset.tab);
+    tabs[next].focus();
   });
 });
 const ledgerButton = document.getElementById("ledgerButton"),

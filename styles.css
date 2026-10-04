@@ -2567,3 +2567,1276 @@ button.parchment {
   height: auto;
   margin: 8px auto 0;
 }
+
+/* Port visits: an illustrated atlas, a working waterfront, and an exchange. */
+#portPanel .port-scroll,
+#townPanel .town-atlas {
+  width: min(96vw, 1080px);
+  height: min(92dvh, 880px);
+  max-height: 92dvh;
+}
+#portPanel .port-header,
+#townPanel .port-header {
+  padding: 20px 28px 12px;
+}
+#portPanel .port-header h2,
+#townPanel .port-header h2 {
+  margin: 3px 0 5px;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.15;
+}
+#portPanel .port-header p,
+#townPanel .port-header p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+#portPanel .port-grid {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+  font: 12px/1.4 var(--font-ui);
+}
+#portPanel .port-tab,
+#townPanel .port-tab {
+  min-height: 44px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+#portPanel button:focus-visible,
+#townPanel button:focus-visible,
+#portPanel input:focus-visible,
+#portPanel select:focus-visible {
+  outline: 2px solid #805420;
+  outline-offset: 3px;
+}
+.harbor-arrival {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin: 8px 0 18px;
+}
+.harbor-scene,
+.town-overview-scene {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #a38c60;
+  background: #e6d4ac;
+  box-shadow:
+    inset 0 0 0 4px #ede0bc,
+    0 4px 12px #543b1920;
+}
+.harbor-scene canvas,
+.town-overview-scene canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.scene-caption {
+  position: absolute;
+  top: 13px;
+  left: 16px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font: 11px/1.4 var(--font-ui);
+  color: #61492d;
+}
+.scene-caption .town-kicker {
+  margin: 0;
+}
+.harbor-services {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 12px;
+  border-top: 1px solid #b8a37e;
+  background: #ecdfbd;
+}
+.harbor-services button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 10px;
+  min-height: 56px;
+  border: 1px solid #af976d;
+  border-radius: 2px;
+  color: #3e2d1d;
+  background: linear-gradient(135deg, #f8edcd, #e6d4ac);
+  box-shadow: 0 2px 0 #6f4d2320;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+.harbor-services button:hover {
+  border-color: #805420;
+  background: #fff0c6;
+  transform: translateY(-1px);
+}
+.harbor-services svg {
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.harbor-services span {
+  font: 700 12px/1.4 var(--font-ui);
+}
+.harbor-services small {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  color: #735b3d;
+}
+.scene-footnote {
+  padding: 0 12px 12px;
+  text-align: center;
+  font: italic 11px/1.4 var(--font-ui);
+  color: #745c3e;
+}
+#portPanel .port-opportunities-card {
+  margin: 0;
+  padding: 18px;
+  background: #fbefcd70;
+}
+#portPanel .port-opportunities-card h3 {
+  font-size: 21px;
+  margin: 4px 0 12px;
+}
+#portPanel .port-opportunity {
+  display: block;
+  position: relative;
+  padding: 13px 0;
+}
+#portPanel .port-opportunity b {
+  font-size: 14px;
+}
+#portPanel .port-opportunity .small {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 5px 0 7px;
+}
+#portPanel .port-opportunity button {
+  min-height: 36px;
+  padding: 6px 15px;
+  font-size: 12px;
+  margin: 0;
+}
+.departure-bar {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-top: 1px solid #b7a079;
+  background: linear-gradient(180deg, #eadbb8, #e1cc9e);
+  padding-top: 12px;
+  padding-bottom: 14px;
+  box-shadow: 0 -4px 12px #65441e12;
+}
+.departure-readiness {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr);
+  align-items: center;
+  gap: 5px 14px;
+}
+.departure-readiness .town-kicker {
+  margin: 0;
+  font-size: 10px;
+}
+.departure-readiness select {
+  min-height: 34px;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--ink);
+  border: 1px solid #a38a60;
+  background-color: #f5e8c7;
+  font: 700 12px/1.4 var(--font-ui);
+}
+.departure-metrics {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 14px;
+  font: 11px/1.4 var(--font-ui);
+  color: #614a30;
+}
+.departure-metrics button {
+  color: inherit;
+  font: inherit;
+  min-height: 28px;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px dashed #9e7a48;
+  background: transparent;
+  cursor: pointer;
+}
+.departure-status {
+  grid-column: 1 / -1;
+  font: 10px/1.4 var(--font-ui);
+  color: #42634e;
+}
+.needs-attention,
+.departure-metrics button.needs-attention {
+  color: #903e23;
+}
+#portPanel .departure-bar #closePort {
+  width: auto;
+  min-width: 136px;
+  min-height: 46px;
+  margin: 0;
+  padding: 12px 18px;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #64523b, #3f3021);
+  color: #f9ebc8;
+  border-color: #6a4d26;
+}
+.town-overview-scene {
+  margin: 8px 0 18px;
+}
+.atlas-seal {
+  position: absolute;
+  top: 22px;
+  left: 24px;
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 4px double #e2b684;
+  border-radius: 50%;
+  background: #86482f;
+  color: #f5dcb0;
+  box-shadow: 0 3px 6px #52351e30;
+  font: 700 20px/1 var(--font-display);
+  transform: rotate(-8deg);
+}
+.atlas-scene-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f2e4bdda;
+  border-top: 1px solid #b4a077;
+  font: 11px/1.4 var(--font-ui);
+  color: #634a2e;
+}
+.atlas-scene-caption .town-kicker {
+  margin: 0;
+}
+.atlas-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0 0 20px;
+}
+.atlas-overview-grid article {
+  padding: 18px;
+  border: 1px solid #bca67c;
+  background: #f9edcf70;
+}
+.atlas-overview-grid h3 {
+  margin: 4px 0 8px;
+  font-size: 22px;
+}
+.atlas-overview-grid p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0 12px;
+}
+.atlas-overview-grid .parchment {
+  margin-top: 12px;
+  min-height: 40px;
+  font-size: 12px;
+  padding: 8px 14px;
+}
+.atlas-opportunity {
+  border-top: 3px solid #8c6631 !important;
+}
+.atlas-note {
+  display: block;
+  font: 11px/1.5 var(--font-ui);
+  color: #655234;
+}
+.atlas-section-heading,
+.market-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.atlas-section-heading h3,
+.market-heading h3 {
+  margin: 3px 0;
+}
+.town-demand {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.demand-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-content: start;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 14px;
+  color: var(--ink);
+  text-align: left;
+  border: 1px solid #bba47b;
+  background: #f6e9c7;
+  cursor: pointer;
+}
+.demand-card .resource-icon-frame {
+  grid-row: span 4;
+  width: 44px;
+  height: 50px;
+}
+.demand-card b {
+  font: 700 12px/1.4 var(--font-ui);
+}
+.demand-card small {
+  font: 11px/1.4 var(--font-ui);
+  color: #685338;
+}
+.demand-card .market-condition {
+  justify-self: start;
+}
+.demand-card:hover,
+.atlas-route:hover {
+  background: #fff0cb;
+  border-color: #906a36;
+}
+.atlas-route {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 0;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  border-bottom: 1px solid #bca67c80;
+  cursor: pointer;
+}
+.atlas-route svg {
+  width: 40px;
+  height: 24px;
+  flex-shrink: 0;
+  fill: #8c6631;
+  stroke: #8c6631;
+}
+.atlas-route path {
+  fill: none;
+  stroke-dasharray: 3 3;
+}
+.atlas-route > span:first-of-type {
+  flex: 1;
+}
+.atlas-route b,
+.atlas-route small {
+  display: block;
+  font: 700 12px/1.5 var(--font-ui);
+}
+.atlas-route small {
+  font-size: 10px;
+  font-weight: 400;
+}
+.atlas-census {
+  padding: 14px 0;
+  border-top: 1px solid #bca67c;
+  font: 12px/1.5 var(--font-ui);
+}
+.atlas-census summary,
+.order-manifest summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+.market-filters,
+.order-directions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 10px 0 14px;
+}
+.market-filters button,
+.order-directions button {
+  padding: 8px 13px;
+  min-height: 40px;
+  font: 700 11px/1.3 var(--font-ui);
+  color: #634d30;
+  border: 1px solid #b49b70;
+  background: #f5e6c3;
+  cursor: pointer;
+}
+.market-filters [aria-pressed="true"],
+.order-directions [aria-pressed="true"] {
+  background: #675039;
+  border-color: #675039;
+  color: #faedcc;
+}
+.market-receipt:empty {
+  display: none;
+}
+.market-receipt {
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: #4a74531a;
+  border-left: 3px solid #617c4c;
+  font: 12px/1.5 var(--font-ui);
+}
+.market-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.7fr);
+  gap: 20px;
+  align-items: start;
+}
+.exchange-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px 54px;
+  align-items: stretch;
+  border: 1px solid #bba47b80;
+  border-bottom: 0;
+  background: #f6e9c740;
+}
+.exchange-row:last-child {
+  border-bottom: 1px solid #bba47b80;
+}
+.exchange-row.selected {
+  background: #fff0c9;
+  box-shadow: inset 3px 0 #9d7339;
+}
+.exchange-good {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+}
+.exchange-good .resource-icon-frame {
+  width: 33px;
+  height: 42px;
+  flex-shrink: 0;
+}
+.exchange-good b {
+  display: block;
+  font: 700 12px/1.5 var(--font-ui);
+}
+.exchange-good small {
+  font: 10px/1.5 var(--font-ui);
+  color: #6c5538;
+}
+.exchange-good > span > small:first-of-type {
+  display: block;
+  margin-bottom: 3px;
+}
+.exchange-price {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-left: 1px solid #bba47b50;
+  color: #4f3821;
+  background: transparent;
+  cursor: pointer;
+  font: 700 15px/1.2 var(--font-ui);
+}
+.exchange-price small {
+  font-size: 10px;
+  font-weight: 400;
+}
+.exchange-price:hover,
+.exchange-good:hover {
+  background: #fff3d0;
+}
+.market-order {
+  position: sticky;
+  top: 0;
+  padding: 20px;
+  border: 1px solid #a68c5d;
+  border-top: 3px solid #8c6631;
+  background: linear-gradient(145deg, #f7eccf, #e8d6ad);
+  box-shadow: 0 4px 12px #6d4b2020;
+}
+.order-good {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+}
+.order-good h3 {
+  font-size: 20px;
+  margin: 0;
+}
+.order-good .resource-icon-frame {
+  flex-shrink: 0;
+  width: 40px;
+  height: 48px;
+}
+.order-directions button {
+  flex: 1;
+}
+.quantity-label {
+  font: 700 11px/1.5 var(--font-ui);
+  color: #675034;
+}
+.order-quantity {
+  display: flex;
+  gap: 5px;
+  margin: 6px 0 16px;
+}
+.order-quantity button,
+.order-quantity input {
+  min-width: 0;
+  min-height: 44px;
+  width: 40px;
+  padding: 6px;
+  border: 1px solid #b49b70;
+  background: #fbefd0;
+  color: var(--ink);
+  font: 700 13px/1.4 var(--font-ui);
+  text-align: center;
+}
+.order-quantity input {
+  flex: 1;
+  appearance: textfield;
+}
+.order-quantity input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.order-quantity button {
+  cursor: pointer;
+}
+.order-quantity #orderMax {
+  width: 46px;
+}
+.order-summary {
+  font: 12px/1.5 var(--font-ui);
+}
+.order-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #b6a07980;
+}
+.order-summary > div:first-child {
+  align-items: center;
+}
+.order-summary strong {
+  font-size: 25px;
+}
+.order-summary strong small {
+  font-size: 10px;
+  font-weight: 400;
+}
+#portPanel .order-confirm {
+  min-height: 44px;
+  width: 100%;
+  padding: 10px;
+  margin: 15px 0 8px;
+  font-size: 12px;
+}
+.order-reason {
+  color: #416448;
+  font: 11px/1.5 var(--font-ui);
+}
+.order-reason.blocked {
+  color: #8f4325;
+}
+.market-order .small,
+.order-manifest {
+  font: 11px/1.6 var(--font-ui);
+  color: #6b5538;
+}
+.order-manifest {
+  margin-top: 12px;
+}
+@media (max-width: 760px) {
+  .harbor-arrival {
+    grid-template-columns: 1fr;
+  }
+  .market-workspace {
+    grid-template-columns: 1fr;
+  }
+  .market-order {
+    position: static;
+    grid-row: 1;
+  }
+  .harbor-services {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .harbor-services button {
+    gap: 6px;
+  }
+  .atlas-overview-grid {
+    gap: 10px;
+  }
+  .town-demand {
+    gap: 8px;
+  }
+  .demand-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px;
+  }
+}
+@media (max-width: 520px) {
+  #portPanel,
+  #townPanel {
+    padding: 7px;
+  }
+  #portPanel .port-scroll,
+  #townPanel .town-atlas {
+    width: 100%;
+    height: 96dvh;
+    max-height: 96dvh;
+  }
+  #portPanel .port-header,
+  #townPanel .port-header {
+    padding: 15px 16px 10px;
+  }
+  #portPanel .port-body,
+  #townPanel .port-body {
+    padding: 10px 14px 16px;
+  }
+  #portPanel .port-tabs,
+  #townPanel .port-tabs {
+    padding: 0 8px;
+  }
+  #portPanel .port-tab,
+  #townPanel .port-tab {
+    padding: 10px 11px;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+  }
+  #portPanel .port-header p,
+  #townPanel .port-header p {
+    font-size: 11px;
+  }
+  .harbor-services {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 9px;
+  }
+  .scene-caption {
+    font-size: 9px;
+  }
+  .scene-caption .town-kicker {
+    font-size: 9px;
+  }
+  .departure-bar {
+    padding: 10px 14px;
+    gap: 9px;
+    align-items: flex-end;
+  }
+  .departure-readiness {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .departure-readiness .town-kicker {
+    display: none;
+  }
+  .departure-readiness select {
+    font-size: 11px;
+  }
+  .departure-metrics {
+    gap: 3px 8px;
+    font-size: 10px;
+  }
+  .departure-metrics > span {
+    flex-basis: 100%;
+  }
+  .departure-status {
+    font-size: 9px;
+  }
+  #portPanel .departure-bar #closePort {
+    min-width: 82px;
+    padding: 10px;
+    font-size: 11px;
+  }
+  .atlas-overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .atlas-seal {
+    width: 40px;
+    height: 40px;
+    top: 12px;
+    left: 12px;
+    font-size: 15px;
+  }
+  .atlas-scene-caption {
+    position: static;
+    font-size: 9px;
+    padding: 8px 10px;
+  }
+  .atlas-scene-caption .town-kicker {
+    font-size: 9px;
+  }
+  .town-overview-scene canvas {
+    width: 160%;
+    max-width: none;
+    margin-left: -30%;
+  }
+  .demand-card {
+    padding: 9px;
+  }
+  .demand-card b,
+  .demand-card small {
+    font-size: 10px;
+  }
+  .market-heading {
+    align-items: flex-start;
+  }
+  .market-heading > .small {
+    max-width: 90px;
+    font-size: 10px;
+  }
+  .market-filters {
+    gap: 4px;
+  }
+  .market-filters button {
+    padding: 7px 8px;
+    font-size: 10px;
+  }
+  #portPanel .port-panel[data-tab="market"] > .detail-card:first-child {
+    padding: 12px;
+  }
+  .exchange-row {
+    grid-template-columns: minmax(0, 1fr) 43px 43px;
+  }
+  .exchange-good {
+    padding: 10px 7px;
+    gap: 7px;
+  }
+  .exchange-good b {
+    font-size: 11px;
+  }
+  .exchange-good .resource-icon-frame {
+    width: 27px;
+  }
+  .exchange-good .market-condition,
+  .exchange-good small {
+    font-size: 9px;
+  }
+  #townPanel .town-actions {
+    padding: 8px 14px 12px;
+    gap: 6px;
+  }
+  #townPanel .town-actions button {
+    min-height: 44px;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harbor-services button {
+    transition: none;
+  }
+}
+.order-good-picker {
+  display: none;
+}
+/* Keep service shortcuts in view on shorter desktop displays. */
+@media (min-width: 761px) and (max-height: 780px) {
+  #portPanel .harbor-scene {
+    min-height: 260px;
+  }
+  #portPanel .harbor-services {
+    position: absolute;
+    inset: 48px 12px 38px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    grid-template-columns: 130px 130px;
+    justify-content: space-between;
+    align-content: start;
+  }
+  #portPanel .harbor-services button {
+    padding: 7px;
+    gap: 6px;
+    min-height: 46px;
+    background: #f4e6c8ee;
+  }
+  #portPanel .harbor-services svg {
+    width: 20px;
+    height: 20px;
+  }
+  #portPanel .harbor-services span {
+    font-size: 10px;
+  }
+  #portPanel .harbor-services small {
+    font-size: 9px;
+  }
+  #portPanel .scene-footnote {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px;
+    background: #eddfbd;
+  }
+  .market-order {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .order-good-picker {
+    display: block;
+    color: #675034;
+    font: 700 11px/1.5 var(--font-ui);
+    margin-bottom: 12px;
+  }
+  .order-good-picker select {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px;
+    margin-top: 5px;
+    border: 1px solid #b49b70;
+    color: var(--ink);
+    background-color: #fbefd0;
+    font: 700 12px/1.4 var(--font-ui);
+  }
+}
+
+/* Shipwright's section: select an actual system and preview its repair. */
+#vesselInspection {
+  margin: 18px 0;
+  border: 1px solid #ad9268;
+  background: #f0e2bf;
+}
+.inspection-heading,
+.production-diagram-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 15px 18px;
+  border-bottom: 1px solid #b7a079;
+}
+.inspection-heading .town-kicker,
+.production-diagram-heading .town-kicker {
+  text-align: left;
+  font-size: 9px;
+}
+.inspection-heading h4,
+.production-diagram-heading h4 {
+  margin: 3px 0 0;
+  font: 700 21px/1.3 var(--font-display);
+}
+.inspection-heading > span {
+  font: 11px/1.5 var(--font-ui);
+  color: #735b3b;
+}
+.inspection-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(230px, 1fr);
+}
+.inspection-blueprint {
+  padding: 12px;
+  background: radial-gradient(ellipse, #fff0cc80, #bda06a14);
+}
+.inspection-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.inspection-guide {
+  stroke: #947d552a;
+  stroke-width: 1;
+  stroke-dasharray: 5 5;
+  fill: none;
+}
+.inspection-annotation {
+  font: 10px var(--font-ui);
+  letter-spacing: 2px;
+  fill: #8a714e;
+}
+.inspection-diagram .ship-section {
+  stroke: #6b5339;
+  stroke-width: 1.4;
+  cursor: pointer;
+}
+.inspection-diagram .ship-section.selected {
+  stroke: #9a6223;
+  filter: drop-shadow(0 0 4px #b6834360);
+}
+.inspection-diagram .ship-section.selected .part-surface {
+  stroke: #a66922;
+  stroke-width: 3;
+}
+.inspection-selectors {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+.inspection-system {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 70px;
+  padding: 8px 6px;
+  border: 1px solid #b49a6c;
+  color: #493521;
+  background: #f5e7c6;
+  font: 10px/1.4 var(--font-ui);
+}
+.inspection-system b {
+  font-size: 15px;
+}
+.inspection-system[aria-pressed="true"] {
+  border-color: #866035;
+  background: #e2cc9e;
+  box-shadow: inset 0 0 0 1px #866035;
+}
+.inspection-condition-track {
+  height: 3px;
+  width: 100%;
+  background: #bca88050;
+}
+.inspection-condition-track > span {
+  display: block;
+  height: 100%;
+  background: #69815b;
+}
+.inspection-system.worn .inspection-condition-track > span {
+  background: #b2863c;
+}
+.inspection-system.damaged .inspection-condition-track > span {
+  background: #9a482e;
+}
+.inspection-detail {
+  padding: 20px;
+  border-left: 1px solid #b7a079;
+  background: #f8ebce70;
+}
+.inspection-detail h4 {
+  margin: 8px 0;
+  font: 700 24px/1.3 var(--font-display);
+}
+.inspection-detail p {
+  font: 12px/1.6 var(--font-ui);
+  color: #6f5638;
+}
+.inspection-detail .town-kicker {
+  font-size: 9px;
+  text-align: left;
+}
+.inspection-percent {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 700 38px/1.2 var(--font-display);
+}
+.inspection-percent small {
+  font: 11px/1.4 var(--font-ui);
+  color: #735b3b;
+}
+.inspection-repair-preview {
+  margin: 14px 0;
+  font: 11px/1.5 var(--font-ui);
+}
+.inspection-repair-preview > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #b7a07960;
+  padding: 7px 0;
+}
+#portPanel #repairSelectedComponent {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  font-size: 11px;
+  padding: 10px;
+}
+.inspection-repair-note {
+  display: block;
+  margin: 8px 0;
+  font: 10px/1.5 var(--font-ui);
+  color: #725939;
+}
+.inspection-refit {
+  min-height: 40px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed #b7a079;
+  padding: 6px 0;
+  color: #684921;
+  font: 700 11px/1.5 var(--font-ui);
+}
+.inspection-cargo {
+  padding: 12px 18px 16px;
+  border-top: 1px solid #b7a079;
+}
+.inspection-cargo-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font: 12px/1.5 var(--font-ui);
+}
+#portPanel .inspection-cargo-heading .parchment {
+  margin: 0;
+  padding: 7px 10px;
+  min-height: 40px;
+  font-size: 10px;
+}
+.inspection-compartments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.inspection-compartment {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #b7a07980;
+  font: 10px/1.5 var(--font-ui);
+}
+.inspection-compartment b {
+  font-size: 14px;
+}
+.inspection-compartment small {
+  color: #745d40;
+  font-size: 10px;
+}
+/* Local industry: inventory → next recipe → base output. */
+#portPanel .production-diagram-card {
+  display: block;
+  margin: 16px 0;
+  padding: 0 0 16px;
+  border: 1px solid #b7a079;
+  background: #f6e8c74d;
+}
+.production-diagram-heading .contract-tag {
+  white-space: normal;
+  text-align: right;
+  font-size: 10px;
+}
+.production-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 25px minmax(135px, 0.75fr) 25px minmax(
+      0,
+      1fr
+    );
+  gap: 10px;
+  align-items: center;
+  padding: 18px;
+}
+.production-flow-inputs,
+.production-flow-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.production-flow-label {
+  display: block;
+  font: 10px/1.5 var(--font-ui);
+  color: #765c3c;
+}
+.production-flow-arrow {
+  color: #87602f;
+  font-size: 23px;
+  text-align: center;
+}
+.production-good {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  min-height: 58px;
+  text-align: left;
+  border: 1px solid #b49b70;
+  background: #fbefd0;
+  color: var(--ink);
+}
+.production-good .resource-icon-frame {
+  width: 31px;
+  height: 38px;
+  flex-shrink: 0;
+}
+.production-good b,
+.production-good small {
+  display: block;
+  font: 700 11px/1.4 var(--font-ui);
+}
+.production-good small {
+  font-size: 10px;
+  font-weight: 400;
+  color: #705a3c;
+}
+.production-good.input-limited {
+  border-left: 3px solid #9a482e;
+  background: #e9c9a950;
+}
+.production-good.input-limited small:last-child {
+  color: #904b30;
+}
+.production-output {
+  border-left: 3px solid #75834e;
+}
+.production-workshop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 8px;
+  border: 1px solid #a88a57;
+  background: #e5d0a6;
+  text-align: center;
+  font: 11px/1.4 var(--font-ui);
+}
+.production-workshop svg {
+  width: 52px;
+  height: 52px;
+  stroke: #785937;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  fill: #f5e4ba;
+}
+.production-workshop small {
+  color: #6f5638;
+  font-size: 10px;
+}
+.production-workshop > span {
+  font-size: 10px;
+}
+.production-explanation,
+.production-cycle-report {
+  display: block;
+  padding: 0 18px;
+  font: 11px/1.5 var(--font-ui);
+  color: #6e5435;
+}
+.production-explanation small {
+  display: block;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.production-cycle-report {
+  border-top: 1px dashed #b7a079;
+  margin: 12px 18px 0;
+  padding: 10px 0 0;
+}
+#portPanel .production-diagram-card > .parchment {
+  min-height: 40px;
+  font-size: 11px;
+  margin: 12px 18px 0;
+  padding: 9px 14px;
+}
+.production-diagram-card .magnate {
+  padding: 8px 18px 0;
+}
+@media (max-width: 760px) {
+  .inspection-workspace {
+    grid-template-columns: 1fr;
+  }
+  .inspection-detail {
+    border-left: 0;
+    border-top: 1px solid #b7a079;
+  }
+  .inspection-compartments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .production-flow {
+    grid-template-columns: minmax(0, 1fr) 20px minmax(120px, 0.8fr);
+  }
+  .production-flow > .production-flow-arrow:last-of-type {
+    display: none;
+  }
+  .production-flow-outputs {
+    grid-column: 1 / -1;
+  }
+  .inspection-heading > span {
+    max-width: 95px;
+    font-size: 10px;
+  }
+}
+@media (max-width: 520px) {
+  .inspection-heading,
+  .production-diagram-heading {
+    padding: 12px;
+    gap: 8px;
+  }
+  .inspection-heading h4,
+  .production-diagram-heading h4 {
+    font-size: 17px;
+  }
+  .inspection-selectors {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .inspection-system {
+    min-height: 64px;
+  }
+  .inspection-detail {
+    padding: 14px;
+  }
+  .inspection-cargo {
+    padding: 12px;
+  }
+  .production-flow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px;
+  }
+  .production-flow-arrow {
+    transform: rotate(90deg);
+  }
+  .production-flow > .production-flow-arrow:last-of-type {
+    display: block;
+  }
+  .production-workshop {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .production-workshop svg {
+    width: 36px;
+    height: 36px;
+  }
+  .production-workshop small {
+    flex-basis: 100%;
+  }
+  .production-explanation,
+  .production-cycle-report {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+.inspection-diagram .ship-section.worn .part-surface {
+  fill: #d4b273;
+}
+.inspection-diagram .ship-section.damaged .part-surface {
+  fill: #c98666;
+  stroke: #93482f;
+}
