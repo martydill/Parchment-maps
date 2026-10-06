@@ -9,9 +9,25 @@ function recordingContext() {
   const states = [];
   const strokes = [];
   const fills = [];
+  const rects = [];
+  const transforms = [];
+  const clears = [];
   const context = new Proxy(
     {
       globalAlpha: 1,
+      setTransform(...args) {
+        transforms.push(args);
+      },
+      clearRect(...args) {
+        clears.push(args);
+      },
+      fillRect(...geometry) {
+        rects.push({
+          geometry,
+          color: this.fillStyle,
+          operation: this.globalCompositeOperation,
+        });
+      },
       stroke() {
         strokes.push(this.strokeStyle);
       },
@@ -38,7 +54,16 @@ function recordingContext() {
     },
     { get: (target, property) => target[property] ?? (() => {}) },
   );
-  return { context, draws, gradients, strokes, fills };
+  return {
+    context,
+    draws,
+    gradients,
+    strokes,
+    fills,
+    rects,
+    transforms,
+    clears,
+  };
 }
 
 const stampCanvases = [];
@@ -118,7 +143,7 @@ test("reduced motion retains storm atmosphere without a frozen lightning flash",
 test("cloud stamps reuse colors and opacity during motion and refresh when weather changes", () => {
   const first = puffs(render());
   const colors = (draws) =>
-    draws.map(({ stamp, alpha }) => [stamp.gradients.at(-1).stops, alpha]);
+    draws.map(({ stamp, alpha }) => [stamp.context.fillStyle, alpha]);
   const originalColors = colors(first);
   const count = stampCanvases.length;
   const moving = puffs(
@@ -215,4 +240,67 @@ test("reduced motion freezes front clouds and clearing beams while retaining atm
     first.draws.map(({ geometry }) => geometry),
   );
   assert.equal(stampCanvases.length, count);
+});
+
+test("soft weather uses a reusable smaller layer while rain stays on the target", () => {
+  const direct = render();
+  const first = render({ softLayerScale: 0.5 });
+  assert.equal(first.draws.length, 1);
+  const layer = first.draws[0].stamp;
+  assert.equal(layer.width, 400);
+  assert.equal(layer.height, 300);
+  assert.deepEqual(first.draws[0].geometry, [0, 0, 800, 600]);
+  assert.deepEqual(layer.transforms.at(-1), [0.5, 0, 0, 0.5, 0, 0]);
+  assert.ok(layer.draws.length > 0);
+  assert.deepEqual(first.strokes, direct.strokes);
+  assert.equal(first.context.globalAlpha, 1);
+  const before = layer.clears.length;
+  const later = render({ softLayerScale: 0.5, time: 5000, vw: 1001, vh: 601 });
+  assert.equal(later.draws[0].stamp, layer);
+  assert.equal(layer.width, 501);
+  assert.equal(layer.height, 301);
+  assert.deepEqual(layer.clears.at(-1), [0, 0, 501, 301]);
+  assert.equal(layer.clears.length, before + 1);
+  assert.deepEqual(layer.transforms.at(-1), [
+    501 / 1001,
+    0,
+    0,
+    301 / 601,
+    0,
+    0,
+  ]);
+});
+
+test("soft weather culls only cloud puffs whose conservative bounds miss the screen", () => {
+  const direct = puffs(render({ windAngle: 0 }));
+  const low = render({ windAngle: 0, softLayerScale: 0.5 });
+  const layer = low.draws[0].stamp;
+  layer.draws.length = 0;
+  render({ windAngle: 0, softLayerScale: 0.5 });
+  const visible = puffs(layer);
+  const expected = direct.filter(
+    ({ geometry: [x, y, w, h] }) =>
+      x + w >= -1 && x <= 801 && y + h >= -1 && y <= 601,
+  );
+  assert.ok(visible.length < direct.length);
+  assert.deepEqual(visible, expected);
+});
+
+test("changing storm colours retints cloud masks without new gradients or textures", () => {
+  const first = puffs(
+    render({ front: { storm: 1, cloud: 1, rain: 0, fog: 0, lightning: 0 } }),
+  );
+  const textures = stampCanvases.length;
+  const gradients = first.map(({ stamp }) => stamp.gradients.length);
+  const paints = first.map(({ stamp }) => stamp.rects.length);
+  render({ front: { storm: 0.7, cloud: 1, rain: 0, fog: 0, lightning: 0 } });
+  assert.equal(stampCanvases.length, textures);
+  first.forEach(({ stamp }, index) => {
+    assert.equal(stamp.gradients.length, gradients[index]);
+    assert.ok(stamp.rects.length >= paints[index]);
+    assert.equal(stamp.rects.at(-1).operation, "source-in");
+  });
+  assert.ok(
+    first.some(({ stamp }, index) => stamp.rects.length > paints[index]),
+  );
 });

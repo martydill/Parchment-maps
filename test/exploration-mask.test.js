@@ -81,3 +81,32 @@ test("a failed canvas read is retried rather than cached", () => {
   failed = false;
   assert.equal(sampler.isExplored(0, 0), true);
 });
+
+test("save snapshots encode once per mask change and retry failed encodes", () => {
+  let encodes = 0;
+  let fails = false;
+  const mask = {
+    width: 2,
+    height: 2,
+    toDataURL(type) {
+      assert.equal(type, "image/png");
+      encodes++;
+      if (fails) throw new Error("Encoding failed");
+      return `snapshot-${encodes}`;
+    },
+  };
+  const sampler = createExplorationSampler(mask, {});
+  assert.equal(sampler.snapshot(), "snapshot-1");
+  assert.equal(sampler.snapshot(), "snapshot-1");
+  sampler.invalidate();
+  assert.equal(sampler.snapshot(), "snapshot-2");
+  mask.width = 3;
+  assert.equal(sampler.snapshot(), "snapshot-3");
+  mask.height = 3;
+  assert.equal(sampler.snapshot(), "snapshot-4");
+  sampler.invalidate();
+  fails = true;
+  assert.throws(() => sampler.snapshot(), /Encoding failed/);
+  fails = false;
+  assert.equal(sampler.snapshot(), "snapshot-6");
+});

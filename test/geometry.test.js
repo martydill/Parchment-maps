@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createWrappedPolygonLookup,
   expandPolygon,
   pointInPolygon,
   pointInWrappedPolygon,
@@ -223,4 +224,42 @@ test("wrapped polygon checks fall back to plain polygons without a world width",
 
   assert.equal(pointInWrappedPolygon(5, 5, square, 0), true);
   assert.equal(pointInWrappedPolygon(15, 5, square, 0), false);
+});
+
+test("bounded polygon lookup matches exact queries at coastlines and wrapped seams", () => {
+  const polygons = [
+    [
+      [10, 10],
+      [30, 10],
+      [30, 30],
+      [10, 30],
+    ],
+    [
+      [88, 40],
+      [112, 40],
+      [108, 55],
+      [112, 70],
+      [88, 70],
+    ],
+    [
+      [-14, 75],
+      [18, 75],
+      [18, 90],
+      [-14, 90],
+    ],
+    [],
+  ];
+  for (const width of [0, 100]) {
+    const lookup = createWrappedPolygonLookup(polygons, width);
+    for (let x = -210; x <= 310; x += 2) {
+      for (let y = 0; y <= 100; y += 5) {
+        assert.equal(
+          lookup(x, y),
+          polygons.some((poly) => pointInWrappedPolygon(x, y, poly, width)),
+          `point ${x},${y}, width ${width}`,
+        );
+      }
+    }
+  }
+  assert.equal(createWrappedPolygonLookup([], 100)(0, 0), false);
 });

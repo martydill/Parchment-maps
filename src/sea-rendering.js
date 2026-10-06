@@ -3,6 +3,8 @@ import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import { createAlphaPalette } from "./style-palette.js";
 import { createRadialStamp } from "./radial-stamp.js";
+import { createSeaLightRendering } from "./sea-light-rendering.js";
+import { createSeaSurfaceRendering } from "./sea-surface-rendering.js";
 import {
   buildWakeRibbon,
   coastalFlockSize,
@@ -18,6 +20,8 @@ import { getShipModelProfile } from "./core/ship-models.js";
 const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
 // Finer opacity steps preserve the subtle response to daylight and storms.
 const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 128);
+const groupedGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 64);
+const groupedCrestStyle = createAlphaPalette("247,237,197", 0, 0.48, 32);
 const surfStyle = createAlphaPalette("248,237,195", 0, 0.35);
 const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.62);
 const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.52);
@@ -91,6 +95,8 @@ export function createSeaRendering({
   creatures = [],
 }) {
   let riverPaths = [];
+  let cachedView = null;
+  let cachedVisible = [];
   const coasts = lands.map(({ poly, satellite }, index) => {
     const depth = coastFaceDepth(index, satellite) * MAP_TILT_TAN;
     const xs = poly.map(([x]) => x);
@@ -177,14 +183,33 @@ export function createSeaRendering({
           .filter(Boolean);
     return { bounds, masks, land, surf, foam, flocks, animals, index, poly };
   });
-  const surfaceMarks = new Map();
+  const surfaceMarks = [];
   const lightBandStamps = new Map();
+  const seaLightRendering = createSeaLightRendering(
+    (c, camera, t, lighting, windAngle, halfW, halfH) => {
+      c.save();
+      clipWater(
+        c,
+        visibleCoasts(
+          camera,
+          halfW * 2 * camera.zoom,
+          halfH * 2 * camera.zoom * MAP_TILT_COS,
+        ),
+      );
+      drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
+      c.restore();
+    },
+  );
+  const seaSurfaceRendering = createSeaSurfaceRendering(
+    (c, options) => drawSurfaceDirect(c, { ...options, skipLighting: true }),
+    WORLD.w,
+  );
   const waveShadows = new Map();
   const waveGlints = new Map();
   const waveCrests = new Map();
   function surfaceMark(row, column, columns, spacing, rowOffset) {
     const key = row * columns + column;
-    if (surfaceMarks.has(key)) return surfaceMarks.get(key);
+    if (surfaceMarks[key]) return surfaceMarks[key];
     const phase = column * 2.39 + row * 1.73;
     const x = column * spacing + rowOffset;
     const y = row * 48 + Math.sin(phase * 3) * 16;
@@ -208,8 +233,15 @@ export function createSeaRendering({
         return false;
       return polygonContainsBounds(poly, box);
     });
-    const mark = { phase, y, length: 18 + (Math.sin(phase) + 1) * 15, hidden };
-    surfaceMarks.set(key, mark);
+    const mark = {
+      phase,
+      sin: Math.sin(phase),
+      cos: Math.cos(phase),
+      y,
+      length: 18 + (Math.sin(phase) + 1) * 15,
+      hidden,
+    };
+    surfaceMarks[key] = mark;
     return mark;
   }
   const seaLife = [];
@@ -227,6 +259,16 @@ export function createSeaRendering({
   }
 
   function visibleCoasts(camera, vw, vh) {
+    if (
+      cachedView &&
+      cachedView.x === camera.x &&
+      cachedView.y === camera.y &&
+      cachedView.zoom === camera.zoom &&
+      cachedView.vw === vw &&
+      cachedView.vh === vh
+    )
+      return cachedVisible;
+    cachedView = { x: camera.x, y: camera.y, zoom: camera.zoom, vw, vh };
     const halfW = vw / (2 * camera.zoom) + 80;
     const halfH = vh / (2 * camera.zoom * MAP_TILT_COS) + 80;
     const visible = [];
@@ -245,11 +287,32 @@ export function createSeaRendering({
         visible.push({ ...coast, offset });
       }
     }
+    cachedVisible = visible;
     return visible;
   }
 
-  function clipWater(c, visible) {
-    for (const { masks, offset } of visible) {
+  function clipWater(c, visible, region) {
+    // A wake or reflection occupies a small part of the screen. Scissor first
+    // so inverse coastline masks do not rasterize the entire Retina viewport.
+    if (region) {
+      c.beginPath();
+      c.rect(
+        region.left,
+        region.top,
+        region.right - region.left,
+        region.bottom - region.top,
+      );
+      c.clip();
+    }
+    for (const { masks, offset, bounds } of visible) {
+      if (
+        region &&
+        (bounds.right + offset < region.left ||
+          bounds.left + offset > region.right ||
+          bounds.bottom < region.top ||
+          bounds.top > region.bottom)
+      )
+        continue;
       c.translate(offset, 0);
       for (const mask of masks) c.clip(mask, "evenodd");
       c.translate(-offset, 0);
@@ -385,7 +448,7 @@ export function createSeaRendering({
     c.restore();
   }
 
-  function drawRiverFlow(c, visible, time, zoom) {
+  function drawRiverFlow(c, visible, time, zoom, view) {
     c.save();
     c.lineCap = "round";
     for (const { land, index, offset } of visible) {
@@ -399,28 +462,27 @@ export function createSeaRendering({
       c.setLineDash([5, 13]);
       c.lineDashOffset = -time * 15;
       for (const river of rivers) {
-        if (river.length < 2) continue;
-        c.beginPath();
-        c.moveTo(river[0].x, river[0].y);
-        for (let i = 1; i < river.length - 1; i++) {
-          const a = river[i],
-            b = river[i + 1];
-          c.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
-        }
-        c.lineTo(river.at(-1).x, river.at(-1).y);
-        c.stroke();
+        if (
+          river.right + offset < view.left ||
+          river.left + offset > view.right ||
+          river.bottom < view.top ||
+          river.top > view.bottom
+        )
+          continue;
+        c.stroke(river.path);
       }
       c.restore();
     }
     c.restore();
   }
 
-  function drawCoastalBirds(c, visible, time, zoom) {
+  function drawCoastalBirds(c, visible, time, zoom, view) {
     c.save();
     c.lineCap = "round";
     c.lineJoin = "round";
     for (const { flocks, offset } of visible) {
       for (const flock of flocks) {
+        if (!inView(flock.x + offset, flock.y, 160, view)) continue;
         for (let bird = 0; bird < coastalFlockSize(flock.index); bird++) {
           const pose = sampleCoastalBird(time, flock.index, bird);
           const x = flock.x + offset + pose.x;
@@ -539,13 +601,14 @@ export function createSeaRendering({
     }
   }
 
-  function drawShoreAnimals(c, visible, time) {
+  function drawShoreAnimals(c, visible, time, view) {
     for (const { animals, land, offset } of visible) {
       if (!animals.length) continue;
       c.save();
       c.translate(offset, 0);
       c.clip(land);
       for (const animal of animals) {
+        if (!inView(animal.x + offset, animal.y, 90, view)) continue;
         const pack =
           animal.index % 3 === 0 ? 3 : animal.index % 3 === 1 ? 2 : 1;
         for (let member = 0; member < pack; member++) {
@@ -657,7 +720,16 @@ export function createSeaRendering({
     c.restore();
   }
 
-  function drawSurface(
+  function inView(x, y, margin, view) {
+    return (
+      x + margin >= view.left &&
+      x - margin <= view.right &&
+      y + margin >= view.top &&
+      y - margin <= view.bottom
+    );
+  }
+
+  function drawSurfaceDirect(
     c,
     {
       camera,
@@ -669,6 +741,10 @@ export function createSeaRendering({
       reducedMotion,
       lighting,
       front,
+      detail = 1,
+      focus,
+      cacheLightBands = false,
+      skipLighting = false,
     },
   ) {
     const visible = visibleCoasts(camera, vw, vh);
@@ -679,11 +755,28 @@ export function createSeaRendering({
     const z = camera.zoom;
     const halfW = vw / (2 * z) + 100;
     const halfH = vh / (2 * z * MAP_TILT_COS) + 60;
-    if (front?.seaDarkness > 0.01) {
+    const view = {
+      left: camera.x - halfW,
+      right: camera.x + halfW,
+      top: camera.y - halfH,
+      bottom: camera.y + halfH,
+    };
+    if (!skipLighting && front?.seaDarkness > 0.01) {
       c.fillStyle = stormSeaStyle(front.seaDarkness * 0.22);
       c.fillRect(camera.x - halfW, camera.y - halfH, halfW * 2, halfH * 2);
     }
-    drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
+    if (!skipLighting) {
+      if (cacheLightBands)
+        seaLightRendering.draw(c, {
+          camera,
+          vw,
+          vh,
+          time: reducedMotion ? 0 : time,
+          lighting,
+          windAngle,
+        });
+      else drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
+    }
     // Periodic longitude coordinates keep phase and spacing continuous at the
     // world seam. Broad swells carry finer broken ivory glints.
     const columns = Math.ceil(WORLD.w / 95);
@@ -703,16 +796,51 @@ export function createSeaRendering({
       (lighting?.daylight ?? 1) * (1 - (lighting?.storm ?? 0) * 0.45);
     for (const batches of [waveShadows, waveGlints, waveCrests])
       for (const batch of batches.values()) batch.count = 0;
+    // On slower devices keep full motion around the ship, and sample fewer
+    // distant decorative waves. Canonical columns keep this stable at the seam.
+    const stride = detail >= 0.9 ? 1 : detail >= 0.7 ? 2 : 3;
+    // Each opacity batch repeats the water clip on the GPU. Under load, group
+    // near-identical shades more closely without changing any wave geometry.
+    const glintStyle = detail >= 0.9 ? surfaceGlintStyle : groupedGlintStyle;
+    const crestStyle = detail >= 0.9 ? surfaceGlintStyle : groupedCrestStyle;
+    const focusX = focus?.x ?? camera.x;
+    const focusY = focus?.y ?? camera.y;
+    const focusRadius = focus?.radius ?? 480;
+    const detailX = nearestWrapped(focusX, camera.x, WORLD.w);
+    const detailView =
+      stride === 1 || !focus
+        ? view
+        : {
+            left: Math.max(view.left, detailX - focusRadius - 80),
+            right: Math.min(view.right, detailX + focusRadius + 80),
+            top: Math.max(view.top, focusY - focusRadius - 80),
+            bottom: Math.min(view.bottom, focusY + focusRadius + 80),
+          };
+    const pulseTime = t * (0.6 + roughness * 0.4);
+    const pulseSin = Math.sin(pulseTime),
+      pulseCos = Math.cos(pulseTime);
+    const driftCos = Math.cos(t * 0.28),
+      driftSin = Math.sin(t * 0.28);
+    const swaySin = Math.sin(t * 0.48),
+      swayCos = Math.cos(t * 0.48);
     for (let row = top; row <= bottom; row++) {
       const rowOffset = Math.sin(row * 12.7) * 25;
       for (let column = left; column <= right; column++) {
         const canonical = ((column % columns) + columns) % columns;
+        if (stride > 1 && (canonical + row) % stride !== 0) {
+          const dx =
+            nearestWrapped(column * spacing + rowOffset, focusX, WORLD.w) -
+            focusX;
+          const dy = row * 48 - focusY;
+          if (dx * dx + dy * dy > (focusRadius + 80) ** 2) continue;
+        }
         const mark = surfaceMark(row, canonical, columns, spacing, rowOffset);
         if (mark.hidden && z >= 0.7) continue;
-        const { phase, length } = mark;
-        const pulse = (Math.sin(t * (0.6 + roughness * 0.4) + phase) + 1) / 2;
-        const x = column * spacing + rowOffset + Math.cos(t * 0.28 + phase) * 5;
-        const y = mark.y + Math.sin(t * 0.48 + phase) * 3;
+        const { length, sin, cos } = mark;
+        const pulse = (pulseSin * cos + pulseCos * sin + 1) / 2;
+        const x =
+          column * spacing + rowOffset + (driftCos * cos - driftSin * sin) * 5;
+        const y = mark.y + (swaySin * cos + swayCos * sin) * 3;
         // Counter-rotate each center so one shared layer rotation preserves
         // the original translate(x, y) / rotate(rotation) geometry.
         const centerX = x * rotationCos + y * rotationSin;
@@ -730,7 +858,7 @@ export function createSeaRendering({
           (0.32 + light * 0.68);
         appendWaveMark(
           waveGlints,
-          surfaceGlintStyle(glintAlpha),
+          glintStyle(glintAlpha),
           glintCurve,
           centerX,
           centerY,
@@ -743,7 +871,7 @@ export function createSeaRendering({
             0.48;
           appendWaveMark(
             waveCrests,
-            surfaceGlintStyle(quantizedGlint * (pulse - 0.65) * 1.8),
+            crestStyle(quantizedGlint * (pulse - 0.65) * 1.8),
             crestLine,
             centerX,
             centerY,
@@ -793,6 +921,7 @@ export function createSeaRendering({
       c.translate(offset, 0);
       c.lineCap = "round";
       for (const mark of foam) {
+        if (!inView(mark.x + offset, mark.y, 36, detailView)) continue;
         const pulse = (Math.sin(t * 2.3 + mark.phase) + 1) * 0.5;
         if (pulse < 0.28) continue;
         const reach = 3 + pulse * (8 + roughness * 6);
@@ -819,19 +948,51 @@ export function createSeaRendering({
       c.restore();
     }
     c.restore();
-    drawRiverFlow(c, visible, t, z);
-    drawCoastalBirds(c, visible, t, z);
-    drawShoreAnimals(c, visible, t);
+    drawRiverFlow(c, visible, t, z, detailView);
+    drawCoastalBirds(c, visible, t, z, detailView);
+    drawShoreAnimals(c, visible, t, detailView);
+  }
+
+  function drawSurface(c, options) {
+    if (!options.bufferSurface) return drawSurfaceDirect(c, options);
+    const { camera, vw, vh, front, reducedMotion, time } = options;
+    c.save();
+    if (front?.seaDarkness > 0.01) {
+      clipWater(c, visibleCoasts(camera, vw, vh));
+      c.fillStyle = stormSeaStyle(front.seaDarkness * 0.22);
+      c.fillRect(
+        camera.x - vw / (2 * camera.zoom),
+        camera.y - vh / (2 * camera.zoom * MAP_TILT_COS),
+        vw / camera.zoom,
+        vh / (camera.zoom * MAP_TILT_COS),
+      );
+    }
+    c.restore();
+    seaLightRendering.draw(c, { ...options, time: reducedMotion ? 0 : time });
+    seaSurfaceRendering.draw(c, options);
   }
 
   function drawWake(c, trail, time, camera, vw, vh) {
     const sections = buildWakeRibbon(trail, time, WORLD.w);
     if (sections.length < 2) return;
-    c.save();
-    const visible = visibleCoasts(camera, vw, vh);
-    clipWater(c, visible);
     const offset =
       nearestWrapped(sections[0].x, camera.x, WORLD.w) - sections[0].x;
+    const region = {
+      left: Infinity,
+      right: -Infinity,
+      top: Infinity,
+      bottom: -Infinity,
+    };
+    for (const section of sections) {
+      const margin = section.width * 2 + 50 + 2 / camera.zoom;
+      region.left = Math.min(region.left, section.x + offset - margin);
+      region.right = Math.max(region.right, section.x + offset + margin);
+      region.top = Math.min(region.top, section.y - margin);
+      region.bottom = Math.max(region.bottom, section.y + margin);
+    }
+    c.save();
+    const visible = visibleCoasts(camera, vw, vh);
+    clipWater(c, visible, region);
     c.translate(offset, 0);
     c.lineCap = "round";
     for (let i = 1; i < sections.length; i++) {
@@ -922,8 +1083,44 @@ export function createSeaRendering({
     const t = reducedMotion ? 0 : time / 1000;
     const daylight = lighting?.daylight ?? 1;
     const night = lighting?.night ?? 0;
+    const region = {
+      left: Infinity,
+      right: -Infinity,
+      top: Infinity,
+      bottom: -Infinity,
+    };
+    const include = (x, y, margin) => {
+      region.left = Math.min(region.left, x - margin);
+      region.right = Math.max(region.right, x + margin);
+      region.top = Math.min(region.top, y - margin);
+      region.bottom = Math.max(region.bottom, y + margin);
+    };
+    for (const vessel of vessels) {
+      const x = nearestWrapped(vessel.x, camera.x, WORLD.w);
+      if (
+        Math.abs(x - camera.x) > halfW ||
+        Math.abs(vessel.y - camera.y) > halfH
+      )
+        continue;
+      const profile = getShipModelProfile(vessel.vesselClass, vessel.idNum);
+      const margin =
+        Math.max(85, profile.length * 0.6 + 42 * MAP_TILT_TAN) *
+          (vessel.scale ?? 1) +
+        10 / camera.zoom;
+      include(x, vessel.y, margin);
+    }
+    if (night > 0.12)
+      for (const lamp of lamps) {
+        const x = nearestWrapped(lamp.x, camera.x, WORLD.w);
+        if (
+          Math.abs(x - camera.x) <= halfW &&
+          Math.abs(lamp.y - camera.y) <= halfH
+        )
+          include(x, lamp.y, 80 + 3 / camera.zoom);
+      }
+    if (region.left === Infinity) return;
     c.save();
-    clipWater(c, visibleCoasts(camera, vw, vh));
+    clipWater(c, visibleCoasts(camera, vw, vh), region);
     for (const vessel of vessels) {
       const x = nearestWrapped(vessel.x, camera.x, WORLD.w);
       if (
@@ -1033,7 +1230,30 @@ export function createSeaRendering({
     drawWake,
     drawReflections,
     setRivers(paths) {
-      riverPaths = paths;
+      riverPaths = paths.map((rivers) =>
+        rivers
+          .map((river) => {
+            const path = new Path2D();
+            if (river.length < 2) return null;
+            path.moveTo(river[0].x, river[0].y);
+            for (let i = 1; i < river.length - 1; i++) {
+              const a = river[i],
+                b = river[i + 1];
+              path.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+            }
+            path.lineTo(river.at(-1).x, river.at(-1).y);
+            const xs = river.map(({ x }) => x),
+              ys = river.map(({ y }) => y);
+            return {
+              path,
+              left: Math.min(...xs) - 2,
+              right: Math.max(...xs) + 2,
+              top: Math.min(...ys) - 2,
+              bottom: Math.max(...ys) + 2,
+            };
+          })
+          .filter(Boolean),
+      );
     },
   };
 }
