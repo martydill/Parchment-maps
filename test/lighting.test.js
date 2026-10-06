@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   advanceTimeOfDay,
   LIGHT_DIRECTION,
+  litPigment,
   nightSightLimit,
   normalizeTimeOfDay,
   sceneLighting,
@@ -39,6 +40,45 @@ test("moon and storms change night brightness and sight distance", () => {
   assert.ok(nightSightLimit(fullMoon, 12) < 4);
   assert.equal(nightSightLimit(fullMoon, 1), 1);
   assert.equal(nightSightLimit(fullMoon, NaN), 0);
+});
+
+const pigmentChannels = (color) => color.match(/\d+/g).map(Number);
+
+test("relief lighting separates lit faces, shaded faces, and weather", () => {
+  const normal = [LIGHT_DIRECTION.x, LIGHT_DIRECTION.y, LIGHT_DIRECTION.z];
+  const opposite = normal.map((value) => -value);
+  const day = pigmentChannels(litPigment("#aabbcc", normal));
+  const shade = pigmentChannels(litPigment("#aabbcc", opposite));
+  const night = pigmentChannels(
+    litPigment("#aabbcc", normal, sceneLighting(0)),
+  );
+  assert.ok(day.every((value, i) => value > shade[i] && value > night[i]));
+  assert.equal(
+    litPigment("#aabbcc", normal),
+    litPigment(
+      "#aabbcc",
+      normal.map((value) => value * 12),
+    ),
+  );
+  assert.notEqual(
+    litPigment("#aabbcc", normal),
+    litPigment("#aabbcc", normal, sceneLighting(0.5, 0.5)),
+  );
+  const sunset = pigmentChannels(
+    litPigment("#aaaaaa", normal, sceneLighting(0.75)),
+  );
+  assert.ok(sunset[0] > sunset[2]);
+});
+
+test("relief lighting preserves transparent ink and bounds bright or degenerate faces", () => {
+  for (const color of ["rgba(40,30,20,.2)", "#abc", "gold"])
+    assert.equal(litPigment(color, [0, 0, 1]), color);
+  const ambient = litPigment("#aabbcc", [0, 0, 0]);
+  assert.equal(litPigment("#aabbcc", [NaN, 0, 1]), ambient);
+  assert.equal(litPigment("#aabbcc", [Infinity, 0, 1]), ambient);
+  const white = pigmentChannels(litPigment("#ffffff", [-0.55, -0.45, 0.7]));
+  assert.ok(white.every((value) => value >= 0 && value <= 255));
+  assert.equal(white[0], 255);
 });
 
 function shipFaceFills(lighting) {

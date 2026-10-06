@@ -10,7 +10,36 @@ import {
   sampleLighthouse,
   sampleSeaLife,
   sampleShoreAnimal,
+  sampleWaterReflection,
 } from "../src/core/seascape.js";
+
+test("reflection bands move deterministically and lose coherence in rough water", () => {
+  const calm = sampleWaterReflection(2, 3, 0);
+  assert.deepEqual(sampleWaterReflection(2, 3, 0), calm);
+  assert.notDeepEqual(sampleWaterReflection(3, 3, 0), calm);
+  assert.notDeepEqual(sampleWaterReflection(2, 4, 0), calm);
+  const rough = sampleWaterReflection(2, 3, 1);
+  assert.ok(Math.abs(rough.offset) > Math.abs(calm.offset));
+  assert.ok(rough.alpha < calm.alpha);
+  for (let index = -5; index < 30; index++) {
+    for (const sea of [0, 0.5, 1]) {
+      const ripple = sampleWaterReflection(index * 0.73, index, sea);
+      assert.ok(ripple.width >= 0.55 && ripple.width <= 0.95);
+      assert.ok(ripple.alpha > 0 && ripple.alpha <= 1);
+      assert.ok(Math.abs(ripple.offset) <= 5);
+    }
+  }
+});
+
+test("reflection samples normalize invalid values and out-of-range weather", () => {
+  const still = sampleWaterReflection();
+  assert.deepEqual(sampleWaterReflection(NaN, Infinity, NaN), still);
+  assert.deepEqual(sampleWaterReflection(0, 0, -10), still);
+  assert.deepEqual(
+    sampleWaterReflection(0, 0, 10),
+    sampleWaterReflection(0, 0, 1),
+  );
+});
 
 test("coast faces vary by island and keep small satellites low", () => {
   assert.deepEqual(

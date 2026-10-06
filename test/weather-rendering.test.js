@@ -1,14 +1,23 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { drawWeatherEffects } from "../src/rendering.js";
+import { sampleWeatherFront } from "../src/core/weather.js";
 
 function recordingContext() {
   const draws = [];
   const gradients = [];
   const states = [];
+  const strokes = [];
+  const fills = [];
   const context = new Proxy(
     {
       globalAlpha: 1,
+      stroke() {
+        strokes.push(this.strokeStyle);
+      },
+      fill() {
+        fills.push(this.globalCompositeOperation);
+      },
       save() {
         states.push(this.globalAlpha);
       },
@@ -29,7 +38,7 @@ function recordingContext() {
     },
     { get: (target, property) => target[property] ?? (() => {}) },
   );
-  return { context, draws, gradients };
+  return { context, draws, gradients, strokes, fills };
 }
 
 const stampCanvases = [];
@@ -161,4 +170,49 @@ test("cloud, shadow, and fog bank motion creates no new radial gradients after w
     assert.equal(next.context.globalAlpha, 1);
     assert.ok(next.draws.every(({ alpha }) => alpha > 0 && alpha < 1));
   }
+});
+
+const fronts = [
+  { name: "Clear", roughness: 0.08, visibilityKm: 24 },
+  { name: "Rain squalls", roughness: 0.5, visibilityKm: 6 },
+  { name: "Clear", roughness: 0.08, visibilityKm: 24 },
+];
+const sunlight = ({ draws }) =>
+  draws.filter(({ stamp }) =>
+    stamp.gradients
+      .at(-1)
+      .stops.some(([, color]) => /^rgba\(255,(234|241),/.test(color)),
+  );
+
+test("structured fronts suppress early rain and produce clearing sunlight only in daylight", () => {
+  const approaching = render({ front: sampleWeatherFront(fronts, 0.35) });
+  assert.ok(approaching.draws.length > 10);
+  assert.equal(approaching.strokes.length, 0);
+  assert.ok(
+    render({ front: sampleWeatherFront(fronts, 1) }).strokes.length > 0,
+  );
+  const front = sampleWeatherFront(fronts, 1.65);
+  assert.equal(sunlight(render({ front, daylight: 1 })).length, 4);
+  assert.equal(sunlight(render({ front, daylight: 0 })).length, 0);
+  const squall = render({
+    name: "Squall waters",
+    front: sampleWeatherFront(fronts, 2.5),
+  });
+  assert.ok(squall.strokes.length > 0);
+  assert.equal(sunlight(squall).length, 0);
+});
+
+test("reduced motion freezes front clouds and clearing beams while retaining atmosphere", () => {
+  const front = sampleWeatherFront(fronts, 1.65);
+  const first = render({ front, time: 1000 });
+  const count = stampCanvases.length;
+  const later = render({ front, time: 99000 });
+  assert.deepEqual(later.draws, first.draws);
+  assert.equal(stampCanvases.length, count);
+  const moving = render({ front, time: 99000, reducedMotion: false });
+  assert.notDeepEqual(
+    moving.draws.map(({ geometry }) => geometry),
+    first.draws.map(({ geometry }) => geometry),
+  );
+  assert.equal(stampCanvases.length, count);
 });
