@@ -23,6 +23,33 @@ export function pointInWrappedPolygon(x, y, polygon, worldWidth) {
   );
 }
 
+// Bounds reject distant islands before an exact coastline test. Build once for
+// static map geometry; the returned query keeps the same wrapping semantics.
+export function createWrappedPolygonLookup(polygons, worldWidth) {
+  const entries = polygons.map((poly) => {
+    const xs = poly.map(([x]) => x),
+      ys = poly.map(([, y]) => y);
+    return {
+      poly,
+      left: Math.min(...xs),
+      right: Math.max(...xs),
+      top: Math.min(...ys),
+      bottom: Math.max(...ys),
+    };
+  });
+  const offsets = worldWidth ? [-worldWidth, 0, worldWidth] : [0];
+  return (x, y) => {
+    const wx = worldWidth ? ((x % worldWidth) + worldWidth) % worldWidth : x;
+    return entries.some(({ poly, left, right, top, bottom }) => {
+      if (y < top || y > bottom) return false;
+      return offsets.some((offset) => {
+        const px = wx + offset;
+        return px >= left && px <= right && pointInPolygon(px, y, poly);
+      });
+    });
+  };
+}
+
 function cross(ax, ay, bx, by) {
   return ax * by - ay * bx;
 }

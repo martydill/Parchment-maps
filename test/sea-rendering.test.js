@@ -49,6 +49,12 @@ function recordingContext() {
           addColorStop: (...args) => calls.push(["addColorStop", ...args]),
         };
       },
+      createLinearGradient(...args) {
+        calls.push(["createLinearGradient", ...args]);
+        return {
+          addColorStop: (...args) => calls.push(["addColorStop", ...args]),
+        };
+      },
     },
     {
       get(target, property) {
@@ -236,6 +242,40 @@ test("sea light stamps retain their centers and reuse textures across motion and
 const waveStrokes = ({ strokes }) =>
   strokes.filter(({ style }) => /^rgba\((37,81,78|247,237,197),/.test(style));
 
+test("grouped opacities reduce draw batches while preserving nearby wave geometry", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 4800, h: 3200 },
+    lands: [],
+  });
+  const render = (detail) => {
+    const recording = recordingContext();
+    renderer.drawSurface(recording.context, {
+      ...options,
+      camera: { x: 2400, y: 1600, zoom: 0.7 },
+      vw: 2000,
+      vh: 1400,
+      time: 1000,
+      lighting: { daylight: 0 },
+      focus: { x: 2400, y: 1600, radius: 10000 },
+      detail,
+    });
+    return waveStrokes(recording);
+  };
+  const full = render(1);
+  const grouped = render(0.85);
+  assert.ok(grouped.length < full.length * 0.7);
+  const geometry = (strokes) =>
+    strokes
+      .flatMap(({ width, path }) => {
+        const segments = [];
+        for (let i = 0; i < path.length; i += 2)
+          segments.push(JSON.stringify([width, ...path.slice(i, i + 2)]));
+        return segments;
+      })
+      .sort();
+  assert.deepEqual(geometry(grouped), geometry(full));
+});
+
 test("hundreds of waves share opacity paths and one layer rotation", () => {
   const renderer = createSeaRendering({
     WORLD: { w: 4800, h: 3200 },
@@ -410,8 +450,17 @@ test("reflections wrap with their sources and remain still for reduced motion", 
     time: 1000,
     camera: { ...options.camera, x: 1500 },
   });
-  const geometry = (calls) =>
-    calls.filter(([method]) => method !== "translate");
+  const firstRegion = first.find(([method]) => method === "rect");
+  const wrappedRegion = wrapped.find(([method]) => method === "rect");
+  assert.ok(Math.abs(wrappedRegion[1] - firstRegion[1] - 1000) < 1e-10);
+  for (let i = 2; i < firstRegion.length; i++)
+    assert.ok(Math.abs(firstRegion[i] - wrappedRegion[i]) < 1e-10);
+  const geometry = (calls) => {
+    const regionIndex = calls.findIndex(([method]) => method === "rect");
+    return calls.filter(
+      ([method], index) => method !== "translate" && index !== regionIndex,
+    );
+  };
   assert.deepEqual(geometry(first), geometry(wrapped));
   assert.ok(
     wrapped.some(([method, x]) => method === "translate" && x === 1500),
@@ -466,6 +515,14 @@ test("reflection and wake layers clip out wrapped land and raised cliff faces", 
             [950, 500],
           ],
         },
+        {
+          poly: [
+            [450, 300],
+            [550, 300],
+            [550, 500],
+            [450, 500],
+          ],
+        },
       ],
     });
     const recording = recordingContext();
@@ -474,11 +531,18 @@ test("reflection and wake layers clip out wrapped land and raised cliff faces", 
       ...reflectionSources,
       camera: { x: 0, y: 400, zoom: 1 },
       vessels: [{ x: 0, y: 400 }],
+      lamps: [],
+      vw: 2000,
     });
     const masks = recording.calls.filter(
       ([method, , rule]) => method === "clip" && rule === "evenodd",
     );
     assert.equal(masks.length, 2);
+    const reflectionRegion = recording.calls.find(
+      ([method]) => method === "rect",
+    );
+    assert.ok(reflectionRegion[1] < 0);
+    assert.ok(reflectionRegion[3] < 400);
     assert.ok(
       recording.calls.some(
         ([method, x]) => method === "translate" && x === -1000,
@@ -493,7 +557,7 @@ test("reflection and wake layers clip out wrapped land and raised cliff faces", 
       ],
       10000,
       { x: 0, y: 400, zoom: 1 },
-      300,
+      2000,
       200,
     );
     assert.equal(
@@ -503,8 +567,223 @@ test("reflection and wake layers clip out wrapped land and raised cliff faces", 
       2,
     );
     assert.ok(wake.calls.some(([method]) => method === "fill"));
+    const wakeRegion = wake.calls.find(([method]) => method === "rect");
+    assert.ok(wakeRegion[1] < -10);
+    assert.ok(wakeRegion[1] + wakeRegion[3] > 10);
+    assert.ok(wakeRegion[3] < 400);
   } finally {
     if (previousPath === undefined) delete globalThis.Path2D;
     else globalThis.Path2D = previousPath;
   }
+});
+
+test("buffered sun and waves clip land in their source layers and reuse images during camera motion", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    rect() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+  };
+  try {
+    const renderer = createSeaRendering({
+      WORLD: { w: 1000, h: 800 },
+      lands: [
+        {
+          poly: [
+            [480, 380],
+            [520, 380],
+            [520, 420],
+            [480, 420],
+          ],
+        },
+      ],
+    });
+    const first = recordingContext();
+    first.context.globalAlpha = 0.4;
+    const frame = {
+      ...options,
+      vw: 1600,
+      vh: 1000,
+      camera: { x: 500, y: 400, zoom: 0.7 },
+      focus: { x: 500, y: 400, radius: 480 },
+      bufferSurface: true,
+    };
+    renderer.drawSurface(first.context, frame);
+    const layers = first.calls.filter(([method]) => method === "drawImage");
+    assert.equal(layers.length, 2);
+    for (const [, layer] of layers)
+      assert.ok(
+        layer.calls.some(
+          ([method, , rule]) => method === "clip" && rule === "evenodd",
+        ),
+      );
+    assert.ok(
+      !first.calls.some(
+        ([method, , rule]) => method === "clip" && rule === "evenodd",
+      ),
+    );
+    const counts = layers.map(([, layer]) => layer.calls.length);
+    const next = recordingContext();
+    next.context.globalAlpha = 0.4;
+    renderer.drawSurface(next.context, {
+      ...frame,
+      time: 16,
+      camera: { ...frame.camera, x: 505 },
+    });
+    assert.deepEqual(
+      next.calls.filter(([method]) => method === "drawImage"),
+      layers,
+    );
+    assert.deepEqual(
+      layers.map(([, layer]) => layer.calls.length),
+      counts,
+    );
+    assert.equal(first.context.globalAlpha, 0.4);
+    assert.equal(next.context.globalAlpha, 0.4);
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
+
+test("river paths are baked once, culled offscreen, and reused across wrapped views", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    commands = [];
+    rect(...args) {
+      this.commands.push(["rect", ...args]);
+    }
+    moveTo(...args) {
+      this.commands.push(["moveTo", ...args]);
+    }
+    lineTo(...args) {
+      this.commands.push(["lineTo", ...args]);
+    }
+    quadraticCurveTo(...args) {
+      this.commands.push(["quadraticCurveTo", ...args]);
+    }
+    closePath() {}
+  };
+  try {
+    const renderer = createSeaRendering({
+      WORLD: { w: 1000, h: 800 },
+      lands: [
+        {
+          poly: [
+            [950, 300],
+            [1050, 300],
+            [1050, 700],
+            [950, 700],
+          ],
+        },
+      ],
+    });
+    const rivers = [
+      [
+        [
+          { x: 980, y: 380 },
+          { x: 990, y: 400 },
+          { x: 1010, y: 420 },
+        ],
+        [
+          { x: 980, y: 650 },
+          { x: 1010, y: 670 },
+        ],
+        [{ x: 980, y: 380 }],
+      ],
+    ];
+    renderer.setRivers(rivers);
+    const riverStrokes = (x) => {
+      const recording = recordingContext();
+      renderer.drawSurface(recording.context, {
+        ...options,
+        camera: { x, y: 400, zoom: 1 },
+      });
+      return recording.calls.filter(
+        ([method, path]) =>
+          method === "stroke" &&
+          path?.commands?.some(([command]) => command === "quadraticCurveTo"),
+      );
+    };
+    const first = riverStrokes(0);
+    assert.equal(first.length, 1);
+    assert.deepEqual(first[0][1].commands, [
+      ["moveTo", 980, 380],
+      ["quadraticCurveTo", 990, 400, 1000, 410],
+      ["lineTo", 1010, 420],
+    ]);
+    assert.equal(riverStrokes(0)[0][1], first[0][1]);
+    assert.equal(riverStrokes(1000)[0][1], first[0][1]);
+    assert.equal(riverStrokes(500).length, 0);
+    renderer.setRivers(rivers);
+    assert.notEqual(riverStrokes(0)[0][1], first[0][1]);
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
+
+test("reduced detail lowers distant wave work while preserving every nearby wave", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 4800, h: 3200 },
+    lands: [],
+  });
+  const state = {
+    ...options,
+    camera: { x: 2400, y: 1600, zoom: 0.7 },
+    vw: 2560,
+    vh: 1440,
+    lighting: { daylight: 0 },
+    windAngle: 0,
+    time: 2700,
+    focus: { x: 2400, y: 1600, radius: 480 },
+  };
+  const render = (detail, camera = state.camera, focus = state.focus) => {
+    const recording = recordingContext();
+    renderer.drawSurface(recording.context, {
+      ...state,
+      detail,
+      camera,
+      focus,
+    });
+    return waveStrokes(recording)
+      .filter(({ width }) => width === 3.5)
+      .flatMap(({ path }) => {
+        const marks = [];
+        for (let i = 0; i < path.length; i += 2)
+          marks.push([path[i], path[i + 1]]);
+        return marks;
+      });
+  };
+  const full = render(1);
+  const medium = render(0.7);
+  const low = render(0.5);
+  assert.ok(medium.length < full.length * 0.65);
+  assert.ok(low.length < medium.length);
+  for (const reduced of [medium, low]) {
+    const retained = new Set(reduced.map((mark) => JSON.stringify(mark)));
+    const nearby = full.filter(
+      ([a, b]) => Math.hypot((a[1] + b[5]) / 2 - 2400, a[2] - 3 - 1600) <= 480,
+    );
+    assert.ok(nearby.length > 100);
+    assert.ok(nearby.every((mark) => retained.has(JSON.stringify(mark))));
+  }
+  const shifted = render(
+    0.5,
+    { ...state.camera, x: state.camera.x - 4800 },
+    { ...state.focus, x: state.focus.x - 4800 },
+  );
+  assert.equal(shifted.length, low.length);
+  const normalize = (marks, offset) =>
+    marks.map(([a, b]) => [
+      ...a.slice(1).map((value, i) => (i % 2 === 0 ? value + offset : value)),
+      ...b.slice(1).map((value, i) => (i % 2 === 0 ? value + offset : value)),
+    ]);
+  const canonicalMarks = normalize(low, 0);
+  normalize(shifted, 4800).forEach((mark, index) =>
+    mark.forEach((value, coordinate) =>
+      assert.ok(Math.abs(value - canonicalMarks[index][coordinate]) < 1e-9),
+    ),
+  );
 });

@@ -296,6 +296,7 @@ function drawWeatherClouds(
   vw,
   vh,
   time,
+  cullOffscreen = false,
 ) {
   if (cloud <= 0.01) return;
   const count = Math.round(8 + cloud * 9 + storm * 11);
@@ -358,20 +359,32 @@ function drawWeatherClouds(
         style.alpha = alpha * (0.6 + weatherRand(i * 4 + j, 15) * 0.5);
         const rgb = `${cr},${cg},${cb}`;
         if (style.rgb !== rgb) {
-          style.rgb = rgb;
-          style.stamp = createRadialStamp({
-            canvas: style.stamp || undefined,
+          // The falloff never changes. Retint its alpha mask instead of
+          // allocating a gradient and resizing a texture as the storm evolves.
+          style.stamp ||= createRadialStamp({
             aspectRatio: 0.7,
             size: 192,
             stops: [
-              [0, `rgba(${rgb},1)`],
-              [0.7, `rgba(${rgb},0.4)`],
-              [1, `rgba(${rgb},0)`],
+              [0, "rgba(255,255,255,1)"],
+              [0.7, "rgba(255,255,255,0.4)"],
+              [1, "rgba(255,255,255,0)"],
             ],
           });
+          const pigment = style.stamp.getContext("2d");
+          pigment.save();
+          pigment.globalCompositeOperation = "source-in";
+          pigment.fillStyle = `rgb(${rgb})`;
+          pigment.fillRect(0, 0, style.stamp.width, style.stamp.height);
+          pigment.restore();
+          style.rgb = rgb;
         }
       }
       const pr = rx * (0.55 + weatherRand(i * 3 + j, 14) * 0.4);
+      if (
+        cullOffscreen &&
+        (px + pr < -1 || px - pr > vw + 1 || py + pr < -1 || py - pr > vh + 1)
+      )
+        continue;
       const unrotX = px * cos - py * sin;
       const unrotY = px * sin + py * cos;
       c.globalAlpha = baseAlpha * style.alpha;
@@ -481,6 +494,7 @@ function drawWeatherFog(c, fog, vw, vh, time) {
 
 // Cache for directional fog calculations
 const dirFogCache = {
+  context: null,
   lastAheadVis: 0,
   lastAsternVis: 0,
   lastHeading: 0,
@@ -513,6 +527,7 @@ function drawDirectionalFog(
   // Check cache validity
   if (
     dirFogCache.valid &&
+    dirFogCache.context === c &&
     Math.abs(dirFogCache.lastAheadVis - aheadVisibilityKm) < 0.1 &&
     Math.abs(dirFogCache.lastAsternVis - asternVisibilityKm) < 0.1 &&
     Math.abs(dirFogCache.lastHeading - headingAngle) < 0.01 &&
@@ -541,6 +556,7 @@ function drawDirectionalFog(
   gradient.addColorStop(1, `rgba(222,226,213,${contrast * 0.36})`);
 
   // Update cache
+  dirFogCache.context = c;
   dirFogCache.lastAheadVis = aheadVisibilityKm;
   dirFogCache.lastAsternVis = asternVisibilityKm;
   dirFogCache.lastHeading = headingAngle;
@@ -648,6 +664,32 @@ const weatherCache = {
   },
 };
 
+let softWeatherCanvas;
+let softWeatherContext;
+
+function weatherSoftContext(opts, target) {
+  if (!opts.softLayerScale) return target;
+  softWeatherCanvas ||= document.createElement("canvas");
+  softWeatherContext ||= softWeatherCanvas.getContext("2d");
+  const width = Math.ceil(opts.vw * opts.softLayerScale);
+  const height = Math.ceil(opts.vh * opts.softLayerScale);
+  if (
+    softWeatherCanvas.width !== width ||
+    softWeatherCanvas.height !== height
+  ) {
+    softWeatherCanvas.width = width;
+    softWeatherCanvas.height = height;
+    dirFogCache.valid = false;
+  }
+  const soft = softWeatherContext;
+  soft.setTransform(1, 0, 0, 1, 0, 0);
+  soft.clearRect(0, 0, width, height);
+  soft.globalAlpha = 1;
+  soft.globalCompositeOperation = "source-over";
+  soft.setTransform(width / opts.vw, 0, 0, height / opts.vh, 0, 0);
+  return soft;
+}
+
 // Renders the full atmospheric stack for the current weather. `opts.roughness`
 // and `opts.visibilityKm` come from the interpolated weather pattern; the name
 // adds hints (mist/fog/cloud/rain) on top of the continuous values.
@@ -676,26 +718,40 @@ export function drawWeatherEffects(c, opts) {
 
   if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
 
+  // Cloud banks, washes, and fog are soft images. Composite them at a lower
+  // resolution once; rain, lightning, and clearing rays retain sharp geometry.
+  const soft = weatherSoftContext(opts, c);
   // A cool wash unifies the weather while leaving chart ink legible.
   if (storm > 0.01) {
-    c.save();
-    c.fillStyle = `rgba(49,72,98,${storm * 0.18})`;
-    c.fillRect(0, 0, vw, vh);
-    c.restore();
+    soft.save();
+    soft.fillStyle = `rgba(49,72,98,${storm * 0.18})`;
+    soft.fillRect(0, 0, vw, vh);
+    soft.restore();
   }
 
-  drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time);
-  drawStormFront(c, weather, windAngle, vw, vh, time);
-  drawWeatherClouds(c, cloud, storm, windAngle, windStrength, vw, vh, time);
-  drawWeatherFog(c, fog, vw, vh, time);
+  drawCloudShadows(soft, cloud, storm, windAngle, vw, vh, time);
+  drawStormFront(soft, weather, windAngle, vw, vh, time);
+  drawWeatherClouds(
+    soft,
+    cloud,
+    storm,
+    windAngle,
+    windStrength,
+    vw,
+    vh,
+    time,
+    Boolean(opts.softLayerScale),
+  );
+  drawWeatherFog(soft, fog, vw, vh, time);
   drawDirectionalFog(
-    c,
+    soft,
     aheadVisibilityKm,
     asternVisibilityKm,
     headingAngle,
     vw,
     vh,
   );
+  if (soft !== c) c.drawImage(softWeatherCanvas, 0, 0, vw, vh);
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
   drawRainImpacts(c, rain, vw, vh, time);
   drawSunbreak(c, weather.sunbreak || 0, opts.daylight ?? 1, vw, vh, time);
@@ -751,7 +807,9 @@ export function createMapRendering({
   const exploredMask = document.createElement("canvas");
   exploredMask.width = Math.ceil(WORLD.w * FOG_MASK_SCALE);
   exploredMask.height = Math.ceil(WORLD.h * FOG_MASK_SCALE);
-  const exploredCtx = exploredMask.getContext("2d");
+  const exploredCtx = exploredMask.getContext("2d", {
+    willReadFrequently: true,
+  });
   const fogCanvas = document.createElement("canvas");
   const fogCtx = fogCanvas.getContext("2d");
   const minimapFog = document.createElement("canvas");

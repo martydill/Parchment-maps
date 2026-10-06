@@ -3,8 +3,15 @@ import {
   refreshPortWorkspaces,
   readingPages,
 } from "./ui/port-workspace.js?v=5";
-import { createSeaRendering } from "./sea-rendering.js?v=5";
+import { createSeaRendering } from "./sea-rendering.js?v=7";
 import { createAlphaPalette } from "./style-palette.js";
+import {
+  createRenderCadence,
+  createRenderQuality,
+  renderPixelRatio,
+} from "./core/render-quality.js?v=1";
+import { createMistRendering } from "./mist-rendering.js";
+import { createSiteMarkerRendering } from "./site-marker-rendering.js";
 import { createExplorationSampler } from "./exploration-mask.js";
 import { updateElementProperty } from "./ui/dom.js";
 import {
@@ -26,6 +33,7 @@ import {
   wrappedDistance as calculateWrappedDistance,
 } from "./core/math.js";
 import {
+  createWrappedPolygonLookup,
   expandPolygon,
   pointInWrappedPolygon,
   polygonCentroid,
@@ -305,11 +313,7 @@ import {
   drawWeatherEffects,
   portAccentColor,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=6";
-import {
-  drawDiscoverySite,
-  drawExplorationSite,
-} from "./exploration-rendering.js";
+} from "./rendering.js?v=7";
 import {
   advanceTimeOfDay,
   nightSightLimit,
@@ -341,7 +345,9 @@ import { createMapOpening } from "./map-opening.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const DPR = Math.min(2, window.devicePixelRatio || 1);
+let DPR = 1;
+const renderQuality = createRenderQuality();
+const fogCadence = createRenderCadence();
 let mapOpening = null;
 const MAP_SEED_KEY = "gilded-archipelago-map-seed";
 const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
@@ -2739,9 +2745,10 @@ function buyIntel(id) {
 
 initializeMerchantShips();
 
-function onLand(x, y) {
-  return lands.some((land) => pointInWrappedPolygon(x, y, land.poly, WORLD.w));
-}
+const onLand = createWrappedPolygonLookup(
+  lands.map(({ poly }) => poly),
+  WORLD.w,
+);
 
 const roughSeaParticles = createRoughSeaParticles(roughSeas, onLand);
 for (const particles of roughSeaParticles) {
@@ -2867,6 +2874,7 @@ function buildVisibilityPolygon(force = false) {
   visibility.lastX = ship.x;
   visibility.lastY = ship.y;
   visibility.lastRadius = radius;
+  visibility.revision = (visibility.revision || 0) + 1;
 }
 function polygonPath(c, points, scaleX = 1, scaleY = scaleX, offsetX = 0) {
   c.beginPath();
@@ -2877,9 +2885,11 @@ function polygonPath(c, points, scaleX = 1, scaleY = scaleX, offsetX = 0) {
   );
   c.closePath();
 }
+let revealedVisibilityRevision = -1;
 function revealCurrentView(force = false) {
   buildVisibilityPolygon(force);
   if (!visibility.polygon.length) return;
+  if (!force && revealedVisibilityRevision === visibility.revision) return;
   const base = Math.floor(ship.x / WORLD.w) * WORLD.w;
   exploredCtx.save();
   exploredCtx.fillStyle = "#fff";
@@ -2897,6 +2907,7 @@ function revealCurrentView(force = false) {
   }
   exploredCtx.restore();
   explorationSampler.invalidate();
+  revealedVisibilityRevision = visibility.revision;
 }
 
 function explorationLandForSite(site) {
@@ -2957,7 +2968,7 @@ function saveGameState() {
       ship,
       merchants: merchantShips,
       worldEvents,
-      exploredMap: exploredMask.toDataURL("image/png"),
+      exploredMap: explorationSampler.snapshot(),
       gameStarted,
       mapSeed,
     });
@@ -2974,6 +2985,7 @@ function restoreExploredMap(dataUrl) {
     exploredCtx.clearRect(0, 0, exploredMask.width, exploredMask.height);
     exploredCtx.drawImage(image, 0, 0, exploredMask.width, exploredMask.height);
     explorationSampler.invalidate();
+    revealedVisibilityRevision = -1;
   });
   image.src = dataUrl;
 }
@@ -3361,15 +3373,22 @@ minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
 function resize() {
   vw = innerWidth;
   vh = innerHeight;
+  DPR = renderPixelRatio(
+    vw,
+    vh,
+    window.devicePixelRatio,
+    renderQuality.quality,
+  );
   canvas.width = Math.floor(vw * DPR);
   canvas.height = Math.floor(vh * DPR);
   canvas.style.width = vw + "px";
   canvas.style.height = vh + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // Soft fog needs only CSS resolution; the main canvas scales it for display.
-  fogCanvas.width = vw;
-  fogCanvas.height = vh;
-  fogCtx.setTransform(1, 0, 0, 1, 0, 0);
+  // The exploration haze contains only soft washes and masks. Keep every
+  // compositing pass at half CSS resolution, including in clear daylight.
+  fogCanvas.width = Math.ceil(vw * 0.5);
+  fogCanvas.height = Math.ceil(vh * 0.5);
+  fogCadence.reset();
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
   vignetteGradient = ctx.createRadialGradient(
@@ -4452,11 +4471,24 @@ for (let index = 0; index < 480; index++) {
 }
 grainCtx.globalAlpha = 1;
 const fogGrain = fogCtx.createPattern(fogGrainTile, "repeat");
+const mistRendering = createMistRendering(WORLD.w, mistStamp);
 
 function renderFog(time, lighting) {
   if (!gameStarted) return;
   buildVisibilityPolygon();
   updateVisualVisibility(time);
+  if (
+    !fogCadence.shouldRender(time, {
+      x: camera.x * camera.zoom,
+      y: camera.y * camera.zoom * MAP_TILT_COS,
+      width: vw,
+      height: vh,
+      key: `${camera.zoom}:${visibility.revision}:${revealedVisibilityRevision}:${Math.round(lighting.daylight * 100)}`,
+    })
+  ) {
+    ctx.drawImage(fogCanvas, 0, 0, vw, vh);
+    return;
+  }
   const f = fogCtx;
   const scale = 0.5;
   const width = Math.ceil(vw * scale),
@@ -4481,7 +4513,7 @@ function renderFog(time, lighting) {
   punchNearShoreTerrain(h);
   h.restore();
 
-  f.setTransform(1, 0, 0, 1, 0, 0);
+  f.setTransform(fogCanvas.width / vw, 0, 0, fogCanvas.height / vh, 0, 0);
   f.clearRect(0, 0, vw, vh);
   const wash = f.createLinearGradient(0, 0, 0, vh);
   const sun = lighting.daylight;
@@ -4504,43 +4536,13 @@ function renderFog(time, lighting) {
   f.fillRect(0, 0, vw, vh);
   f.globalAlpha = 1;
 
-  // World-anchored, overlapping cloud banks avoid a screen-attached spotlight.
-  // Drift is deliberately slow, like diluted ink spreading through wet paper.
-  const drift = reducedMotion.matches ? 0 : time * 0.003;
   const z = camera.zoom;
-  f.save();
-  f.translate(vw / 2, vh / 2);
-  f.scale(z, z * MAP_TILT_COS);
-  f.translate(-camera.x, -camera.y);
-  const spacing = WORLD.w / Math.ceil(WORLD.w / 240);
-  const left = Math.floor((camera.x - vw / (2 * z) - 500 - drift) / spacing);
-  const right = Math.ceil((camera.x + vw / (2 * z) + 500 - drift) / spacing);
-  const top = Math.floor((camera.y - vh / (2 * z * MAP_TILT_COS) - 200) / 160);
-  const bottom = Math.ceil(
-    (camera.y + vh / (2 * z * MAP_TILT_COS) + 200) / 160,
-  );
-  const columns = Math.round(WORLD.w / spacing);
-  // Keep a screen pixel of padding so edge antialiasing stays untouched.
-  const halfW = vw / (2 * z) + 1 / z;
-  const halfH = vh / (2 * z * MAP_TILT_COS) + 1 / (z * MAP_TILT_COS);
-  for (let row = top; row <= bottom; row++) {
-    for (let column = left; column <= right; column++) {
-      const phase =
-        (((column % columns) + columns) % columns) * 2.4 + row * 1.7;
-      const x = column * spacing + drift + Math.sin(row * 4.1) * 65;
-      const y = row * 160 + Math.sin(phase) * 45;
-      if (
-        x + 260 < camera.x - halfW ||
-        x - 260 > camera.x + halfW ||
-        y + 95 < camera.y - halfH ||
-        y - 95 > camera.y + halfH
-      )
-        continue;
-      f.globalAlpha = 0.38 + Math.sin(phase) * 0.15;
-      f.drawImage(mistStamp, x - 260, y - 95, 520, 190);
-    }
-  }
-  f.restore();
+  mistRendering.draw(f, {
+    camera,
+    vw,
+    vh,
+    time: reducedMotion.matches ? 0 : time,
+  });
   if (
     blurredHorizonMask.width !== width ||
     blurredHorizonMask.height !== height
@@ -4666,15 +4668,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     c.save();
     c.translate(x, site.y);
     c.scale(1 / z, 1 / z);
-    drawExplorationSite(
-      c,
-      site,
-      0,
-      0,
-      active ? 54 : 48,
-      progress?.status === "surveyed",
+    siteMarkerRendering.draw(c, site, {
+      size: active ? 54 : 48,
+      surveyed: progress?.status === "surveyed",
       active,
-    );
+      pixelRatio: DPR,
+    });
     if ((visible || progress) && progress?.status !== "surveyed") {
       c.fillStyle = "rgba(47,29,15,.82)";
       c.font = `${progress ? "700 " : ""}12px Georgia`;
@@ -4687,7 +4686,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     c.save();
     c.translate(x, nearDiscovery.y);
     c.scale(1 / z, 1 / z);
-    drawDiscoverySite(c, nearDiscovery, 0, 0, 54, true);
+    siteMarkerRendering.draw(c, nearDiscovery, {
+      kind: "discovery",
+      size: 54,
+      active: true,
+      pixelRatio: DPR,
+    });
     c.restore();
   }
   for (const site of discoverySites) {
@@ -4698,15 +4702,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     c.save();
     c.translate(x, site.y);
     c.scale(1 / z, 1 / z);
-    drawDiscoverySite(
-      c,
-      site,
-      0,
-      0,
-      43,
-      false,
-      record.disposition === "secret",
-    );
+    siteMarkerRendering.draw(c, site, {
+      kind: "discovery",
+      size: 43,
+      secret: record.disposition === "secret",
+      pixelRatio: DPR,
+    });
     c.restore();
   }
   if (game.laws.amberConvoy) {
@@ -5064,6 +5065,7 @@ function portLabelWidth(c, name) {
 }
 const shipScreen = { x: 0, y: 0, angle: 0 };
 const activeLighthouses = [];
+const siteMarkerRendering = createSiteMarkerRendering();
 
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -5132,6 +5134,10 @@ function render() {
     }
   }
   seaRendering.drawSurface(ctx, {
+    bufferSurface: z < 1 && vw * vh > 1_000_000,
+    cacheLightBands: true,
+    detail: renderQuality.quality,
+    focus: { x: ship.x, y: ship.y, radius: 480 },
     camera,
     vw,
     vh,
@@ -5284,6 +5290,7 @@ function render() {
   {
     drawWeatherEffects(ctx, {
       name: weather.name,
+      softLayerScale: 0.5,
       front: weather.front,
       daylight: lighting.daylight,
       roughness: weather.roughness,
@@ -5790,10 +5797,20 @@ function loop(now) {
     fpsSampleStart = now;
     fpsFrameCount = 0;
   }
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const frameMs = now - last;
+  const dt = Math.min(0.05, frameMs / 1000);
   last = now;
   if (mapOpening?.active) mapOpening.render(now);
   else {
+    if (renderQuality.sample(frameMs)) {
+      const ratio = renderPixelRatio(
+        vw,
+        vh,
+        window.devicePixelRatio,
+        renderQuality.quality,
+      );
+      if (Math.abs(ratio - DPR) > 0.01) resize();
+    }
     update(dt);
     render();
     animatePortPanels(now);
@@ -7499,6 +7516,7 @@ mapOpening = createMapOpening({
   onComplete() {
     keys.clear();
     last = performance.now();
+    renderQuality.reset();
     render();
   },
 });

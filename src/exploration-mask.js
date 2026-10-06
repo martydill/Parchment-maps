@@ -4,15 +4,22 @@ export function createExplorationSampler(mask, context) {
   const samples = new Map();
   let width = mask.width;
   let height = mask.height;
+  let snapshot = null;
 
   function invalidate() {
     samples.clear();
+    snapshot = null;
     width = mask.width;
     height = mask.height;
   }
 
   return {
     invalidate,
+    snapshot() {
+      if (mask.width !== width || mask.height !== height) invalidate();
+      if (snapshot === null) snapshot = mask.toDataURL("image/png");
+      return snapshot;
+    },
     isExplored(x, y) {
       if (mask.width !== width || mask.height !== height) invalidate();
       const key = y * width + x;
