@@ -1,3 +1,8 @@
+import {
+  openPortWorkspace,
+  refreshPortWorkspaces,
+  readingPages,
+} from "./ui/port-workspace.js?v=5";
 import { createSeaRendering } from "./sea-rendering.js?v=3";
 import { createAlphaPalette } from "./style-palette.js";
 import { createExplorationSampler } from "./exploration-mask.js";
@@ -328,9 +333,9 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=7";
+} from "./ui/panels.js?v=16";
 import { activateSectionTabs } from "./ui/tabs.js";
-import { configurePortPanels } from "./ui/port-panels.js";
+import { configurePortPanels } from "./ui/port-panels.js?v=10";
 import { createMapOpening } from "./map-opening.js";
 
 const canvas = document.getElementById("game");
@@ -2660,12 +2665,15 @@ function showIntelReport(report) {
     report.confidence +
     "% confidence · valid through Day " +
     report.expiresDay;
-  document.getElementById("reportBody").textContent = report.body;
-  document.getElementById("reportEffect").textContent = intelEffectText(report);
+  readingPages(document.getElementById("reportBody"), [
+    report.body,
+    `Immediate effect: ${intelEffectText(report)}`,
+  ]);
   const action = document.getElementById("reportAction");
   action.textContent = intelActionLabel(report);
   action.onclick = () => performIntelAction(report);
   document.getElementById("reportPanel").style.display = "grid";
+  document.getElementById("closeReport").focus();
 }
 function buyIntel(id) {
   if (!currentPort) return;
@@ -3394,6 +3402,14 @@ const ui = {
   plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
 const panelContext = {
+  refreshPortWorkspace() {
+    refreshPortWorkspaces({
+      game,
+      port: currentPort,
+      factionLore,
+      openFleetLedger,
+    });
+  },
   clearCourse,
   courseBearing,
   bestCargoCompartment,
@@ -3576,7 +3592,10 @@ function followCurrentObjective() {
     ["trade", "vessel", "politics"].includes(objective.action) &&
     currentPort
   ) {
-    activateSectionTabs(document.getElementById("portPanel"), objective.action);
+    activateSectionTabs(
+      document.getElementById("portPanel"),
+      objective.action === "vessel" ? "harbor" : objective.action,
+    );
     document.getElementById("portPanel").style.display = "grid";
     return;
   }
@@ -3712,36 +3731,86 @@ function portVoyageEstimate(origin, destination) {
 function openHarborService(tab, target) {
   const panel = document.getElementById("portPanel");
   activateSectionTabs(panel, tab);
-  const section = document.getElementById(target)?.closest(".detail-card");
-  if (section) {
-    const body = panel.querySelector(".port-body");
-    body.scrollTop +=
-      section.getBoundingClientRect().top -
-      body.getBoundingClientRect().top -
-      12;
-    section.tabIndex = -1;
-    section.focus({ preventScroll: true });
-  }
+  openPortWorkspace(tab, target);
 }
 
 function renderHarborPresentation() {
   if (!currentPort) return;
   document.getElementById("portRealm").textContent =
     `${currentPort.realm} · Day ${game.day}`;
-  document.getElementById("harborSceneStatus").textContent =
-    currentPort.security;
-  document
-    .getElementById("harborIllustration")
-    .setAttribute(
-      "aria-label",
-      `Illustration of ${currentPort.name}’s waterfront`,
-    );
-  drawMenuPort(document.getElementById("harborIllustration"), currentPort, 0);
   document.querySelectorAll("[data-service]").forEach((button) => {
     button.onclick = () =>
       openHarborService(button.dataset.service, button.dataset.target);
   });
+  document.getElementById("portStores").textContent =
+    `${game.operations.provisions}/30`;
+  document.getElementById("portCondition").textContent =
+    `${Math.round(game.operations.condition)}%`;
+  renderPortCity();
   renderDepartureReadiness();
+}
+
+function renderPortCity() {
+  const port = currentPort;
+  document.getElementById("portCityName").textContent = port.name;
+  document.getElementById("portCityStatus").textContent =
+    `${port.prosperity} prosperity · ${port.security}`;
+  const surface = document.getElementById("portCityIllustration");
+  surface.setAttribute("aria-label", `Illustrated guide to ${port.name}`);
+  drawMenuPort(surface, port, 0);
+  const root = document.getElementById("portCityDetails");
+  root.innerHTML = `<article class="detail-card"><div class="town-kicker">The local exchange</div><h3>Goods & industry</h3><p><b>Exports:</b> ${port.exports.join(", ")}</p><p><b>Imports:</b> ${port.imports.join(", ")}</p><div class="resource-list"></div><button type="button" class="parchment" data-service="market" data-target="productionChains">Visit the workshops →</button></article><article class="detail-card"><div class="town-kicker">The civic register</div><h3>People & power</h3><p>${formatPopulation(port.population)} people · ${port.government}</p><div class="city-factions"></div><button type="button" class="parchment" data-service="politics" data-target="localLaw">Visit council chambers →</button></article><article class="detail-card"><div class="town-kicker">Beyond this harbor</div><h3>Connected ports</h3><div class="city-connections"></div></article>`;
+  for (const resource of port.resources) {
+    const chip = document.createElement("span");
+    chip.className = "resource-chip";
+    chip.textContent = resource;
+    root.querySelector(".resource-list").append(chip);
+  }
+  for (const faction of port.factions) {
+    const row = document.createElement("div");
+    row.className = "city-faction";
+    row.innerHTML = `<div><b>${faction.name}</b><span>${faction.influence}% influence · standing ${game.factionStanding[faction.name] || 0}</span></div><div class="faction-bar"><span style="width:${faction.influence}%"></span></div>`;
+    const lore = factionLore(faction, port);
+    const details = document.createElement("details");
+    details.className = "faction-lore";
+    const summary = document.createElement("summary");
+    summary.textContent = "History & motivations";
+    details.append(summary);
+    for (const text of [
+      faction.note,
+      lore.backstory,
+      lore.history,
+      lore.motivations,
+    ]) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = text;
+      details.append(paragraph);
+    }
+    row.append(details);
+    root.querySelector(".city-factions").append(row);
+  }
+  const connections = root.querySelector(".city-connections");
+  for (const route of routesFrom(port.name)) {
+    const destination = getPortByName(
+      route.a === port.name ? route.b : route.a,
+    );
+    if (!destination || !isWorldPointExplored(destination.x, destination.y))
+      continue;
+    const estimate = portVoyageEstimate(port, destination);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "atlas-route";
+    button.innerHTML = `<span><b>${destination.name}</b><small>~${estimate.days} days · ${estimate.provisionsNeeded} stores</small></span><span aria-hidden="true">→</span>`;
+    button.onclick = () => openTownDetails(destination, true);
+    connections.append(button);
+  }
+  if (!connections.children.length)
+    connections.innerHTML =
+      '<p class="small">Sail farther to reveal connected ports on your chart.</p>';
+  root.querySelectorAll("[data-service]").forEach((button) => {
+    button.onclick = () =>
+      openHarborService(button.dataset.service, button.dataset.target);
+  });
 }
 
 function renderDepartureReadiness() {
@@ -3781,12 +3850,18 @@ function renderDepartureReadiness() {
       );
     else clearCourse(game.navigation);
     updateHud();
-    renderDepartureReadiness();
+    renderPortSystems();
     saveGameState();
     document.getElementById("departureDestination").focus();
   };
   root.querySelectorAll("[data-readiness]").forEach((button) => {
-    button.onclick = () => openHarborService("vessel", "voyageReadiness");
+    button.onclick = () =>
+      openHarborService(
+        "harbor",
+        button.dataset.readiness === "condition"
+          ? "vesselInspection"
+          : "voyageReadiness",
+      );
   });
 }
 
@@ -3959,7 +4034,52 @@ function drawMenuPort(surface, port, time) {
   wash.addColorStop(1, "#c3b789");
   c.fillStyle = wash;
   c.fillRect(0, 0, width, height);
-  c.fillStyle = "#92a79b";
+  // Distant terrain and rooflines give the atlas illustration a coastal depth.
+  c.save();
+  for (let ridge = 0; ridge < 3; ridge++) {
+    c.fillStyle = ["#acb09b", "#a3a790", "#929d87"][ridge];
+    c.globalAlpha = 0.12 + ridge * 0.035;
+    c.beginPath();
+    c.moveTo(0, height * 0.63);
+    for (let x = 0; x <= width; x += 24) {
+      const y =
+        height * (0.49 + ridge * 0.038) +
+        Math.sin(x / (145 + ridge * 50) + port.name.length) * height * 0.05 +
+        Math.sin(x / 67 + ridge) * height * 0.017;
+      c.lineTo(x, y);
+    }
+    c.lineTo(width, height * 0.72);
+    c.lineTo(0, height * 0.72);
+    c.fill();
+  }
+  c.globalAlpha = 0.22;
+  for (let building = 0; building < 18; building++) {
+    const x = width * (0.07 + building * 0.049);
+    const w = width * (0.022 + (building % 3) * 0.005);
+    const h = height * (0.04 + ((building * 7 + port.name.length) % 6) * 0.013);
+    const y = height * 0.63 - h;
+    c.fillStyle = building % 3 ? "#a99170" : "#8f8469";
+    c.fillRect(x, y, w, h);
+    c.beginPath();
+    c.moveTo(x - 3, y);
+    c.lineTo(x + w * 0.5, y - h * 0.24);
+    c.lineTo(x + w + 3, y);
+    c.fill();
+    c.fillStyle = "#f4e4bf";
+    for (let window = 0; window < 3; window++)
+      c.fillRect(
+        x + w * 0.2 + window * w * 0.25,
+        y + h * 0.32,
+        w * 0.1,
+        h * 0.2,
+      );
+  }
+  c.restore();
+  const water = c.createLinearGradient(0, height * 0.64, 0, height);
+  water.addColorStop(0, "#9aaa98");
+  water.addColorStop(1, "#6f9285");
+  c.fillStyle = water;
+
   c.beginPath();
   c.moveTo(0, height * 0.7);
   c.bezierCurveTo(
@@ -4003,7 +4123,7 @@ function drawMenuPort(surface, port, time) {
           : PORT_NAMES.heliovar;
   c.save();
   c.translate(width * 0.5, height * 0.76);
-  c.scale(height / 175, height / 175);
+  c.scale(height / 205, height / 205);
   drawPortMiniature(
     c,
     illustration,
@@ -4013,8 +4133,35 @@ function drawMenuPort(surface, port, time) {
   c.restore();
   c.save();
   c.translate(width * 0.8, height * 0.82);
-  c.scale(1.7, 1.7);
+  c.scale(2.4, 2.4);
   drawHarborBoats(c, illustration, time, 2, game.windAngle, 0, 1);
+  c.restore();
+  c.save();
+  c.translate(width * 0.08, height * 0.84);
+  c.strokeStyle = "#eff0cd";
+  c.fillStyle = "#eff0cd";
+  c.globalAlpha = 0.3;
+  c.lineWidth = 1.2;
+  const radius = height * 0.045;
+  c.beginPath();
+  c.arc(0, 0, radius, 0, Math.PI * 2);
+  c.stroke();
+  for (let point = 0; point < 8; point++) {
+    const angle = (point * Math.PI) / 4;
+    const length = radius * (point % 2 ? 0.85 : 1.35);
+    c.beginPath();
+    c.moveTo(Math.cos(angle) * length, Math.sin(angle) * length);
+    c.lineTo(
+      Math.cos(angle + 0.5) * radius * 0.22,
+      Math.sin(angle + 0.5) * radius * 0.22,
+    );
+    c.lineTo(
+      Math.cos(angle - 0.5) * radius * 0.22,
+      Math.sin(angle - 0.5) * radius * 0.22,
+    );
+    c.closePath();
+    c.fill();
+  }
   c.restore();
 }
 
@@ -4026,11 +4173,11 @@ function animatePortPanels(now) {
     currentPort &&
     document.getElementById("portPanel").style.display === "grid" &&
     document
-      .querySelector('#portPanel .port-panel[data-tab="harbor"]')
+      .querySelector('#portPanel .port-panel[data-tab="city"]')
       .classList.contains("active")
   )
     drawMenuPort(
-      document.getElementById("harborIllustration"),
+      document.getElementById("portCityIllustration"),
       currentPort,
       now,
     );
@@ -4050,6 +4197,15 @@ function animatePortPanels(now) {
 
 function openTownDetails(port, _fromChart = false) {
   if (!port) return;
+  if (currentPort === port) {
+    closeTownDetails();
+    renderPortSystems();
+    const panel = document.getElementById("portPanel");
+    activateSectionTabs(panel, "city");
+    panel.style.display = "grid";
+    panel.querySelector(".port-tab.active").focus();
+    return;
+  }
   selectedTown = port;
   document.getElementById("townRealm").textContent =
     port.realm + " · " + port.land;
@@ -5803,7 +5959,11 @@ function applyCrewVoyageEvent(event) {
 
 function openPort() {
   if (!nearPort) return;
+  document.getElementById("townPanel").style.display = "none";
+  selectedTown = null;
+  minimapWrap.style.display = "none";
   currentPort = nearPort;
+  document.body.classList.add("port-open");
   game.seaRaid.raider = null;
   document.getElementById("seaWarning").hidden = true;
   ship.speed = 0;
@@ -6905,7 +7065,12 @@ function undertakeExpedition(site, approach) {
 }
 
 ui.dock.addEventListener("click", openPort);
-ui.town.addEventListener("click", () => openTownDetails(nearPort));
+ui.town.addEventListener("click", () => {
+  if (!nearPort) return;
+  openPort();
+  activateSectionTabs(document.getElementById("portPanel"), "city");
+  document.querySelector("#portPanel .port-tab.active").focus();
+});
 ui.explore.addEventListener("click", openExploration);
 document
   .getElementById("closeExploration")
@@ -6935,15 +7100,20 @@ document.getElementById("discoveryPanel").addEventListener("click", (e) => {
   if (e.target === document.getElementById("discoveryPanel"))
     closeDiscoveryDetails();
 });
+function closeIntelReport() {
+  document.getElementById("reportPanel").style.display = "none";
+  const tab = document.querySelector(
+    '#portPanel .port-panel.active .activity-tab[aria-selected="true"]',
+  );
+  if (currentPort && tab) tab.focus({ preventScroll: true });
+  else document.getElementById("ledgerButton").focus();
+}
 document
   .getElementById("closeReport")
-  .addEventListener(
-    "click",
-    () => (document.getElementById("reportPanel").style.display = "none"),
-  );
-document.getElementById("reportPanel").addEventListener("click", (e) => {
-  if (e.target === document.getElementById("reportPanel"))
-    document.getElementById("reportPanel").style.display = "none";
+  .addEventListener("click", closeIntelReport);
+document.getElementById("reportPanel").addEventListener("click", (event) => {
+  if (event.target === document.getElementById("reportPanel"))
+    closeIntelReport();
 });
 document.getElementById("combatPanel").addEventListener("click", (event) => {
   const button = event.target.closest("[data-combat-action]");
@@ -6960,7 +7130,11 @@ document.getElementById("townDockButton").addEventListener("click", () => {
   document.getElementById("townPanel").style.display = "none";
   selectedTown = null;
   minimapWrap.style.display = "none";
-  if (port && nearPort === port) openPort();
+  if (port && nearPort === port) {
+    openPort();
+    activateSectionTabs(document.getElementById("portPanel"), "city");
+    document.querySelector("#portPanel .port-tab.active").focus();
+  }
 });
 document.getElementById("townCourseButton").addEventListener("click", () => {
   if (!selectedTown) return;
@@ -6983,6 +7157,7 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
 });
 document.getElementById("closePort").addEventListener("click", () => {
   const leaving = currentPort;
+  document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
   currentPort = null;
   ship.anchored = true;
@@ -6997,13 +7172,19 @@ document.getElementById("closePort").addEventListener("click", () => {
   );
 });
 
-for (const panelId of ["portPanel", "townPanel"]) {
+for (const panelId of ["portPanel", "townPanel", "reportPanel"]) {
   const panel = document.getElementById(panelId);
   panel.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !event.target.closest("select, input")) {
       event.preventDefault();
       document
-        .getElementById(panelId === "portPanel" ? "closePort" : "closeTown")
+        .getElementById(
+          {
+            portPanel: "closePort",
+            townPanel: "closeTown",
+            reportPanel: "closeReport",
+          }[panelId],
+        )
         .click();
       if (panelId === "portPanel") ui.dock.focus();
     }

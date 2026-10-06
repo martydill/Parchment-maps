@@ -1,3 +1,5 @@
+import { goodsIllustration } from "./port-art.js?v=4";
+import { paginateMarket } from "./port-workspace.js?v=5";
 import { planMarketOrder } from "../core/market-order.js";
 import { updateElementProperty } from "./dom.js";
 import {
@@ -12,7 +14,7 @@ import {
   renderShipyard,
   renderWarehouse,
   upgradeEffects,
-} from "./port-panels.js";
+} from "./port-panels.js?v=10";
 import {
   assignCaptain,
   clearFleetRoute,
@@ -50,7 +52,6 @@ let acceptContract,
   calculateShipIdentity,
   canTrade,
   cargoCapacities,
-  cargoCondition,
   cargoCount,
   cargoLotDescription,
   closeDiscoveryDetails,
@@ -142,7 +143,6 @@ function syncPanelContext() {
     calculateShipIdentity,
     canTrade,
     cargoCapacities,
-    cargoCondition,
     cargoCount,
     cargoLotDescription,
     closeDiscoveryDetails,
@@ -276,7 +276,7 @@ export function updateHud() {
       : objective.action === "trade"
         ? "Open contract board →"
         : objective.action === "vessel"
-          ? "Prepare vessel →"
+          ? "Prepare at dock →"
           : objective.action === "politics"
             ? "Open politics →"
             : objective.action === "ledger"
@@ -588,9 +588,9 @@ export function renderPortSystems() {
   renderReadiness();
   panelContext.renderHarborPresentation();
   renderMilestone(document.getElementById("milestonePort"));
+  panelContext.refreshPortWorkspace();
 }
 
-let marketKeys = [];
 let marketSelection = {
   port: null,
   key: null,
@@ -625,7 +625,6 @@ export function renderMarket() {
   const keys = Object.keys(goods).filter(
     (key) => available.has(key) || game.cargo[key] > 0,
   );
-  marketKeys = keys;
   if (!keys.includes(marketSelection.key)) marketSelection.key = keys[0];
   document.querySelectorAll(".market-filters button").forEach((button) => {
     button.setAttribute(
@@ -656,13 +655,14 @@ export function renderMarket() {
     if (marketSelection.filter === "restricted" && status === "legal") continue;
     visible++;
     const row = document.createElement("div");
+    row.dataset.good = key;
     row.className =
       "exchange-row" + (marketSelection.key === key ? " selected" : "");
     const label = document.createElement("button");
     label.type = "button";
     label.className = "exchange-good";
     label.setAttribute("aria-pressed", String(marketSelection.key === key));
-    label.innerHTML = `<span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"/></svg></span><span><b>${goods[key].name}</b><small>${Math.floor(state.stock)} local · ${game.cargo[key]} aboard</small><span class="market-condition ${condition === "Shortage" || condition === "Tight" ? "condition-shortage" : condition === "Surplus" || condition === "Glut" ? "condition-surplus" : ""}">${condition}</span> <small class="legal-status legal-${status}">${lawDetails(status).label}</small></span>`;
+    label.innerHTML = `<span class="exchange-illustration">${goodsIllustration(key)}</span><span><b>${goods[key].name}</b><small>${Math.floor(state.stock)} local · ${game.cargo[key]} aboard · ${condition}${status === "legal" ? "" : " · " + lawDetails(status).label}</small></span>`;
     label.onclick = () => {
       marketSelection.key = key;
       marketSelection.quantity = 1;
@@ -704,6 +704,11 @@ export function renderMarket() {
     market.innerHTML =
       '<p class="empty-note">No goods match this filter. Choose All goods to view the exchange.</p>';
   renderMarketOrder();
+  paginateMarket(
+    market,
+    marketSelection.key,
+    `${currentPort.name}:${marketSelection.filter}`,
+  );
 }
 
 export function openMarketGood(key) {
@@ -749,21 +754,7 @@ function renderMarketOrder() {
     return;
   }
   const status = legalStatusAt(currentPort, key);
-  root.innerHTML = `<div class="town-kicker">Transaction preview</div><div class="order-good"><span class="resource-icon-frame"><svg class="resource-icon" aria-hidden="true"><use href="#resource-${key}"/></svg></span><h3>${goods[key].name}</h3></div><label class="order-good-picker">Choose goods<select id="orderGoodPicker"></select></label><div class="order-directions" role="group" aria-label="Transaction direction"><button type="button" data-direction="buy" aria-pressed="${direction === "buy"}">Buy</button><button type="button" data-direction="sell" aria-pressed="${direction === "sell"}">Sell</button></div><label class="quantity-label" for="orderQuantity">Quantity</label><div class="order-quantity"><button type="button" id="orderLess" aria-label="Decrease quantity">−</button><input id="orderQuantity" type="number" min="1" max="70" step="1" value="${quantity}" inputmode="numeric"><button type="button" id="orderMore" aria-label="Increase quantity">+</button><button type="button" id="orderMax">Max</button></div><div id="orderSummary" class="order-summary" aria-live="polite"></div><button class="parchment order-confirm" type="button" id="confirmOrder"></button><div id="orderReason" class="order-reason" role="status"></div><p class="small">Each unit changes the next price. Duties and cargo quality are included.</p><div class="order-manifest"></div>`;
-  const picker = root.querySelector("#orderGoodPicker");
-  for (const goodKey of marketKeys) {
-    const option = document.createElement("option");
-    option.value = goodKey;
-    option.textContent = goods[goodKey].name;
-    option.selected = goodKey === key;
-    picker.append(option);
-  }
-  picker.onchange = () => {
-    marketSelection.key = picker.value;
-    marketSelection.quantity = 1;
-    renderMarket();
-    document.getElementById("orderGoodPicker").focus();
-  };
+  root.innerHTML = `<div class="town-kicker">Transaction preview</div><div class="order-good"><span class="exchange-illustration">${goodsIllustration(key)}</span><h3>${goods[key].name}</h3></div><div class="order-directions" role="group" aria-label="Transaction direction"><button type="button" data-direction="buy" aria-pressed="${direction === "buy"}">Buy</button><button type="button" data-direction="sell" aria-pressed="${direction === "sell"}">Sell</button></div><label class="quantity-label" for="orderQuantity">Quantity</label><div class="order-quantity"><button type="button" id="orderLess" aria-label="Decrease quantity">−</button><input id="orderQuantity" type="number" min="1" max="70" step="1" value="${quantity}" inputmode="numeric"><button type="button" id="orderMore" aria-label="Increase quantity">+</button><button type="button" id="orderMax">Max</button></div><div id="orderSummary" class="order-summary" aria-live="polite"></div><button class="parchment order-confirm" type="button" id="confirmOrder"></button><div id="orderReason" class="order-reason" role="status"></div><div class="order-manifest"></div>`;
   root.querySelectorAll("[data-direction]").forEach((button) => {
     button.onclick = () => {
       marketSelection.direction = button.dataset.direction;
@@ -830,23 +821,17 @@ function renderMarketOrder() {
       updateHud();
       saveGameState();
     };
-    root.append(permit);
+    root.querySelector("#confirmOrder").hidden = true;
+    root.querySelector("#confirmOrder").after(permit);
   }
   const manifest = root.querySelector(".order-manifest");
   const lots = game.cargoLots.filter((lot) => lot.key === key);
   if (lots.length) {
-    const details = document.createElement("details");
-    details.innerHTML = `<summary>Cargo manifest · ${lots.length} aboard</summary>`;
-    lots.forEach((lot) => {
-      const line = document.createElement("p");
-      line.className = "small";
-      line.textContent =
-        cargoLotDescription(lot) +
-        " · " +
-        cargoCondition(lot, goods[key]).label;
-      details.append(line);
-    });
-    manifest.append(details);
+    const cargo = document.createElement("button");
+    cargo.type = "button";
+    cargo.textContent = `Inspect ${lots.length} cargo lots →`;
+    cargo.onclick = () => panelContext.openHarborService("harbor", "cargoPlan");
+    manifest.append(cargo);
   }
   updateOrderPreview();
 }

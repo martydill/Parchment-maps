@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=20" />
+    <link rel="stylesheet" href="./styles.css?v=28" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -282,12 +282,12 @@
       <div id="fpsCounter" title="Frames per second">-- FPS</div>
       <button
         id="townButton"
-        data-tooltip="Inspect town"
-        aria-label="Inspect town"
+        data-tooltip="Visit port city"
+        aria-label="Visit port city"
       >
         <svg class="main-icon" viewBox="0 0 24 24" aria-hidden="true">
           <use href="#ui-town" /></svg
-        ><span>Town</span>
+        ><span>City</span>
       </button>
       <button
         id="dockButton"
@@ -311,149 +311,276 @@
       aria-modal="true"
       aria-labelledby="portName"
     >
-      <div class="scroll port-scroll">
+      <div class="scroll port-scroll port-atlas">
         <header class="port-header">
-          <div class="town-kicker" id="portRealm">Harbor master’s register</div>
-          <h2 id="portName">Port</h2>
-          <p id="portFlavor"></p>
-          <div class="port-grid">
-            <div><b>Your purse:</b> <span id="portCoins"></span></div>
-            <div><b>Cargo hold:</b> <span id="portHold"></span></div>
+          <div class="port-identity">
+            <div class="town-kicker" id="portRealm">
+              Harbor master’s register
+            </div>
+            <h2 id="portName">Port</h2>
+            <p id="portFlavor"></p>
+          </div>
+          <div class="port-grid" aria-label="Captain’s resources">
+            <div><b>Purse</b><span id="portCoins"></span></div>
+            <div><b>Cargo</b><span id="portHold"></span></div>
+            <div><b>Stores</b><span id="portStores"></span></div>
+            <div><b>Vessel</b><span id="portCondition"></span></div>
           </div>
         </header>
         <nav class="port-tabs" role="tablist" aria-label="Port sections">
+          <button type="button" class="port-tab" data-tab="city" role="tab">
+            <svg aria-hidden="true"><use href="#ui-town" /></svg>City
+          </button>
           <button
             type="button"
             class="port-tab active"
             data-tab="harbor"
             role="tab"
           >
-            Harbor
+            <svg aria-hidden="true"><use href="#ui-ship" /></svg>Dock
           </button>
           <button type="button" class="port-tab" data-tab="market" role="tab">
             Market
           </button>
           <button type="button" class="port-tab" data-tab="trade" role="tab">
-            Trade
+            Guildhall
           </button>
           <button type="button" class="port-tab" data-tab="vessel" role="tab">
-            Vessel
+            Shipyard
           </button>
           <button type="button" class="port-tab" data-tab="politics" role="tab">
-            Politics
+            Council
           </button>
         </nav>
         <div class="port-body">
-          <section class="port-panel active" data-tab="harbor" role="tabpanel">
-            <div class="harbor-arrival">
-              <div class="harbor-scene">
-                <div class="scene-caption">
-                  <span class="town-kicker">The waterfront</span
-                  ><span id="harborSceneStatus"></span>
-                </div>
+          <section class="port-panel" data-tab="city" role="tabpanel">
+            <div class="port-section-heading">
+              <div>
+                <div class="town-kicker">Beyond the waterfront</div>
+                <h3>The city</h3>
+              </div>
+              <span id="portCityStatus" class="small"></span>
+            </div>
+            <div class="port-city-layout">
+              <div class="port-city-scene">
                 <canvas
-                  id="harborIllustration"
-                  width="840"
-                  height="440"
-                  aria-label="Illustrated harbor"
+                  id="portCityIllustration"
+                  width="1440"
+                  height="760"
+                  aria-label="Illustrated city"
                 ></canvas>
-                <nav class="harbor-services" aria-label="Harbor services">
+                <div class="city-scene-heading">
+                  <span class="town-kicker">A merchant’s guide</span
+                  ><span id="portCityName"></span>
+                </div>
+                <nav class="city-locations" aria-label="City destinations">
                   <button
                     type="button"
+                    class="city-location city-market"
                     data-service="market"
                     data-target="market"
                   >
-                    <svg aria-hidden="true"><use href="#resource-grain" /></svg
-                    ><span>Market square<small>Buy & sell</small></span>
+                    <span class="location-number">01</span
+                    ><span>Market square<small>Prices & trading</small></span>
                   </button>
                   <button
                     type="button"
-                    data-service="market"
-                    data-target="warehouse"
-                  >
-                    <svg aria-hidden="true"><use href="#resource-timber" /></svg
-                    ><span>Warehouse<small>Store cargo</small></span>
-                  </button>
-                  <button
-                    type="button"
-                    data-service="vessel"
-                    data-target="voyageReadiness"
-                  >
-                    <svg aria-hidden="true"><use href="#ui-ship" /></svg
-                    ><span>Shipyard<small>Repair & refit</small></span>
-                  </button>
-                  <button
-                    type="button"
+                    class="city-location city-guild"
                     data-service="trade"
                     data-target="contractBoard"
                   >
-                    <svg aria-hidden="true"><use href="#ui-ledger" /></svg
+                    <span class="location-number">02</span
                     ><span>Guildhall<small>Commissions</small></span>
                   </button>
                   <button
                     type="button"
+                    class="city-location city-tavern"
                     data-service="trade"
                     data-target="intelOffice"
                   >
-                    <svg aria-hidden="true"><use href="#resource-wine" /></svg
+                    <span class="location-number">03</span
                     ><span>Whisper network<small>Reports & rumors</small></span>
                   </button>
                   <button
                     type="button"
-                    data-service="harbor"
-                    data-target="customsOffice"
+                    class="city-location city-council"
+                    data-service="politics"
+                    data-target="localLaw"
                   >
-                    <svg aria-hidden="true"><use href="#ui-town" /></svg
-                    ><span>Customs house<small>Law & permits</small></span>
+                    <span class="location-number">04</span
+                    ><span>Council chambers<small>Factions & law</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    class="city-location city-workshops"
+                    data-service="market"
+                    data-target="productionChains"
+                  >
+                    <span class="location-number">05</span
+                    ><span>Workshops<small>Industry & investment</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    class="city-location city-waterfront"
+                    data-service="harbor"
+                    data-target="vesselInspection"
+                  >
+                    <span class="location-number">06</span
+                    ><span
+                      >The waterfront<small>Return to your vessel</small></span
+                    >
                   </button>
                 </nav>
-                <div class="scene-footnote">
-                  Select a service to conduct business
+                <div class="city-map-note">
+                  Select a destination to conduct business
                 </div>
               </div>
-              <div class="detail-card port-opportunities-card">
-                <div class="town-kicker">Captain’s priorities</div>
-                <h3>Make this visit count</h3>
-                <div id="portOpportunities"></div>
-              </div>
+              <aside class="city-inspector">
+                <div class="city-topic" data-topic="brief">
+                  <div class="town-kicker">Captain’s priorities</div>
+                  <h3>Make this visit count</h3>
+                  <div id="portOpportunities"></div>
+                </div>
+                <div id="portCityDetails"></div>
+                <nav class="city-topics" aria-label="City information">
+                  <button type="button" data-topic="brief">Brief</button
+                  ><button type="button" data-topic="trade">Trade</button
+                  ><button type="button" data-topic="factions">Factions</button
+                  ><button type="button" data-topic="routes">Routes</button>
+                </nav>
+              </aside>
             </div>
-            <div id="portEvolution" class="port-evolution"></div>
-            <div id="portEvent"></div>
-            <div class="detail-card customs-card">
-              <h3>Customs & jurisdiction</h3>
+          </section>
+          <section class="port-panel" data-tab="harbor" role="tabpanel">
+            <div class="port-section-heading">
+              <h3>The waterfront</h3>
+              <nav
+                class="activity-tabs"
+                role="tablist"
+                aria-label="The waterfront activities"
+              >
+                <button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="systems"
+                >
+                  Systems</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="cargo"
+                >
+                  Cargo</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="crew"
+                >
+                  Crew</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="warehouse"
+                >
+                  Warehouse</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="customs"
+                >
+                  Customs</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="passage"
+                >
+                  Passage
+                </button>
+              </nav>
+            </div>
+            <div class="port-activity" data-activity="systems" role="tabpanel">
+              <div id="vesselInspection"></div>
+            </div>
+            <div class="port-activity" data-activity="cargo" role="tabpanel">
+              <div id="cargoPlan"></div>
+            </div>
+            <div class="port-activity" data-activity="crew" role="tabpanel">
+              <div id="crewWorkspace"></div>
+            </div>
+            <div
+              class="port-activity"
+              data-activity="warehouse"
+              role="tabpanel"
+            >
+              <div id="warehouse"></div>
+            </div>
+            <div class="port-activity" data-activity="customs" role="tabpanel">
+              <div id="customsWorkspace"></div>
+            </div>
+            <div class="port-activity" data-activity="passage" role="tabpanel">
+              <div id="passageWorkspace"></div>
+            </div>
+            <div hidden>
+              <div id="voyageReadiness"></div>
               <div id="customsOffice"></div>
+              <div id="portEvolution"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="market" role="tabpanel">
-            <div class="detail-card">
-              <div class="market-heading">
-                <div>
-                  <div class="town-kicker">The trading floor</div>
-                  <h3>Market exchange</h3>
-                </div>
-                <span class="small">Prices include local duties</span>
-              </div>
-              <div
-                class="market-filters"
-                role="group"
-                aria-label="Filter market goods"
+            <div class="port-section-heading">
+              <h3>Market exchange</h3>
+              <nav
+                class="activity-tabs"
+                role="tablist"
+                aria-label="Market exchange activities"
               >
-                <button type="button" data-filter="all" aria-pressed="true">
-                  All goods
-                </button>
-                <button type="button" data-filter="aboard" aria-pressed="false">
-                  Aboard
-                </button>
-                <button type="button" data-filter="demand" aria-pressed="false">
-                  In demand
-                </button>
                 <button
                   type="button"
-                  data-filter="restricted"
-                  aria-pressed="false"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="goods"
                 >
-                  Restricted
+                  Goods</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="workshops"
+                >
+                  Workshops
                 </button>
+              </nav>
+            </div>
+            <div class="port-activity" data-activity="goods" role="tabpanel">
+              <div class="market-workspace">
+                <div class="exchange-catalog">
+                  <div
+                    class="market-filters"
+                    role="group"
+                    aria-label="Filter market goods"
+                  >
+                    <button type="button" data-filter="all">All goods</button
+                    ><button type="button" data-filter="aboard">Aboard</button
+                    ><button type="button" data-filter="demand">
+                      In demand</button
+                    ><button type="button" data-filter="restricted">
+                      Restricted
+                    </button>
+                  </div>
+                  <div id="market"></div>
+                  <div id="marketPager"></div>
+                </div>
+                <section
+                  id="marketOrder"
+                  class="market-order"
+                  aria-label="Transaction preview"
+                ></section>
               </div>
               <div
                 id="marketReceipt"
@@ -461,83 +588,150 @@
                 role="status"
                 aria-live="polite"
               ></div>
-              <div class="market-workspace">
-                <div id="market"></div>
-                <section
-                  id="marketOrder"
-                  class="market-order"
-                  aria-label="Transaction preview"
-                ></section>
-              </div>
             </div>
-            <div class="detail-card">
-              <h3>Cargo plan</h3>
-              <div id="cargoPlan"></div>
-            </div>
-            <div class="detail-card warehouse-card">
-              <h3>Port warehouse</h3>
-              <p class="small">
-                Lease permanent storage at this port, then move individual cargo
-                lots between the warehouse and your ship. Stored goods remain
-                here between voyages and age at one quarter the rate of cargo at
-                sea.
-              </p>
-              <div id="warehouse"></div>
-            </div>
-            <div class="detail-card">
-              <h3>Local production chains</h3>
-              <p class="small">
-                Workshops consume real market inputs each day. Supplying a
-                missing input restores output and can relieve downstream
-                shortages. Labor, fuel, infrastructure, resource depletion, and
-                investment determine regional output and quality.
-              </p>
+            <div
+              class="port-activity"
+              data-activity="workshops"
+              role="tabpanel"
+            >
               <div id="productionChains"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="trade" role="tabpanel">
-            <div class="detail-card">
-              <h3>Contract board</h3>
-              <p class="small">
-                Sealed contract cargo is loaded automatically and occupies hold
-                space until delivery. Rival sponsors demand exclusive service,
-                so accepting one commission can close another.
-              </p>
+            <div class="port-section-heading">
+              <h3>The guildhall</h3>
+              <nav
+                class="activity-tabs"
+                role="tablist"
+                aria-label="The guildhall activities"
+              >
+                <button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="contracts"
+                >
+                  Contracts</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="rumors"
+                >
+                  Rumors
+                </button>
+              </nav>
+            </div>
+            <div
+              class="port-activity"
+              data-activity="contracts"
+              role="tabpanel"
+            >
               <div id="contractBoard"></div>
             </div>
-            <div class="detail-card">
-              <h3>Whisper Network</h3>
-              <p class="small">
-                Buy time-sensitive market, political, and shipping intelligence.
-                Reports can reveal events before they reach the public gazette.
-              </p>
+            <div class="port-activity" data-activity="rumors" role="tabpanel">
               <div id="intelOffice"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="vessel" role="tabpanel">
-            <div class="detail-card">
-              <h3>Voyage readiness</h3>
-              <div id="voyageReadiness"></div>
+            <div class="port-section-heading">
+              <h3>The shipyard</h3>
+              <nav
+                class="activity-tabs"
+                role="tablist"
+                aria-label="The shipyard activities"
+              >
+                <button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="vessels"
+                >
+                  Vessels</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="fittings"
+                >
+                  Fittings</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="fleet"
+                >
+                  Fleet
+                </button>
+              </nav>
             </div>
-            <div class="detail-card">
-              <h3>Shipyard & fleet</h3>
-              <div id="shipStats" class="ship-stats"></div>
+            <div class="port-activity" data-activity="vessels" role="tabpanel">
+              <div id="vesselCatalog"></div>
+            </div>
+            <div class="port-activity" data-activity="fittings" role="tabpanel">
+              <div id="fittingCatalog"></div>
+            </div>
+            <div class="port-activity" data-activity="fleet" role="tabpanel">
+              <div id="fleetCatalog"></div>
+            </div>
+            <div hidden>
               <div id="shipyard"></div>
+              <div id="shipStats"></div>
             </div>
           </section>
           <section class="port-panel" data-tab="politics" role="tabpanel">
-            <div class="detail-card">
-              <h3>Local politics</h3>
-              <div id="portStanding"></div>
-              <div id="localLaw" class="politics-box"></div>
-              <button
-                class="parchment"
-                id="politicsAction"
-                style="display: none"
-              ></button>
+            <div class="port-section-heading">
+              <h3>Council chambers</h3>
+              <nav
+                class="activity-tabs"
+                role="tablist"
+                aria-label="Council chambers activities"
+              >
+                <button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="factions"
+                >
+                  Factions & law</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="events"
+                >
+                  Local news</button
+                ><button
+                  type="button"
+                  class="activity-tab"
+                  role="tab"
+                  data-activity="milestone"
+                >
+                  Ambitions
+                </button>
+              </nav>
             </div>
-            <div class="detail-card">
-              <h3>Merchant-prince milestone</h3>
+            <div class="port-activity" data-activity="factions" role="tabpanel">
+              <div class="council-workspace">
+                <div id="portStanding"></div>
+                <aside class="council-law">
+                  <div id="localLaw" class="politics-box"></div>
+                  <button
+                    class="parchment"
+                    id="politicsAction"
+                    style="display: none"
+                  ></button>
+                </aside>
+              </div>
+            </div>
+            <div class="port-activity" data-activity="events" role="tabpanel">
+              <div id="portEvent"></div>
+            </div>
+            <div
+              class="port-activity"
+              data-activity="milestone"
+              role="tabpanel"
+            >
               <div id="milestonePort"></div>
             </div>
           </section>
@@ -937,19 +1131,20 @@
       </div>
     </div>
 
-    <div id="reportPanel">
+    <div
+      id="reportPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reportTitle"
+    >
       <div class="scroll report-scroll">
         <div class="town-kicker">New intelligence acquired</div>
         <h2 id="reportTitle">Confidential Report</h2>
         <div class="report-validity" id="reportValidity"></div>
         <div class="report-seal">VERIFIED</div>
         <div class="detail-card">
-          <h3>Full report</h3>
-          <p id="reportBody"></p>
-        </div>
-        <div class="detail-card report-effect">
-          <h3>Immediate effect</h3>
-          <p id="reportEffect"></p>
+          <h3>Report & immediate effect</h3>
+          <div id="reportBody"></div>
         </div>
         <div class="report-actions">
           <button class="parchment" id="reportAction">Inspect</button>
@@ -1064,6 +1259,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=52"></script>
+    <script type="module" src="./src/app.js?v=61"></script>
   </body>
 </html>

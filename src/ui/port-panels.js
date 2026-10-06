@@ -1,4 +1,4 @@
-import { renderVesselInspection } from "./vessel-inspection.js";
+import { renderVesselInspection } from "./vessel-inspection.js?v=5";
 import { productionPreview } from "../core/production-preview.js";
 import {
   CARGO_COMPARTMENTS,
@@ -37,6 +37,8 @@ import {
 } from "../core/crew.js";
 import {
   calculateShipIdentity,
+  calculateShipStats,
+  createShipUpgradeState,
   SHIP_CLASSES,
   SHIP_UPGRADES,
   UPGRADE_SLOTS,
@@ -395,7 +397,7 @@ export function renderPortOpportunities() {
   const rows = [
     {
       title: `${offers.length} contract${offers.length === 1 ? "" : "s"} available`,
-      detail: "Open Trade to review pay, deadlines, and faction consequences.",
+      detail: "Review contracts for pay, deadlines, and faction consequences.",
       tab: "trade",
     },
     {
@@ -423,9 +425,9 @@ export function renderPortOpportunities() {
         ? "Your vessel needs attention"
         : "Prepare the next voyage",
       detail: damaged
-        ? `${Math.round(game.operations.condition)}% condition. Repair damaged systems before a long route.`
+        ? `${Math.round(game.operations.condition)}% condition. Inspect and repair damaged systems at the dock.`
         : `${game.operations.provisions}/30 provisions aboard; inspect route estimates before casting off.`,
-      tab: "vessel",
+      tab: "harbor",
     },
   ];
   if (damaged) rows.unshift(rows.pop());
@@ -535,9 +537,13 @@ export function renderCargoPlan() {
     for (const lot of lots) {
       const row = document.createElement("div");
       row.className = "cargo-lot-row";
+      row.dataset.entry = lot.id;
+      row.dataset.artKind = "goods";
+      row.dataset.artKey = lot.key;
       const details = document.createElement("span");
       details.innerHTML = `<b>${goods[lot.key].name}</b><span class="small">${cargoLotDescription(lot)}</span>`;
       const select = document.createElement("select");
+      select.dataset.lotId = lot.id;
       select.setAttribute("aria-label", `Move ${goods[lot.key].name}`);
       for (const [destination, data] of Object.entries(CARGO_COMPARTMENTS)) {
         const option = document.createElement("option");
@@ -558,7 +564,11 @@ export function renderCargoPlan() {
           capacities,
         );
         if (!result.ok) showMessage(result.reason);
-        renderCargoPlan();
+        renderPortSystems();
+        saveGameState();
+        [...root.querySelectorAll("select")]
+          .find((control) => control.dataset.lotId === lot.id)
+          ?.focus({ preventScroll: true });
       };
       row.append(details, select);
       section.append(row);
@@ -627,6 +637,9 @@ export function renderWarehouse() {
   for (const lot of game.cargoLots) {
     const row = document.createElement("div");
     row.className = "warehouse-lot-row";
+    row.dataset.entry = lot.id;
+    row.dataset.artKind = "goods";
+    row.dataset.artKey = lot.key;
     const details = document.createElement("span");
     details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
     const button = document.createElement("button");
@@ -656,6 +669,9 @@ export function renderWarehouse() {
   for (const lot of warehouse.lots) {
     const row = document.createElement("div");
     row.className = "warehouse-lot-row";
+    row.dataset.entry = lot.id;
+    row.dataset.artKind = "goods";
+    row.dataset.artKey = lot.key;
     const details = document.createElement("span");
     details.innerHTML = `<b>${goods[lot.key].name}</b><small>${cargoLotDescription(lot)}</small>`;
     const button = document.createElement("button");
@@ -718,12 +734,10 @@ export function renderReadiness() {
   });
   root.innerHTML =
     `<div class="ship-stats">Plan: ${routePlan.label} · ${ops.provisions}/30 provisions · ${Math.round(ops.condition)}% overall condition · ${Math.round(ops.morale)} morale · ${Math.round(ops.crew.mutinyPressure)}% mutiny pressure · ${crewWeeklyWage(ops.crew)} crowns/week</div>` +
-    `<div id="vesselInspection"></div><div class="crew-grid">${Object.entries(
-      ops.crew.groups,
-    )
+    `<div class="crew-grid">${Object.entries(ops.crew.groups)
       .map(
         ([role, group]) =>
-          `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} exp · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
+          `<article class="crew-card" data-art-kind="crew" data-art-key="${role}"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} exp · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
       )
       .join("")}</div>` +
     estimates
@@ -737,7 +751,6 @@ export function renderReadiness() {
     game,
     portName: currentPort.name,
     vessel: SHIP_CLASSES[game.shipUpgrades.activeClass],
-    capacities: cargoCapacities(),
     onRepair(key) {
       const result = repairShipComponent(game.operations, game.coins, key);
       if (!result.ok || !result.repaired) return;
@@ -754,7 +767,6 @@ export function renderReadiness() {
         .querySelector(`#vesselInspection [data-component="${key}"]`)
         .focus();
     },
-    onCargo: () => panelContext.openHarborService("market", "cargoPlan"),
     onRefit: () => panelContext.openHarborService("vessel", "shipyard"),
   });
   const planner = document.createElement("div");
@@ -770,8 +782,7 @@ export function renderReadiness() {
     button.onclick = () => {
       game.operations.routePlan = plan.id;
       showMessage(`${plan.label} set for the next passage.`);
-      renderReadiness();
-      panelContext.renderHarborPresentation();
+      renderPortSystems();
       saveGameState();
     };
     planner.append(button);
@@ -894,6 +905,8 @@ export function renderProductionChains() {
       ? `Last cycle: ${cycleMetrics.join(" · ")}`
       : "No completed daily cycle recorded yet.";
     card.classList.add("production-diagram-card");
+    card.dataset.artKind = "workshops";
+    card.dataset.artKey = chain.id;
     card.innerHTML = `<div class="production-diagram-heading"><div><div class="town-kicker">Local production</div><h4>${chain.name}</h4></div><span class="contract-tag">${status} · ${Math.round(efficiency * 100)}% base capacity</span></div><div class="production-flow"><div class="production-flow-inputs"><span class="production-flow-label">Inputs per batch</span></div><span class="production-flow-arrow" aria-hidden="true">→</span><div class="production-workshop"><svg aria-hidden="true" viewBox="0 0 64 64"><path d="M8 54V28l16 8V24l16 10V12h9v42Z M49 28h7v26H8 M15 45h5m7 0h5m8 0h5 M40 8h9"/></svg><b>${chain.name}</b><small>Next: ${preview.recipeLabel}</small><span>${industry.investment}/3 investment</span></div><span class="production-flow-arrow" aria-hidden="true">→</span><div class="production-flow-outputs"><span class="production-flow-label">Base output per batch</span></div></div><div class="production-explanation"><span>${preview.limited ? "Inputs below one full batch; partial production may still run." : "Inputs cover one full batch."} ${industry.collapsed ? "Restore this workshop to resume production." : industry.investment === 0 ? "Invest to list its manufactured goods in the exchange." : "Manufactured goods are listed in the exchange."}</span><small>Actual daily output also depends on labor, infrastructure, quality, and fuel.</small></div><div class="production-cycle-report">${lastCycle}</div>${industry.magnate ? `<span class="small magnate">Local power: ${industry.magnate}, ${industry.investment >= 2 ? "rival magnate" : "rising proprietor"}</span>` : ""}`;
     const formatUnits = (units) => Number(units.toFixed(2)).toString();
     for (const input of preview.inputs) {
@@ -999,6 +1012,22 @@ export function renderShipyard() {
     const owned = game.shipUpgrades.ownedClasses.includes(item.id);
     const row = document.createElement("div");
     row.className = "ship-class-option" + (active ? " active" : "");
+    row.dataset.artKind = "vessel";
+    row.dataset.artKey = item.id;
+    const preview = calculateShipStats({
+      ...game.shipUpgrades,
+      activeClass: item.id,
+    });
+    row.dataset.hold = preview.holdMax;
+    row.dataset.speed = shipSpeedKnots(
+      preview.maxSpeed,
+      preview.waterlineLengthFt,
+    ).toFixed(1);
+    row.dataset.availability = active
+      ? "Active vessel"
+      : owned
+        ? "Owned"
+        : `${item.cost} crowns`;
     const details = document.createElement("div");
     details.innerHTML =
       `<b>${item.name}</b><span class="ship-name">${item.vesselName}</span>` +
@@ -1039,6 +1068,18 @@ export function renderShipyard() {
     const cost = item.cost + FLEET_COMMISSION_FITTING_FEE;
     const row = document.createElement("div");
     row.className = "ship-class-option";
+    row.dataset.artKind = "vessel";
+    row.dataset.artKey = item.id;
+    const preview = calculateShipStats({
+      ...createShipUpgradeState(),
+      activeClass: item.id,
+    });
+    row.dataset.hold = preview.holdMax;
+    row.dataset.speed = shipSpeedKnots(
+      preview.maxSpeed,
+      preview.waterlineLengthFt,
+    ).toFixed(1);
+    row.dataset.availability = `${cost} crowns`;
     const details = document.createElement("div");
     details.innerHTML = `<b>${item.name}</b><span class="small">Fleet trader · ${item.description}</span>`;
     const button = document.createElement("button");
@@ -1069,6 +1110,15 @@ export function renderShipyard() {
       const owned = game.shipUpgrades.owned.includes(item.id);
       const row = document.createElement("div");
       row.className = "upgrade-option" + (equipped ? " equipped" : "");
+      row.dataset.artKind = {
+        hull: "systems",
+        sails: "systems",
+        rudder: "fittings",
+        cargo: "cargo",
+        quarters: "crew",
+        navigation: "passage",
+        armament: "council",
+      }[slot.id];
       const details = document.createElement("div");
       details.innerHTML =
         "<b>" +

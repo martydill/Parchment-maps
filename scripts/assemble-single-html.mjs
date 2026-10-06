@@ -24,16 +24,23 @@ if (!stylesheetTag.test(html) || !moduleTag.test(html)) {
   throw new Error("Could not find the expected stylesheet and module tags");
 }
 
-// Embed the cinematic materials so the downloadable game remains self-contained.
+// Embed the cinematic materials and vessel paintings in the downloadable game.
 let embeddedJavascript = javascript;
 for (const path of [
   "assets/map-opening/table-weathered.jpg",
   "assets/map-opening/parchment-weathered.jpg",
+  "assets/vessels/cutter.png",
+  "assets/vessels/sloop.png",
+  "assets/vessels/carrack.png",
+  "assets/vessels/barque.png",
+  "assets/vessels/brig.png",
+  "assets/vessels/dhow.png",
 ]) {
   const data = await readFile(path);
+  const mime = path.endsWith(".png") ? "image/png" : "image/jpeg";
   embeddedJavascript = embeddedJavascript.replaceAll(
     `./${path}`,
-    `data:image/jpeg;base64,${data.toString("base64")}`,
+    `data:${mime};base64,${data.toString("base64")}`,
   );
 }
 

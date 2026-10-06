@@ -180,6 +180,7 @@ body {
     transition: none;
   }
 }
+
 #hud {
   position: fixed;
   inset: 0;
@@ -3839,4 +3840,1933 @@ button.parchment {
 .inspection-diagram .ship-section.damaged .part-surface {
   fill: #c98666;
   stroke: #93482f;
+}
+
+/* A fixed parchment spread keeps the current task and departure plan in view. */
+#portPanel {
+  padding: 0;
+  background: var(--paper);
+  touch-action: auto;
+}
+#portPanel [hidden] {
+  display: none !important;
+}
+body.port-open {
+  touch-action: auto;
+}
+#portPanel .port-atlas {
+  display: grid;
+  grid-template-rows: 74px 44px minmax(0, 1fr) 58px;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 12% 14%, #fff7db60, transparent 60%),
+    repeating-linear-gradient(3deg, #65472105 0 1px, transparent 1px 5px),
+    linear-gradient(115deg, #f1e5c6, #dfc79d 64%, #ecdbb6);
+}
+#portPanel .port-atlas::before {
+  inset: 7px;
+  pointer-events: none;
+}
+#portPanel .port-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 26px;
+  border-bottom: 1px solid #a68b6260;
+  min-width: 0;
+}
+.port-identity {
+  margin-right: auto;
+  min-width: 0;
+}
+#portPanel .port-header h2 {
+  font: 600 27px/1.12 var(--font-display);
+  margin: 4px 0 0;
+}
+#portPanel .port-header p {
+  display: none;
+}
+#portPanel .town-kicker {
+  margin: 0;
+  text-align: left;
+  font-size: 9px;
+}
+#portPanel .port-grid {
+  display: flex;
+  gap: 0;
+  margin: 0;
+  background: none;
+  border: 0;
+  flex-shrink: 0;
+}
+#portPanel .port-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 22px;
+  border-left: 1px solid #a68b6260;
+}
+#portPanel .port-grid b {
+  font: 10px var(--font-ui);
+  color: #80674a;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+#portPanel .port-grid span {
+  font: 600 16px var(--font-display);
+  white-space: nowrap;
+}
+#portPanel .port-tabs {
+  gap: 6px;
+  padding: 0 24px;
+  box-shadow: none;
+  touch-action: pan-x;
+}
+#portPanel .port-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+  padding: 8px 20px;
+  font: 600 12px var(--font-ui);
+  letter-spacing: 0.05em;
+  text-transform: none;
+}
+#portPanel .port-tab svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+#portPanel .port-tab.active {
+  background: #fff1cc60;
+  border-bottom-color: #815930;
+}
+#portPanel .port-body {
+  padding: 16px 26px 18px;
+  min-height: 0;
+  overflow: visible;
+}
+#portPanel .port-panel {
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  max-width: 1800px;
+}
+#portPanel .port-panel.active {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr);
+  gap: 12px;
+}
+#portPanel .port-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
+}
+#portPanel .port-section-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+#portPanel .port-section-heading h3 {
+  font: 400 23px/1.2 var(--font-display);
+  margin: 0;
+}
+#portPanel .port-section-heading .small {
+  font-size: 11px;
+}
+.activity-tabs {
+  display: flex;
+  gap: 5px;
+}
+.activity-tab {
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font: 12px var(--font-ui);
+  cursor: pointer;
+}
+.activity-tab[aria-selected="true"] {
+  background: #f8edcf;
+  border-color: #a68b6260;
+  box-shadow: 0 2px 0 #73583415;
+}
+.port-activity,
+.port-activity > div {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.collection-layout,
+.market-workspace,
+.inspection-workspace,
+.port-city-layout,
+.passage-layout,
+.customs-layout,
+.council-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  height: 100%;
+  min-height: 0;
+}
+.workspace-catalog,
+.exchange-catalog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid #a88d626e;
+  background: #f5e9cd50;
+}
+.workspace-toolbar,
+#portPanel .market-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 8px 16px;
+  margin: 0;
+  border-bottom: 1px solid #a68b6260;
+  font: 11px/1.4 var(--font-ui);
+  color: #80674a;
+}
+.workspace-toolbar button,
+.workspace-toolbar select {
+  font: 12px var(--font-ui);
+  padding: 5px 10px;
+  color: var(--ink);
+  border: 1px solid #a68b6260;
+  background: #f6e9cb;
+  cursor: pointer;
+}
+.workspace-toolbar button[aria-pressed="true"] {
+  background: #eed9ad;
+  border-color: #aa8b5a;
+}
+.collection-rows {
+  display: grid;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px;
+}
+.collection-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 7px 12px;
+  text-align: left;
+  color: var(--ink);
+  border: 0;
+  border-bottom: 1px solid #a68b6260;
+  background: transparent;
+  cursor: pointer;
+}
+.collection-row b {
+  font: 600 15px/1.2 var(--font-display);
+}
+.collection-row small {
+  font: 11px/1.35 var(--font-ui);
+  color: #80674a;
+}
+.collection-row[aria-pressed="true"] {
+  background: #fff0c6a0;
+  box-shadow: inset 3px 0 0 #997346;
+}
+.collection-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 42px;
+  flex-shrink: 0;
+  padding: 7px 16px;
+  border-top: 1px solid #a68b6260;
+  color: #80674a;
+  font: 11px var(--font-ui);
+}
+.collection-pager > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.collection-pager button,
+.reading-pager button {
+  padding: 4px 9px;
+  background: transparent;
+  border: 1px solid #a68b6260;
+  color: var(--ink);
+  cursor: pointer;
+  font: 13px var(--font-ui);
+}
+.collection-detail,
+.city-inspector,
+.inspection-detail,
+.council-law {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #a88d626e;
+  background: #f9eecf80;
+  box-shadow: inset 3px 0 0 #a6885920;
+}
+.collection-detail h3,
+.city-inspector h3 {
+  margin: 0;
+  font: 500 24px/1.15 var(--font-display);
+}
+.workspace-reading,
+.reading-pages {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.reading-body {
+  flex: 1;
+  min-height: 0;
+}
+.reading-body p {
+  margin: 0 0 10px;
+  font: 14px/1.45 var(--font-display);
+  color: #745b3c;
+}
+.reading-body button {
+  width: 100%;
+  text-align: left;
+  font: 12px/1.4 var(--font-ui);
+  padding: 8px 10px;
+  border: 1px solid #a68b6260;
+  color: var(--ink);
+  background: #f7eccd;
+  margin-bottom: 7px;
+}
+.reading-body .production-good {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reading-body .production-good b {
+  font-size: 12px;
+}
+.reading-body .production-good small {
+  display: block;
+  font-size: 10px;
+}
+.reading-body .resource-icon-frame {
+  width: 28px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.reading-body .atlas-route {
+  display: flex;
+  justify-content: space-between;
+}
+.reading-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  height: 34px;
+  flex-shrink: 0;
+  border-top: 1px solid #a68b6260;
+  font: 11px var(--font-ui);
+  color: #80674a;
+}
+.workspace-actions {
+  display: grid;
+  gap: 8px;
+  flex-shrink: 0;
+}
+#portPanel .workspace-actions button,
+#portPanel .workspace-actions select {
+  width: 100%;
+  margin: 0;
+  padding: 9px 10px;
+  min-height: 38px;
+  color: var(--ink);
+  background: #f5e9cc;
+  border: 1px solid #a68b6260;
+  font: 600 12px/1.3 var(--font-ui);
+  cursor: pointer;
+}
+#portPanel .workspace-actions .parchment {
+  background: linear-gradient(#6c5539, #443323);
+  color: #f9eacd;
+  border-color: #76572f;
+}
+#portPanel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#portPanel button:focus-visible,
+#portPanel select:focus-visible,
+#portPanel input:focus-visible {
+  outline: 2px solid #915d2e;
+  outline-offset: 2px;
+}
+#portPanel .empty-note {
+  font: 13px/1.5 var(--font-display);
+  padding: 16px;
+  margin: 0;
+  grid-row: 1 / -1;
+}
+.city-inspector {
+  gap: 16px;
+}
+.city-topic {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 12px;
+  min-height: 0;
+}
+#portCityDetails {
+  display: contents;
+}
+.city-topics {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.city-topics button {
+  flex: 1;
+  padding: 7px 6px;
+  font: 11px var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid #a68b6260;
+  cursor: pointer;
+}
+.city-topics button[aria-pressed="true"] {
+  background: #ead5a9;
+}
+#portPanel .port-opportunity {
+  display: block;
+  padding: 12px 0;
+  margin: 0;
+  border-bottom: 1px solid #a68b6260;
+}
+#portPanel .port-opportunity:first-child {
+  padding-top: 0;
+}
+#portPanel .port-opportunity b {
+  font: 600 16px/1.2 var(--font-display);
+}
+#portPanel .port-opportunity .small {
+  display: block;
+  margin-top: 5px;
+  font: 12px/1.45 var(--font-ui);
+  color: #80674a;
+}
+#portPanel .port-opportunity button {
+  float: right;
+  margin: 5px 0 0;
+  padding: 3px 6px;
+  min-height: 24px;
+  font: 11px var(--font-ui);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed #a68b6260;
+}
+#portPanel .port-opportunity::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+.port-city-scene {
+  position: relative;
+  min-height: 0;
+  border: 1px solid #a88d626e;
+  background: #e6d4ac;
+}
+.port-city-scene canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.city-scene-heading {
+  position: absolute;
+  top: 22px;
+  left: 24px;
+  display: grid;
+  gap: 7px;
+  pointer-events: none;
+}
+.city-scene-heading > span:last-child {
+  font: italic 21px var(--font-display);
+  color: #7b6545;
+}
+.city-locations {
+  position: absolute;
+  inset: 0;
+}
+.city-location {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 8px;
+  background: #f6e9c9ec;
+  border: 1px solid #947349a0;
+  box-shadow: 0 2px 5px #5a432620;
+  color: var(--ink);
+  text-align: left;
+  font: 600 12px var(--font-ui);
+  cursor: pointer;
+}
+.location-number {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #a68757;
+  border-radius: 50%;
+  font: italic 12px var(--font-display);
+}
+.city-location small {
+  display: block;
+  color: #816543;
+  font-size: 10px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+.city-location::after {
+  content: "";
+  position: absolute;
+  left: 20px;
+  top: 100%;
+  height: 14px;
+  border-left: 1px solid #9a7946;
+}
+.city-market {
+  left: 6%;
+  top: 43%;
+}
+.city-guild {
+  left: 25%;
+  top: 22%;
+}
+.city-tavern {
+  right: 5%;
+  top: 42%;
+}
+.city-council {
+  right: 11%;
+  top: 17%;
+}
+.city-workshops {
+  left: 9%;
+  bottom: 14%;
+}
+.city-waterfront {
+  right: 9%;
+  bottom: 11%;
+}
+.city-map-note {
+  position: absolute;
+  bottom: 14px;
+  left: 22px;
+  font: 11px var(--font-ui);
+  color: #6b6a50;
+  pointer-events: none;
+}
+#vesselInspection {
+  height: 100%;
+}
+.inspection-blueprint {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) 74px;
+  gap: 8px;
+  padding: 16px 20px;
+  min-height: 0;
+  border: 1px solid #a88d626e;
+}
+#portPanel .inspection-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+}
+#portPanel .inspection-heading h4 {
+  font: 500 21px var(--font-display);
+}
+#portPanel .inspection-diagram {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+}
+.inspection-selectors {
+  gap: 8px;
+}
+.inspection-system {
+  min-height: 0;
+  padding: 8px;
+  text-align: left;
+  font-size: 12px;
+}
+.inspection-system b {
+  font: 600 20px var(--font-display);
+}
+#portPanel .inspection-detail h4 {
+  margin: 0;
+  font: 500 24px/1.15 var(--font-display);
+}
+.inspection-percent {
+  font: 500 42px/1 var(--font-display);
+}
+#portPanel .inspection-detail p {
+  margin: 0;
+  font: 14px/1.45 var(--font-display);
+}
+.inspection-repair-preview {
+  margin: 0;
+}
+.inspection-repair-preview > span {
+  padding: 6px 0;
+}
+#portPanel #repairSelectedComponent {
+  min-height: 38px;
+  padding: 8px;
+  margin-top: auto;
+}
+.inspection-repair-note {
+  margin: 0;
+}
+.inspection-refit {
+  min-height: 28px;
+  padding: 3px 0;
+}
+.route-plan-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding: 10px 16px;
+  margin: 0;
+  border: 1px solid #a88d626e;
+  background: #f5e9cd50;
+  min-height: 0;
+}
+#portPanel .route-plan {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 5px 14px;
+  align-content: center;
+  text-align: left;
+  padding: 8px 12px;
+  min-height: 0;
+  border: 0;
+  border-bottom: 1px solid #a68b6260;
+  background: transparent;
+}
+#portPanel .route-plan.selected {
+  background: #fff0c6a0;
+  box-shadow: inset 3px 0 0 #997346;
+}
+#portPanel .route-plan b {
+  font: 600 16px var(--font-display);
+  grid-row: 1 / 3;
+}
+#portPanel .route-plan span {
+  font: 12px/1.4 var(--font-ui);
+}
+#portPanel .route-plan small {
+  font: 11px/1.4 var(--font-ui);
+  color: #80674a;
+}
+.customs-manifest {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  margin: 18px;
+  border: 1px solid #a48960;
+  background: #faf0d280;
+  box-shadow: 5px 5px 0 #a7895225;
+}
+.customs-manifest h3 {
+  margin: 0 0 8px;
+  font: 400 25px var(--font-display);
+}
+.customs-manifest > div:not(.town-kicker) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 1;
+  border-bottom: 1px solid #a68b6260;
+  font: 14px/1.4 var(--font-display);
+}
+#portPanel .council-workspace #portStanding {
+  border: 1px solid #a88d626e;
+  background: #f5e9cd50;
+  padding: 16px;
+}
+#portPanel .standing-row {
+  padding: 16px 12px;
+  margin: 0;
+  font: 16px/1.4 var(--font-display);
+}
+#portPanel .standing-row .small {
+  font: 12px/1.5 var(--font-ui);
+}
+#portPanel .council-law .politics-box {
+  padding: 0;
+  border: 0;
+  background: none;
+  margin: 0;
+}
+#portPanel .council-law .law-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+#portPanel .council-law .law-head b {
+  font: 500 24px var(--font-display);
+}
+#portPanel .council-law .law-effect {
+  margin-top: 16px;
+  font: 14px/1.5 var(--font-display);
+}
+#portPanel #politicsAction {
+  width: 100%;
+  margin-top: auto;
+  font-size: 12px;
+}
+#portPanel .market-workspace {
+  align-items: stretch;
+}
+#portPanel #market {
+  flex: 1;
+  display: grid;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  min-height: 0;
+  padding: 0 12px;
+}
+#portPanel .exchange-row {
+  border: 0;
+  border-bottom: 1px solid #a68b6260;
+  grid-template-columns: minmax(0, 1fr) 70px 70px;
+}
+#portPanel .exchange-good {
+  padding: 7px 12px;
+  gap: 14px;
+}
+#portPanel .exchange-good b {
+  font: 600 15px/1.3 var(--font-display);
+}
+#portPanel .exchange-good small {
+  font: 11px/1.35 var(--font-ui);
+}
+#portPanel .exchange-good .resource-icon-frame {
+  width: 30px;
+  height: 32px;
+}
+#portPanel .exchange-price {
+  font: 600 16px var(--font-display);
+  gap: 3px;
+}
+#portPanel .market-order {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  min-height: 0;
+  background: #f9eecf80;
+  border: 1px solid #a88d626e;
+  box-shadow: inset 3px 0 0 #a6885920;
+}
+#portPanel .order-good {
+  margin: 8px 0;
+  gap: 12px;
+}
+#portPanel .order-good h3 {
+  font: 500 24px var(--font-display);
+}
+#portPanel .order-good .resource-icon-frame {
+  width: 32px;
+  height: 36px;
+}
+#portPanel .order-directions {
+  margin: 0 0 8px;
+}
+#portPanel .order-directions button {
+  min-height: 30px;
+  padding: 5px 10px;
+}
+#portPanel .order-quantity {
+  margin: 4px 0 8px;
+}
+#portPanel .order-quantity button,
+#portPanel .order-quantity input {
+  min-height: 34px;
+}
+#portPanel .order-summary > div {
+  padding: 4px 0;
+  font-size: 12px;
+}
+#portPanel .order-summary strong {
+  font: 500 25px var(--font-display);
+}
+#portPanel .order-confirm {
+  min-height: 38px;
+  margin: 12px 0 6px;
+  padding: 8px;
+  background: linear-gradient(#6c5539, #443323);
+  color: #f9eacd;
+  border-color: #76572f;
+}
+#portPanel .order-reason {
+  font-size: 11px;
+  line-height: 1.35;
+}
+#portPanel .order-manifest {
+  margin-top: auto;
+}
+#portPanel .order-manifest button {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px dashed #a68b6260;
+  background: transparent;
+  color: #745b3c;
+  padding: 6px 0;
+  font: 11px var(--font-ui);
+  cursor: pointer;
+}
+#portPanel .market-receipt {
+  position: absolute;
+  bottom: 62px;
+  left: 26px;
+  max-width: calc(100% - 52px);
+  padding: 8px 14px;
+  margin: 0;
+  border: 1px solid #839369;
+  background: #f0e8c7;
+  box-shadow: 0 2px 8px #4a392430;
+  z-index: 2;
+}
+#portPanel .departure-bar {
+  padding: 9px 26px;
+  gap: 18px;
+  min-height: 0;
+}
+#portPanel .departure-readiness {
+  display: grid;
+  grid-template-columns: auto 210px minmax(0, 1fr);
+  gap: 4px 14px;
+}
+#portPanel .departure-metrics {
+  grid-column: 3;
+  grid-row: 1;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+#portPanel .departure-metrics > span {
+  font-size: 11px;
+}
+#portPanel .departure-status {
+  grid-column: 3;
+  grid-row: 2;
+  font-size: 10px;
+}
+#portPanel .departure-readiness select {
+  grid-row: 1 / 3;
+}
+#portPanel .departure-bar #closePort {
+  min-height: 40px;
+  min-width: 122px;
+  padding: 9px 24px;
+}
+#reportBody {
+  height: 190px;
+  margin: 0;
+}
+#reportPanel .report-scroll {
+  max-height: calc(100dvh - 32px);
+  padding: 22px 26px;
+}
+#reportPanel .detail-card {
+  margin: 10px 0;
+  padding: 14px;
+}
+#reportPanel .detail-card h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+#reportPanel h2 {
+  margin: 8px 0;
+  font-size: 26px;
+}
+#reportPanel .report-effect p {
+  margin: 0;
+  font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .collection-layout,
+  .market-workspace,
+  .inspection-workspace,
+  .port-city-layout,
+  .passage-layout,
+  .customs-layout,
+  .council-workspace {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 14px;
+  }
+  #portPanel .port-grid > div {
+    padding: 0 14px;
+  }
+  #portPanel .port-tab {
+    padding: 8px 16px;
+  }
+  #portPanel .port-section-heading .town-kicker,
+  #portPanel .portCityStatus {
+    display: none;
+  }
+  #portPanel .departure-readiness {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  #portPanel .departure-readiness > label {
+    display: none;
+  }
+  #portPanel .departure-metrics,
+  #portPanel .departure-status {
+    grid-column: 2;
+  }
+  #portPanel .inspection-heading .town-kicker {
+    display: none;
+  }
+}
+/* Narrow screens and large text zoom get a readable stacked workspace. */
+@media (max-width: 800px), (max-height: 559px) {
+  #portPanel .port-atlas {
+    display: flex;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+  #portPanel .port-header {
+    padding: 14px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #portPanel .port-grid {
+    width: 100%;
+    justify-content: space-between;
+  }
+  #portPanel .port-grid > div {
+    padding: 0 8px;
+  }
+  #portPanel .port-tabs {
+    padding: 0 6px;
+    gap: 0;
+    min-height: 44px;
+  }
+  #portPanel .port-tab {
+    padding: 9px 12px;
+    white-space: nowrap;
+  }
+  #portPanel .port-body {
+    overflow: auto;
+    padding: 14px;
+    touch-action: pan-y;
+  }
+  #portPanel .port-panel {
+    height: auto;
+  }
+  #portPanel .port-panel.active {
+    grid-template-rows: auto auto;
+  }
+  #portPanel .port-section-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .activity-tabs {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .activity-tab {
+    padding: 8px 9px;
+  }
+  .port-activity,
+  .port-activity > div {
+    height: auto;
+  }
+  .collection-layout,
+  .market-workspace,
+  .inspection-workspace,
+  .port-city-layout,
+  .passage-layout,
+  .customs-layout,
+  .council-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-catalog,
+  .exchange-catalog {
+    height: 390px;
+  }
+  .collection-detail,
+  .city-inspector,
+  .inspection-detail,
+  .council-law {
+    min-height: 360px;
+    height: 390px;
+  }
+  .city-inspector {
+    height: 440px;
+  }
+  .port-city-scene {
+    height: 370px;
+  }
+  .city-location {
+    font-size: 11px;
+    padding: 7px;
+  }
+  .city-location small {
+    display: none;
+  }
+  .city-map-note {
+    left: 12px;
+    bottom: 10px;
+    font-size: 10px;
+  }
+  .inspection-blueprint {
+    height: 370px;
+  }
+  #portPanel .inspection-heading {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  #portPanel .inspection-heading .town-kicker {
+    display: none;
+  }
+  .inspection-system {
+    padding: 6px;
+    font-size: 10px;
+  }
+  .inspection-system b {
+    font-size: 16px;
+  }
+  #portPanel .market-order {
+    height: 390px;
+  }
+  .route-plan-grid {
+    height: 440px;
+  }
+  #portPanel .route-plan {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  #portPanel .route-plan b {
+    grid-row: auto;
+  }
+  .customs-manifest {
+    min-height: 330px;
+    margin: 8px;
+    padding: 18px;
+  }
+  #portPanel .departure-bar {
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 12px;
+  }
+  #portPanel .departure-readiness {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  #portPanel .departure-readiness select {
+    grid-row: auto;
+  }
+  #portPanel .departure-metrics {
+    grid-column: 1;
+    grid-row: auto;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  #portPanel .departure-status {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  #portPanel .departure-readiness > label {
+    display: none;
+  }
+  #portPanel .departure-bar #closePort {
+    min-width: 100px;
+    padding: 9px 12px;
+  }
+  #portPanel .market-receipt {
+    position: static;
+    margin-top: 10px;
+    max-width: 100%;
+  }
+  #reportPanel .report-scroll {
+    overflow: auto;
+  }
+}
+
+#portPanel #portOpportunities {
+  display: grid;
+  gap: 12px;
+}
+#portPanel #portOpportunities .port-opportunity {
+  padding: 0;
+  border: 0;
+}
+#portPanel #portOpportunities .port-opportunity button {
+  display: block;
+  float: none;
+  width: 100%;
+  padding: 0 0 12px;
+  margin: 0;
+  min-height: 0;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #a68b6260;
+}
+#portPanel .departure-readiness > label {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+#portPanel .departure-readiness select {
+  grid-column: 2;
+}
+@media (max-width: 1100px) {
+  #portPanel .departure-readiness select {
+    grid-column: 1;
+  }
+}
+
+#portPanel .council-faction {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px 12px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #a68b6260;
+  cursor: pointer;
+}
+#portPanel .council-faction[aria-pressed="true"] {
+  background: #fff0c6a0;
+  box-shadow: inset 3px 0 0 #997346;
+}
+#portPanel .council-faction b {
+  font: 600 20px var(--font-display);
+}
+#portPanel .council-faction span,
+#portPanel .council-faction small {
+  font: 12px/1.4 var(--font-ui);
+  color: #80674a;
+}
+#portPanel .selected-faction-heading {
+  margin: 0;
+  font: 500 24px/1.15 var(--font-display);
+}
+#portPanel .council-law .reading-pages {
+  flex: 1;
+}
+#portPanel #fleetCatalog .workspace-catalog > .parchment {
+  font-size: 12px;
+  padding: 9px;
+  margin: 0;
+}
+
+#portPanel #portOpportunities .priority-link {
+  color: var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+#portPanel #portOpportunities .priority-link:hover {
+  background: #fff1ce60;
+}
+
+#portPanel .council-workspace {
+  grid-template-rows: minmax(0, 1fr);
+}
+#portPanel .council-workspace #portStanding {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#portPanel .council-faction {
+  flex: 1;
+  min-height: 0;
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+#crewWorkspace .collection-rows {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+#crewWorkspace .collection-row {
+  border: 1px solid #a68b6260;
+  background: #f8edcf80;
+  padding: 20px;
+  gap: 12px;
+}
+#crewWorkspace .collection-row[aria-pressed="true"] {
+  border-color: #987447;
+  background: #fff0cd90;
+}
+#crewWorkspace .collection-row b {
+  font: 500 22px var(--font-display);
+}
+#crewWorkspace .crew-count {
+  margin-top: auto;
+  font: 400 36px var(--font-display);
+}
+#crewWorkspace .collection-pager {
+  display: none;
+}
+
+.port-city-scene canvas {
+  object-fit: cover;
+}
+#reportPanel .report-scroll {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  height: min(600px, calc(100dvh - 32px));
+  overflow: visible;
+}
+#reportPanel .report-seal {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  margin: 0;
+  border-width: 3px;
+  font-size: 8px;
+}
+#reportPanel h2 {
+  margin: 0;
+  padding-right: 54px;
+  font-size: 26px;
+  line-height: 1.2;
+}
+#reportPanel .report-validity {
+  margin: 0;
+  text-align: left;
+  font: 12px/1.4 var(--font-ui);
+}
+#reportPanel .detail-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+#reportPanel #reportBody {
+  height: auto;
+}
+#reportPanel .report-actions {
+  margin: 0;
+}
+
+/* Engraved captain’s atlas: shared materials, illustrated collections, precise feedback. */
+#portPanel .port-atlas {
+  background:
+    radial-gradient(ellipse at 10% 0%, #fff8df99, transparent 55%),
+    radial-gradient(ellipse at 100% 100%, #94734322, transparent 65%),
+    repeating-linear-gradient(7deg, #65472104 0 1px, transparent 1px 4px),
+    linear-gradient(105deg, #f0e3c4, #dec79f 65%, #edddbd);
+}
+#portPanel .port-atlas::before {
+  border-color: #96734560;
+  box-shadow: inset 0 0 0 3px #eedabb66;
+}
+#portPanel .port-header {
+  background: linear-gradient(180deg, #fff0cd44, transparent);
+}
+#portPanel .port-identity {
+  position: relative;
+  padding-left: 64px;
+}
+.port-crest {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #96734488;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 4px #f3e5c7,
+    inset 0 0 0 5px #a2855760;
+  color: #795e36;
+}
+.port-crest .menu-glyph {
+  width: 30px;
+  height: 30px;
+}
+.menu-glyph {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+#portPanel .port-tab {
+  color: #786346;
+  transition:
+    color 0.16s,
+    background 0.16s,
+    box-shadow 0.16s;
+}
+#portPanel .port-tab.active {
+  color: #362918;
+  background: linear-gradient(#fff4d188, #e6cfa855);
+  box-shadow: inset 0 -2px #84623e;
+  border-bottom-color: transparent;
+}
+.activity-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 9px;
+}
+.activity-tab .menu-glyph {
+  width: 15px;
+  height: 15px;
+}
+.activity-tab[aria-selected="true"] {
+  border-color: #ac916b99;
+  background: linear-gradient(#fcf1d7, #ecd9b4);
+  box-shadow:
+    0 2px 5px #694c2318,
+    inset 0 1px #fff6df;
+}
+#portPanel .collection-detail,
+#portPanel .city-inspector,
+#portPanel .market-order,
+#portPanel .council-law,
+#portPanel .inspection-detail {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 0% 0%, #fffae288, transparent 70%),
+    linear-gradient(120deg, #f5e8cb, #ecdbb7);
+  border-color: #ac8c5e88;
+  box-shadow:
+    0 4px 14px #7653210d,
+    inset 3px 0 #a6895925,
+    inset 0 1px #fff3d3;
+}
+#portPanel .workspace-catalog,
+#portPanel .exchange-catalog {
+  background: linear-gradient(120deg, #efdfbd99, #f4e7cb66);
+  border-color: #a98b6170;
+  box-shadow: inset 0 1px #fff2d5;
+}
+#portPanel .collection-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  padding: 7px 12px;
+  align-content: center;
+}
+#portPanel .collection-row > b,
+#portPanel .collection-row > small {
+  grid-column: 2;
+}
+.row-illustration {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  color: #8a6f46;
+  width: 42px;
+  height: 40px;
+}
+.row-illustration .menu-glyph {
+  width: 30px;
+  height: 30px;
+}
+.row-illustration .goods-art {
+  width: 52px;
+  height: 44px;
+}
+#portPanel .collection-row[aria-pressed="true"] {
+  background: linear-gradient(90deg, #fff2cf, #f5e5c588);
+  box-shadow: inset 3px 0 #926b39;
+}
+#portPanel .collection-row:hover:not([aria-pressed="true"]) {
+  background: #fff3d166;
+}
+#portPanel .collection-row::after {
+  content: "›";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9e7e4a;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+#portPanel .collection-row[aria-pressed="true"]::after {
+  opacity: 1;
+}
+.detail-illustration {
+  position: absolute;
+  right: 14px;
+  top: 16px;
+  width: 64px;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.detail-illustration svg {
+  width: 100%;
+  height: 100%;
+}
+.detail-illustration .menu-glyph {
+  width: 42px;
+  height: 42px;
+  color: #9a7b50;
+  opacity: 0.65;
+}
+#portPanel .collection-detail > h3 {
+  padding-right: 54px;
+}
+#portPanel .collection-detail[data-art-kind="vessel"] > h3 {
+  padding-right: 0;
+}
+.collection-detail[data-art-kind="vessel"] .detail-illustration {
+  position: static;
+  width: 100%;
+  height: 76px;
+  flex-shrink: 0;
+  margin: -6px 0;
+  opacity: 1;
+  border-bottom: 1px solid #ac8c5e40;
+  background: radial-gradient(ellipse, #fff5d288, transparent 75%);
+}
+#vesselCatalog .collection-rows,
+#fleetCatalog .collection-rows {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  gap: 10px;
+}
+#portPanel #vesselCatalog .collection-row,
+#portPanel #fleetCatalog .collection-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #ab8b5d60;
+  background: #f5e8cb77;
+}
+#portPanel #vesselCatalog .collection-row[aria-pressed="true"],
+#portPanel #fleetCatalog .collection-row[aria-pressed="true"] {
+  background: linear-gradient(#fcf0d6, #edd6ac);
+  border-color: #8e6a37;
+  box-shadow:
+    inset 0 0 0 1px #b6925b60,
+    0 3px 6px #7b592a12;
+}
+#vesselCatalog .row-illustration,
+#fleetCatalog .row-illustration {
+  width: 100%;
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  background: radial-gradient(ellipse at 50% 70%, #fff6dd77, transparent 70%);
+}
+#vesselCatalog .row-illustration svg,
+#fleetCatalog .row-illustration svg {
+  width: 100%;
+  height: 100%;
+}
+#vesselCatalog .collection-row > b,
+#fleetCatalog .collection-row > b {
+  font-size: 15px;
+}
+#vesselCatalog .collection-row > small,
+#fleetCatalog .collection-row > small {
+  font-size: 10px;
+}
+.vessel-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 5px;
+  border-top: 1px solid #ab8b5d40;
+  color: #785d3a;
+  font: 11px/1.2 var(--font-ui);
+}
+.collection-detail > .vessel-metrics {
+  margin: 0 0 4px;
+  padding: 4px 0;
+}
+.vessel-availability {
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  color: #785d3a;
+  font: 9px/1.3 var(--font-ui);
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  background: #f3e4c499;
+  border: 1px solid #ac8b5d40;
+}
+.collection-row[aria-pressed="true"] .vessel-availability {
+  color: #f8eaca;
+  background: #79603e;
+  border-color: #79603e;
+}
+#portPanel #crewWorkspace .collection-row {
+  display: flex;
+  position: relative;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+  overflow: hidden;
+}
+#crewWorkspace .row-illustration {
+  position: absolute;
+  right: 6px;
+  bottom: 0;
+  width: 124px;
+  height: 132px;
+  opacity: 0.85;
+  pointer-events: none;
+}
+#crewWorkspace .row-illustration svg {
+  width: 100%;
+  height: 100%;
+}
+#crewWorkspace .collection-row > b,
+#crewWorkspace .collection-row > small,
+#crewWorkspace .crew-count {
+  position: relative;
+  z-index: 1;
+}
+#crewWorkspace .crew-count {
+  font-size: 38px;
+  line-height: 1;
+}
+#crewWorkspace .collection-row > b {
+  font-size: 21px;
+}
+#crewWorkspace .collection-row[aria-pressed="true"] {
+  background: radial-gradient(ellipse at top left, #fff6d8, #e9d0a5);
+}
+#portPanel .exchange-good {
+  gap: 10px;
+  padding: 4px 10px;
+}
+.exchange-illustration {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 44px;
+}
+.exchange-illustration .goods-art {
+  width: 56px;
+  height: 44px;
+}
+#portPanel .order-good {
+  min-height: 60px;
+  margin: 4px 0;
+  gap: 8px;
+}
+#portPanel .order-good .exchange-illustration {
+  width: 78px;
+  height: 60px;
+}
+#portPanel .order-good .goods-art {
+  width: 78px;
+  height: 60px;
+}
+#portPanel .order-good h3 {
+  font-size: 23px;
+  line-height: 1.1;
+}
+#portPanel .order-summary > div {
+  padding: 3px 0;
+}
+#portPanel .workspace-actions .parchment,
+#portPanel .order-confirm,
+#portPanel #closePort {
+  border: 1px solid #74532d;
+  background: linear-gradient(#715738, #453122);
+  box-shadow:
+    inset 0 1px #e7cc9544,
+    0 3px 7px #48311933;
+  transition:
+    filter 0.15s,
+    box-shadow 0.15s;
+}
+#portPanel .workspace-actions .parchment:hover:not(:disabled),
+#portPanel .order-confirm:hover:not(:disabled),
+#portPanel #closePort:hover {
+  filter: brightness(1.13);
+  box-shadow:
+    inset 0 1px #e7cc9566,
+    0 3px 9px #48311944;
+}
+#portPanel .workspace-actions .parchment:active:not(:disabled),
+#portPanel .order-confirm:active:not(:disabled) {
+  box-shadow: inset 0 2px 5px #21160d55;
+}
+#portPanel .council-faction {
+  position: relative;
+  padding-left: 72px;
+  padding-bottom: 26px;
+}
+.faction-influence {
+  position: absolute;
+  bottom: 14px;
+  left: 72px;
+  right: 18px;
+  height: 3px;
+  background: #8d74442b;
+}
+.faction-influence > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8f7041, #c0a368);
+}
+.faction-crest {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 50px;
+}
+.faction-crest svg {
+  width: 100%;
+  height: 100%;
+}
+.council-crest {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 45px;
+  height: 55px;
+}
+.council-crest svg {
+  width: 100%;
+  height: 100%;
+}
+#portPanel .selected-faction-heading {
+  padding-right: 48px;
+}
+#portPanel .city-location {
+  transition:
+    background 0.16s,
+    box-shadow 0.16s,
+    transform 0.16s;
+  box-shadow:
+    0 3px 9px #44321b22,
+    inset 0 1px #fff9e0;
+  background: linear-gradient(#fcf0d9f5, #eddbb6f0);
+}
+#portPanel .city-location:hover {
+  transform: translateY(-2px);
+  background: #fff3d7;
+  box-shadow: 0 5px 12px #44321b33;
+}
+#portPanel .city-location .location-number {
+  background: #e6d1a64d;
+  color: #79592f;
+  border-color: #b18d55;
+}
+#portPanel .city-scene-heading {
+  top: 20px;
+  left: 24px;
+  z-index: 1;
+  text-shadow: 0 1px #f8ebca;
+}
+#portPanel .city-scene-heading > span:last-child {
+  font-size: 26px;
+}
+#portPanel .city-map-note {
+  padding: 6px 10px;
+  left: 14px;
+  bottom: 10px;
+  background: #eee0bcbb;
+  border: 1px solid #9b7e4655;
+  font-size: 10px;
+}
+#portPanel .city-inspector {
+  border-top: 3px solid #947142;
+}
+#portPanel .city-topic > h3 {
+  font-size: 25px;
+}
+#portPanel .inspection-blueprint {
+  background:
+    radial-gradient(ellipse at 50% 55%, #fff9dfcc, #e3d0a544),
+    repeating-linear-gradient(0deg, #8a70450a 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, #8a70450a 0 1px, transparent 1px 28px);
+  box-shadow: inset 0 1px #fff6d7;
+}
+#portPanel .inspection-heading > span {
+  margin-left: auto;
+}
+#portPanel .inspection-system {
+  background: linear-gradient(#f8edd3, #e7d5b0);
+  border-color: #b1926166;
+  box-shadow: inset 0 1px #fff4d5;
+}
+#portPanel .inspection-system[aria-pressed="true"] {
+  background: linear-gradient(#f7e6bf, #ddbf8a);
+  border-color: #987038;
+  box-shadow: inset 0 0 0 1px #ac8551;
+}
+#portPanel .inspection-condition-track {
+  height: 4px;
+  background: #b29a7138;
+}
+@media (max-width: 1100px) {
+  .activity-tab {
+    padding: 7px;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .activity-tab .menu-glyph {
+    width: 14px;
+    height: 14px;
+  }
+}
+@media (max-width: 800px), (max-height: 559px) {
+  #portPanel .port-identity {
+    padding-left: 56px;
+  }
+  #vesselCatalog .collection-rows,
+  #fleetCatalog .collection-rows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+  }
+  #vesselCatalog .workspace-catalog,
+  #fleetCatalog .workspace-catalog {
+    height: 570px;
+  }
+  #crewWorkspace .row-illustration {
+    width: 105px;
+    height: 120px;
+    opacity: 0.65;
+  }
+  #portPanel #crewWorkspace .collection-row {
+    padding: 14px;
+  }
+  #portPanel .collection-row > small {
+    font-size: 10px;
+  }
+  #portPanel .city-scene-heading > span:last-child {
+    font-size: 21px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #portPanel *,
+  #portPanel *::before,
+  #portPanel *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Painted vessel plates replace the schematic art throughout the port. */
+.collection-detail[data-art-kind="vessel"] {
+  gap: 8px;
+}
+.vessel-caption {
+  margin-top: -3px;
+  color: #826742;
+  font: italic 12px var(--font-display);
+}
+.vessel-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  user-select: none;
+}
+#vesselCatalog .collection-rows,
+#fleetCatalog .collection-rows {
+  grid-template-rows: minmax(0, 1fr);
+}
+#portPanel #vesselCatalog .collection-row,
+#portPanel #fleetCatalog .collection-row {
+  padding: 14px 12px 12px;
+  gap: 6px;
+}
+#vesselCatalog .row-illustration,
+#fleetCatalog .row-illustration {
+  padding-top: 14px;
+  background: radial-gradient(ellipse at 50% 60%, #fff8dfaa, transparent 75%);
+}
+#vesselCatalog .collection-row > b,
+#fleetCatalog .collection-row > b {
+  font-size: 18px;
+}
+#vesselCatalog .vessel-availability,
+#fleetCatalog .vessel-availability {
+  font-size: 10px;
+}
+.collection-detail[data-art-kind="vessel"] .detail-illustration {
+  height: 100px;
+  margin: -2px 0;
+  border-bottom: 0;
+}
+.inspection-blueprint {
+  grid-template-rows: 32px minmax(0, 1fr) 74px;
+  padding: 12px 18px;
+}
+.inspection-system-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.inspection-system-index {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1px solid #ad8c5b88;
+  border-radius: 50%;
+  color: #80603d;
+  font: 10px var(--font-ui);
+}
+#portPanel .inspection-system {
+  gap: 4px;
+}
+#portPanel .inspection-condition-track {
+  flex-shrink: 0;
+}
+.inspection-vessel-plate {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  border-top: 1px solid #aa8b5e30;
+  border-bottom: 1px solid #aa8b5e30;
+  background: radial-gradient(ellipse, #fff4d6aa, transparent 70%);
+}
+#portPanel .inspection-vessel-plate .inspection-diagram {
+  height: 100%;
+  width: 100%;
+  overflow: visible;
+}
+.inspection-plate-caption {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  color: #88704e;
+  font: 10px/1.4 var(--font-ui);
+  pointer-events: none;
+}
+.inspection-vessel-plate .ship-section,
+.inspection-vessel-plate .ship-section.selected {
+  stroke: none;
+  filter: none;
+}
+.inspection-hit {
+  fill: transparent;
+  stroke: none;
+}
+.inspection-pin-halo {
+  fill: #f8e9c633;
+  stroke: #9c7c4b99;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.inspection-pin-face {
+  fill: #f5e8cbd9;
+  stroke: #8f6d3e;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.inspection-pin text {
+  fill: #72532e;
+  font: 600 44px var(--font-display);
+  pointer-events: none;
+}
+.ship-section:hover .inspection-pin-face,
+.ship-section.selected .inspection-pin-face {
+  fill: #765533;
+  stroke: #fff0cf;
+}
+.ship-section:hover .inspection-pin text,
+.ship-section.selected .inspection-pin text {
+  fill: #fff1d2;
+}
+.ship-section.damaged .inspection-pin-halo {
+  stroke: #a65a3c;
+  fill: #b463402b;
+}
+.ship-section.worn .inspection-pin-halo {
+  stroke: #a78b3e;
+}
+@media (max-width: 800px), (max-height: 559px) {
+  #vesselCatalog .collection-rows,
+  #fleetCatalog .collection-rows {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+  }
+  #vesselCatalog .workspace-catalog,
+  #fleetCatalog .workspace-catalog {
+    height: 850px;
+  }
+  .inspection-blueprint {
+    height: 480px;
+    grid-template-rows: 38px minmax(0, 1fr) 156px;
+  }
+  .inspection-selectors {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+  .inspection-vessel-plate {
+    height: 100%;
+  }
+  .inspection-plate-caption {
+    bottom: 4px;
+    font-size: 9px;
+  }
 }

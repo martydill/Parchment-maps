@@ -8,7 +8,7 @@ import test from "node:test";
 
 const run = promisify(execFile);
 
-test("single-file packaging embeds cinematic materials and escapes script endings", async () => {
+test("single-file packaging embeds cinematic materials and vessel art, and escapes script endings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "parchment-package-"));
   try {
     const bundle = join(directory, "game.js");
@@ -16,6 +16,12 @@ test("single-file packaging embeds cinematic materials and escapes script ending
     const paths = [
       "assets/map-opening/table-weathered.jpg",
       "assets/map-opening/parchment-weathered.jpg",
+      "assets/vessels/cutter.png",
+      "assets/vessels/sloop.png",
+      "assets/vessels/carrack.png",
+      "assets/vessels/barque.png",
+      "assets/vessels/brig.png",
+      "assets/vessels/dhow.png",
     ];
     await writeFile(
       bundle,
@@ -29,8 +35,9 @@ test("single-file packaging embeds cinematic materials and escapes script ending
     const html = await readFile(output, "utf8");
     for (const path of paths) {
       const bytes = await readFile(path);
+      const mime = path.endsWith(".png") ? "image/png" : "image/jpeg";
       assert.ok(
-        html.includes(`data:image/jpeg;base64,${bytes.toString("base64")}`),
+        html.includes(`data:${mime};base64,${bytes.toString("base64")}`),
       );
       assert.ok(!html.includes(`./${path}`));
     }
