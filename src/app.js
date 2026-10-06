@@ -23,7 +23,6 @@ import {
   nearestWrapped,
   normalizeAngle,
   wrap,
-  wrappedDelta,
   wrappedDistance as calculateWrappedDistance,
 } from "./core/math.js";
 import {
@@ -290,6 +289,7 @@ import {
   moveUnreachablePointsToOpenWater,
   separateWrappedPoints,
 } from "./core/map-generation.js";
+import { generateWorldMap } from "./core/world-generation.js";
 import {
   buildSeaField,
   routeLaneAroundLand,
@@ -349,34 +349,18 @@ localStorage.setItem(MAP_SEED_KEY, mapSeed);
 const mapTransform = createMapTransform(mapSeed);
 const WORLD = { w: mapTransform.width, h: mapTransform.height };
 
-function unwrapLandPolygon(poly) {
-  if (!poly.length) return;
-  let previousX = poly[0][0];
-  for (let index = 1; index < poly.length; index++) {
-    previousX += wrappedDelta(poly[index][0], previousX, WORLD.w);
-    poly[index][0] = previousX;
-  }
-}
-
 function transformWorldData() {
-  const regions = lands
-    .filter((land) => land.name)
-    .map((land) => ({
-      key: land.name,
-      center: polygonCentroid(land.poly),
-    }));
-  const regionByName = new Map(regions.map((region) => [region.key, region]));
-  const nearestRegion = (x, y) =>
-    regions.reduce((nearest, region) => {
-      const distance = Math.hypot(x - region.center.x, y - region.center.y);
-      return !nearest || distance < nearest.distance
-        ? { ...region, distance }
-        : nearest;
-    }, null);
-  const mapPoint = (x, y, regionName) => {
-    const region = regionByName.get(regionName) || nearestRegion(x, y);
-    return mapTransform.regionPoint(x, y, region.key, region.center);
-  };
+  const generated = generateWorldMap(lands, mapTransform, {
+    anchorages: [
+      {
+        land: LAND_NAMES.orravelle,
+        x: HOME_PORT.spawnX,
+        y: HOME_PORT.spawnY,
+        radius: 45,
+      },
+    ],
+  });
+  const mapPoint = generated.point;
   const mapRecord = (record, regionName) => {
     const mapped = mapPoint(record.x, record.y, regionName);
     record.x = mapped.x;
@@ -390,23 +374,9 @@ function transformWorldData() {
       tuple[2] = mapTransform.averageLength(tuple[2]);
   };
 
-  for (const land of lands) {
-    const center = polygonCentroid(land.poly);
-    const region = land.name
-      ? regionByName.get(land.name)
-      : nearestRegion(center.x, center.y);
-    for (const point of land.poly) {
-      const mapped = mapTransform.regionPoint(
-        point[0],
-        point[1],
-        region.key,
-        region.center,
-      );
-      point[0] = mapped.x;
-      point[1] = mapped.y;
-    }
-    unwrapLandPolygon(land.poly);
-  }
+  lands.forEach((land, index) => {
+    land.poly = generated.lands[index].poly;
+  });
   const openWaterAt = (x, y) =>
     !lands.some((land) => pointInWrappedPolygon(x, y, land.poly, WORLD.w));
   for (const port of ports) mapRecord(port, port.land);
@@ -425,7 +395,7 @@ function transformWorldData() {
     locked: (port) => port.home,
   });
   for (const site of discoverySites) mapRecord(site);
-  for (const site of explorationSites) mapRecord(site);
+  for (const site of explorationSites) mapRecord(site, site.land);
   for (const tuple of forests) mapTuple(tuple);
   for (const tuple of mountains) mapTuple(tuple);
   for (const tuple of worldShoals) {

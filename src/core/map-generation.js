@@ -90,43 +90,45 @@ export function createMapTransform(
     };
   }
 
+  const regionParameters = new Map();
+  function regionOffset(x, y, regionKey, center) {
+    if (!regionParameters.has(regionKey)) {
+      const regionSeed = numericSeed(`${seed}:${regionKey}`);
+      regionParameters.set(regionKey, {
+        angle: (unitValue(regionSeed, 1) - 0.5) * 1.5,
+        stretchX: 0.72 + unitValue(regionSeed, 2) * 0.6,
+        stretchY: 0.72 + unitValue(regionSeed, 3) * 0.6,
+        phaseX: phase(regionSeed, 4),
+        phaseY: phase(regionSeed, 5),
+      });
+    }
+    const shape = regionParameters.get(regionKey);
+    const scale = Math.sqrt(scaleX * scaleY);
+    let dx = (x - center.x) * scale * shape.stretchX;
+    let dy = (y - center.y) * scale * shape.stretchY;
+    // Compose smooth shears instead of independent radial spikes. Each shear
+    // is invertible, preserving coves and peninsulas without folding the coast.
+    dx += (Math.sin(dy / 170 + shape.phaseX) - Math.sin(shape.phaseX)) * 65;
+    dy += (Math.sin(dx / 210 + shape.phaseY) - Math.sin(shape.phaseY)) * 55;
+    return {
+      x: dx * Math.cos(shape.angle) - dy * Math.sin(shape.angle),
+      y: dx * Math.sin(shape.angle) + dy * Math.cos(shape.angle),
+    };
+  }
+
   function regionPoint(x, y, regionKey, center) {
     const regionSeed = numericSeed(`${seed}:${regionKey}`);
     const projectedCenter = point(center.x, center.y);
-    const dx = (x - center.x) * scaleX;
-    const dy = (y - center.y) * scaleY;
-    const angle = (unitValue(regionSeed, 1) - 0.5) * 1.5;
-    const stretchX = 0.55 + unitValue(regionSeed, 2);
-    const stretchY = 0.55 + unitValue(regionSeed, 3) * 1.1;
-    const rotationX =
-      dx * stretchX * Math.cos(angle) - dy * stretchY * Math.sin(angle);
-    const rotationY =
-      dx * stretchX * Math.sin(angle) + dy * stretchY * Math.cos(angle);
-    const sourceDirection = Math.atan2(dy, dx);
-    const direction = Math.atan2(rotationY, rotationX);
-    const distance = Math.hypot(rotationX, rotationY);
-    const coastline =
-      1 +
-      Math.sin(sourceDirection * 3 + phase(regionSeed, 4)) * 0.2 +
-      Math.sin(sourceDirection * 7 + phase(regionSeed, 5)) * 0.1;
-    const translationX = (unitValue(regionSeed, 6) - 0.5) * 400;
-    const translationY = (unitValue(regionSeed, 7) - 0.5) * 300;
-
+    const offset = regionOffset(x, y, regionKey, center);
     return {
       x: wrapLongitude(
-        projectedCenter.x +
-          translationX +
-          Math.cos(direction) * distance * coastline,
+        projectedCenter.x + (unitValue(regionSeed, 6) - 0.5) * 400 + offset.x,
         width,
       ),
-      y: Math.max(
+      y: clamp(
+        projectedCenter.y + (unitValue(regionSeed, 7) - 0.5) * 300 + offset.y,
         margin,
-        Math.min(
-          height - margin,
-          projectedCenter.y +
-            translationY +
-            Math.sin(direction) * distance * coastline,
-        ),
+        height - margin,
       ),
     };
   }
@@ -141,6 +143,7 @@ export function createMapTransform(
     scaleY,
     point,
     regionPoint,
+    regionOffset,
     horizontalLength(length) {
       return length * scaleX;
     },
