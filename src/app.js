@@ -1281,8 +1281,9 @@ const portMiniaturePlacements = new Map(
 );
 
 // The weathered-skin photograph that the opening scroll multiplies over the
-// chart, baked into the map layer too so the living chart keeps the intro's
-// material. Falls back to the procedural parchment if the asset never loads.
+// chart, fetched out of band so module evaluation never awaits (top-level
+// await is unavailable at the es2020 bundle target). When it lands, the map
+// layer re-bakes with it; until then the procedural parchment stands in.
 function loadParchmentTexture(url) {
   return new Promise((resolve) => {
     const image = new Image();
@@ -1298,9 +1299,6 @@ function loadParchmentTexture(url) {
     image.src = url;
   });
 }
-const parchmentTexture = await loadParchmentTexture(
-  "./assets/map-opening/parchment-weathered.jpg",
-);
 
 const {
   exploredCtx,
@@ -1312,13 +1310,21 @@ const {
   riverPaths,
   minimapFog,
   minimapFogCtx,
+  setParchmentTexture,
 } = createMapRendering({
   WORLD,
   game,
   merchantRoutePaths,
   portMiniaturePlacements,
-  parchmentTexture,
 });
+
+loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
+  (texture) => {
+    if (!texture) return;
+    setParchmentTexture(texture);
+    minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
+  },
+);
 seaRendering.setRivers(riverPaths);
 const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
 

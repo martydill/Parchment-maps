@@ -663,8 +663,11 @@ export function createMapRendering({
   game,
   merchantRoutePaths,
   portMiniaturePlacements = new Map(),
-  parchmentTexture = null,
 }) {
+  // The weathered-skin photograph may arrive after the first bake (it is
+  // fetched out of band, without a top-level await, so the es2020 bundle
+  // stays valid); assigning it re-bakes the sheet in place.
+  let parchmentTexture = null;
   const onLand = (x, y) => isLandPoint(x, y, WORLD.w);
   const wrappedDistance = (x1, y1, x2, y2) => {
     const directX = Math.abs(x1 - x2);
@@ -2108,5 +2111,13 @@ export function createMapRendering({
     riverPaths,
     minimapFog,
     minimapFogCtx,
+    // Re-bakes the sheet with the weathered-skin photograph applied. Passing
+    // the same or a missing texture is a no-op, so late or failed fetches
+    // leave the procedural parchment untouched.
+    setParchmentTexture(texture) {
+      if (!texture || parchmentTexture === texture) return;
+      parchmentTexture = texture;
+      buildMapLayer();
+    },
   };
 }
