@@ -8,7 +8,7 @@ import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { coastFaceDepth } from "./core/seascape.js";
-import { LIGHT_DIRECTION } from "./core/lighting.js";
+import { LIGHT_DIRECTION, litPigment } from "./core/lighting.js";
 import {
   WIND_ROSE_NAMES,
   cartoucheInscription,
@@ -28,17 +28,17 @@ import {
   waxDrops,
 } from "./core/chart-decor.js";
 import { createRadialStamp } from "./radial-stamp.js";
-import { drawPortMiniature } from "./port-miniatures.js";
+import { weatherAppearance } from "./core/weather.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
   terrainPalette,
-} from "./terrain-rendering.js?v=2";
+} from "./terrain-rendering.js?v=3";
 export {
   drawMerchantShip,
   drawShip,
   shipDrawProfile,
-} from "./ship-rendering.js?v=3";
+} from "./ship-rendering.js?v=4";
 import {
   lands,
   ports,
@@ -216,6 +216,76 @@ let cloudStyleCloud = -1;
 let cloudStyleStorm = -1;
 let cloudShadowStamp;
 const fogBankStamps = [];
+let stormFrontStamp;
+let sunbreakStamp;
+let sunbeamStamp;
+
+function drawStormFront(c, front, windAngle, vw, vh, time) {
+  if (!front || front.storm <= 0.01 || front.cloud <= 0.01) return;
+  stormFrontStamp ||= createRadialStamp({
+    size: 256,
+    stops: [
+      [0, "rgba(25,39,59,1)"],
+      [0.55, "rgba(38,52,68,.65)"],
+      [1, "rgba(38,52,68,0)"],
+    ],
+  });
+  const span = Math.hypot(vw, vh);
+  c.save();
+  c.translate(vw / 2, vh / 2);
+  c.rotate(windAngle);
+  c.globalAlpha *= front.cloud * front.storm * 0.24;
+  // One connected bank advances from the windward edge. Uneven scallops and
+  // a broad transparent falloff leave a readable clear side of the front.
+  const advance = -span * (0.72 - front.storm * 0.65);
+  for (let i = 0; i < 6; i++) {
+    const drift = Math.sin(time * 0.00012 + i * 1.7) * 22;
+    const radius = span * (0.42 + weatherRand(i, 91) * 0.1);
+    c.drawImage(
+      stormFrontStamp,
+      advance + drift - radius,
+      (i / 5 - 0.5) * span - radius * 0.65,
+      radius * 2,
+      radius * 1.3,
+    );
+  }
+  c.restore();
+}
+
+function drawSunbreak(c, strength, daylight, vw, vh, time) {
+  const light = strength * daylight;
+  if (light <= 0.01) return;
+  sunbreakStamp ||= createRadialStamp({
+    size: 256,
+    stops: [
+      [0, "rgba(255,234,171,1)"],
+      [0.5, "rgba(255,238,192,.35)"],
+      [1, "rgba(255,238,192,0)"],
+    ],
+  });
+  sunbeamStamp ||= createRadialStamp({
+    size: 256,
+    stops: [
+      [0, "rgba(255,241,193,1)"],
+      [0.5, "rgba(255,241,193,.6)"],
+      [1, "rgba(255,241,193,0)"],
+    ],
+  });
+  c.save();
+  c.globalCompositeOperation = "screen";
+  c.globalAlpha *= light * 0.28;
+  const opening = vw * 0.68 + Math.sin(time * 0.00008) * vw * 0.025;
+  for (let i = 0; i < 3; i++) {
+    // Stretched falloffs give each shaft soft edges and a tapered end.
+    c.save();
+    c.translate(opening + (i - 1) * vw * 0.16 - vw * 0.2, vh * 0.46);
+    c.rotate(Math.atan2(vw * (0.28 + i * 0.035), vh));
+    c.drawImage(sunbeamStamp, -vw * 0.055, -vh * 0.85, vw * 0.11, vh * 1.7);
+    c.restore();
+  }
+  c.drawImage(sunbreakStamp, opening - vw * 0.65, -vh * 0.2, vw, vh * 1.4);
+  c.restore();
+}
 
 function drawWeatherClouds(
   c,
@@ -363,7 +433,7 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   if (fog <= 0.01) return;
   c.save();
   // Flat wash mutes the whole scene into murk.
-  c.fillStyle = `rgba(216,220,224,${0.05 + fog * 0.09})`;
+  c.fillStyle = `rgba(216,220,224,${fog * 0.045})`;
   c.fillRect(0, 0, vw, vh);
   // Close-in edge fog so the horizon feels swallowed by the mist.
   const cx = vw / 2;
@@ -493,7 +563,7 @@ function drawDirectionalFog(
 
 function drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time) {
   if (rain <= 0.01) return;
-  const count = Math.round(50 + rain * 280);
+  const count = Math.round(rain * 330);
   const slant = Math.cos(windAngle) * (6 + windStrength * 7 + rain * 6);
   const len = 11 + rain * 16;
   const fall = 0.55 + rain * 1.1;
@@ -569,25 +639,10 @@ const weatherCache = {
       return this.cachedResult;
     }
 
-    const lower = (name || "").toLowerCase();
-    const storm = clamp01((roughness - 0.2) / 0.28);
-    let nameFog = 0;
-    if (/mist/.test(lower)) nameFog = 0.62;
-    if (/fog/.test(lower)) nameFog = Math.max(nameFog, 0.82);
-    if (/haze/.test(lower)) nameFog = Math.max(nameFog, 0.26);
-    const visFog =
-      visibilityKm == null ? 0 : clamp01((7.5 - visibilityKm) / 5.5);
-    const fog = Math.max(nameFog, visFog);
-    const cloud = clamp01(
-      (/(cloud|overcast|haze)/.test(lower) ? 0.5 : 0) + storm * 0.6,
-    );
-    const rain = clamp01(storm + (/rain/.test(lower) ? 0.4 : 0));
-    const lightning = clamp01((storm - 0.45) / 0.2);
-
     this.lastName = name;
     this.lastRoughness = roughness;
     this.lastVisibilityKm = visibilityKm;
-    this.cachedResult = { storm, fog, cloud, rain, lightning };
+    this.cachedResult = weatherAppearance({ name, roughness, visibilityKm });
 
     return this.cachedResult;
   },
@@ -601,14 +656,22 @@ export function drawWeatherEffects(c, opts) {
   const visibilityKm = opts.visibilityKm;
   const vw = opts.vw;
   const vh = opts.vh;
-  const time = opts.time || 0;
+  const time = opts.reducedMotion ? 0 : opts.time || 0;
   const windAngle = opts.windAngle || 0;
   const windStrength = opts.windStrength || 0;
   const aheadVisibilityKm = opts.aheadVisibilityKm;
   const asternVisibilityKm = opts.asternVisibilityKm;
   const headingAngle = opts.headingAngle || 0;
 
-  const weather = weatherCache.calculate(opts.name, roughness, visibilityKm);
+  let weather =
+    opts.front ?? weatherCache.calculate(opts.name, roughness, visibilityKm);
+  // A named squall zone still takes precedence over a distant fair-weather front.
+  if (opts.front && opts.name === "Squall waters") {
+    const local = weatherCache.calculate(opts.name, roughness, visibilityKm);
+    weather = { ...weather, sunbreak: 0 };
+    for (const channel of ["storm", "cloud", "rain", "lightning"])
+      weather[channel] = Math.max(weather[channel], local[channel]);
+  }
   const { storm, fog, cloud, rain, lightning } = weather;
 
   if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
@@ -622,6 +685,7 @@ export function drawWeatherEffects(c, opts) {
   }
 
   drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time);
+  drawStormFront(c, weather, windAngle, vw, vh, time);
   drawWeatherClouds(c, cloud, storm, windAngle, windStrength, vw, vh, time);
   drawWeatherFog(c, fog, vw, vh, time);
   drawDirectionalFog(
@@ -634,6 +698,7 @@ export function drawWeatherEffects(c, opts) {
   );
   drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
   drawRainImpacts(c, rain, vw, vh, time);
+  drawSunbreak(c, weather.sunbreak || 0, opts.daylight ?? 1, vw, vh, time);
   // A frozen animation clock must not leave a lightning flash stuck on screen.
   drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
 }
@@ -725,13 +790,8 @@ export function createMapRendering({
         c.stroke();
       }
       c.restore();
-      for (const offset of [-WORLD.w, 0, WORLD.w]) {
-        c.save();
-        c.translate(placement.x - p.x + offset, placement.y - p.y);
-        c.scale(placement.scale, placement.scale);
-        drawPortMiniature(c, p.name, evolution, placement.heading);
-        c.restore();
-      }
+      // Cached architectural plates are drawn with the live trade world so
+      // investment and crises update the skyline without rebaking the atlas.
     }
     c.strokeStyle = "#291b10";
     c.fillStyle = "#a83f2f";
@@ -1219,9 +1279,9 @@ export function createMapRendering({
     const base = c.createLinearGradient(0, 0, 0, WORLD.h);
     // Desaturated verdigris pigment, with the same paper grain and engraved
     // marks as the land. The sea reads as a watercolor wash on the atlas.
-    base.addColorStop(0, "#b9c7af");
-    base.addColorStop(0.5, "#93afa2");
-    base.addColorStop(1, "#78998e");
+    base.addColorStop(0, "#a6bfad");
+    base.addColorStop(0.5, "#729f98");
+    base.addColorStop(1, "#527f7d");
     c.fillStyle = base;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
     const rnd = seeded(9917);
@@ -1475,8 +1535,8 @@ export function createMapRendering({
         m.translate(x + offset, y);
         m.scale(1, verticalScale);
         const wash = m.createRadialGradient(0, 0, 10, 0, 0, radius);
-        wash.addColorStop(0, "rgba(28,75,86,.17)");
-        wash.addColorStop(0.48, "rgba(40,94,97,.08)");
+        wash.addColorStop(0, "rgba(18,57,77,.32)");
+        wash.addColorStop(0.48, "rgba(27,76,89,.17)");
         wash.addColorStop(1, "rgba(40,94,97,0)");
         m.fillStyle = wash;
         m.beginPath();
@@ -1661,12 +1721,12 @@ export function createMapRendering({
       // Layered shallow-water pigment and an ivory tide line sit underneath
       // the engraved coast and raised cliffs. Built once, not each frame.
       for (const [width, color] of [
-        [155, "rgba(40,86,91,.055)"],
-        [107, "rgba(43,107,106,.085)"],
-        [62, "rgba(50,110,100,.08)"],
-        [42, "rgba(195,210,164,.16)"],
-        [25, "rgba(220,224,178,.24)"],
-        [12, "rgba(249,234,188,.45)"],
+        [180, "rgba(24,74,85,.10)"],
+        [124, "rgba(40,130,127,.17)"],
+        [78, "rgba(89,171,151,.25)"],
+        [46, "rgba(151,200,160,.28)"],
+        [25, "rgba(217,226,176,.37)"],
+        [10, "rgba(255,241,199,.65)"],
       ]) {
         drawWrappedPolyPath(
           m,
@@ -1681,7 +1741,7 @@ export function createMapRendering({
             m.stroke();
             m.restore();
           },
-          70,
+          100,
         );
       }
       for (const off of [22, 14, 7]) {
@@ -1699,9 +1759,10 @@ export function createMapRendering({
         l.poly,
         (poly) => {
           m.save();
-          m.shadowColor = "rgba(35,22,10,.46)";
-          m.shadowBlur = 12;
-          m.shadowOffsetY = 4;
+          m.shadowColor = "rgba(23,37,29,.58)";
+          m.shadowBlur = 14;
+          m.shadowOffsetX = -LIGHT_DIRECTION.x * coastDepth * 0.65;
+          m.shadowOffsetY = -LIGHT_DIRECTION.y * coastDepth * 0.65;
           m.translate(0, coastDepth);
           polyPath(m, poly);
           m.fillStyle = "#5e4629";
@@ -1725,7 +1786,11 @@ export function createMapRendering({
             m.lineTo(b[0], b[1] + coastDepth);
             m.lineTo(a[0], a[1] + coastDepth);
             m.closePath();
-            m.fillStyle = b[1] > a[1] ? "#a38354" : "#80613e";
+            m.fillStyle = litPigment("#b49463", [
+              (b[1] - a[1]) * facing,
+              -(b[0] - a[0]) * facing,
+              0,
+            ]);
             m.fill();
             m.save();
             m.clip();
@@ -1738,7 +1803,7 @@ export function createMapRendering({
               m.lineTo(b[0], b[1] + coastDepth * layer);
               m.stroke();
             }
-            m.strokeStyle = "rgba(45,35,25,.28)";
+            m.strokeStyle = "rgba(36,30,24,.42)";
             m.lineWidth = 1;
             for (let step = 8; step < length; step += 13) {
               const t = step / length;
@@ -1778,6 +1843,33 @@ export function createMapRendering({
           m.fillStyle = tint;
           m.fill();
         }
+        // An inset lit rim and a shaded rim read as a raised paper relief.
+        // Clipping leaves the sea's foam and shelf colors unobstructed.
+        m.save();
+        polyPath(m, poly);
+        m.clip();
+        let area = 0;
+        poly.forEach(([x, y], i) => {
+          const next = poly[(i + 1) % poly.length];
+          area += x * next[1] - next[0] * y;
+        });
+        const facing = Math.sign(area) || 1;
+        poly.forEach((a, i) => {
+          const b = poly[(i + 1) % poly.length];
+          const dx = b[0] - a[0],
+            dy = b[1] - a[1];
+          const light =
+            ((dy * LIGHT_DIRECTION.x - dx * LIGHT_DIRECTION.y) * facing) /
+            (Math.hypot(dx, dy) || 1);
+          m.strokeStyle =
+            light > 0 ? "rgba(255,238,184,.62)" : "rgba(64,47,27,.25)";
+          m.lineWidth = light > 0 ? 6 : 9;
+          m.beginPath();
+          m.moveTo(...a);
+          m.lineTo(...b);
+          m.stroke();
+        });
+        m.restore();
       });
 
       // land stipple and short hatching clipped to each island

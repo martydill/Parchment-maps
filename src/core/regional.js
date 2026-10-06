@@ -353,6 +353,7 @@ export function availableMarketGoods(regionalState, chains, allGoodKeys) {
 export function portEvolution(regionalState) {
   const investments = Object.values(regionalState.industries);
   return {
+    level: regionalState.infrastructure,
     cranes:
       regionalState.infrastructure >= 2 ||
       investments.some((industry) => industry.investment >= 2),

@@ -1,6 +1,8 @@
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
+import { LIGHT_DIRECTION, litPigment } from "./core/lighting.js";
+import { harborDevelopment, harborProfile } from "./core/harbors.js";
 
 const foundryGlowStyle = createAlphaPalette("249,148,68", 0.26, 0.38, 128);
 const foundrySparkStyle = createAlphaPalette("255,183,86", 0, 0.7, 128);
@@ -101,8 +103,44 @@ const SCENES = new Map([
   ],
 ]);
 
+// Every named harbor keeps its own palette and variation on the chart and in
+// its inspection artwork. Existing landmark cities supply the older templates.
+const templates = new Map(
+  [...SCENES.values()].map((scene) => [scene.kind, scene]),
+);
+for (const name of Object.values(PORT_NAMES)) {
+  const profile = harborProfile(name);
+  SCENES.set(name, { ...templates.get(profile.kind), ...profile });
+}
+
 export function hasPortMiniature(name) {
   return SCENES.has(name);
+}
+
+// Architecture is costly to trace, but changes only when the harbor develops.
+// Keep one transparent plate per port; live workers, flags and boats stay separate.
+export function createPortMiniatureCache() {
+  const plates = new Map();
+  return {
+    draw(c, name, evolution = {}, heading = DEFAULT_HEADING) {
+      if (!SCENES.has(name)) return false;
+      const key = JSON.stringify([heading, harborDevelopment(evolution)]);
+      let plate = plates.get(name);
+      if (!plate || plate.key !== key) {
+        const canvas = plate?.canvas ?? document.createElement("canvas");
+        canvas.width = 448;
+        canvas.height = 384;
+        const art = canvas.getContext("2d");
+        art.scale(2, 2);
+        art.translate(112, 136);
+        drawPortMiniature(art, name, evolution, heading);
+        plate = { key, canvas };
+        plates.set(name, plate);
+      }
+      c.drawImage(plate.canvas, -112, -136, 224, 192);
+      return true;
+    },
+  };
 }
 
 function point(u, v, height = 0) {
@@ -120,7 +158,20 @@ function face(c, vertices, fill, stroke = INK, width = 0.8) {
     else c.moveTo(x, y);
   });
   c.closePath();
-  c.fillStyle = fill;
+  const [a, b, d] = vertices;
+  const ab = b.map((value, index) => value - a[index]);
+  const ad = d.map((value, index) => value - a[index]);
+  const nx = ab[1] * ad[2] - ab[2] * ad[1];
+  const ny = ab[2] * ad[0] - ab[0] * ad[2];
+  const nz = ab[0] * ad[1] - ab[1] * ad[0];
+  // The miniature faces use both winding orders. Orient roofs upward and
+  // walls toward the camera before rotating their normals into map space.
+  const sign = nz ? Math.sign(nz) : Math.sign(nx * gridSin + ny * gridCos) || 1;
+  c.fillStyle = litPigment(fill, [
+    (nx * gridCos - ny * gridSin) * sign,
+    (nx * gridSin + ny * gridCos) * sign,
+    nz * sign,
+  ]);
   c.fill();
   if (stroke) {
     c.strokeStyle = stroke;
@@ -148,7 +199,7 @@ function halo(c) {
   c.beginPath();
   c.ellipse(0, -19, 78, 58, 0, 0, Math.PI * 2);
   c.fill();
-  c.fillStyle = "rgba(43,43,34,.17)";
+  c.fillStyle = "rgba(33,35,28,.24)";
   c.beginPath();
   c.ellipse(9, 8, 66, 16, -0.13, 0, Math.PI * 2);
   c.fill();
@@ -261,6 +312,32 @@ function building(c, scene, spec) {
     back = v - d / 2,
     front = v + d / 2;
   const top = z + h;
+  const shadowU =
+    -(LIGHT_DIRECTION.x * gridCos + LIGHT_DIRECTION.y * gridSin) * h * 0.65;
+  const shadowV =
+    -(-LIGHT_DIRECTION.x * gridSin + LIGHT_DIRECTION.y * gridCos) * h * 0.65;
+  face(
+    c,
+    [
+      [a, back, z],
+      [b, back, z],
+      [b + shadowU, front + shadowV, z],
+      [a + shadowU, front + shadowV, z],
+    ],
+    "rgba(32,32,26,.19)",
+    null,
+  );
+  face(
+    c,
+    [
+      [a - 1, back - 1, z],
+      [b + 1, back - 1, z],
+      [b + 1, front + 2, z],
+      [a - 1, front + 2, z],
+    ],
+    "rgba(29,28,23,.22)",
+    null,
+  );
   face(
     c,
     [
@@ -913,6 +990,255 @@ function drawWindmillCity(c, scene) {
   cargo(c, 21, 10, 2);
 }
 
+function palm(c, u, v, h = 40) {
+  line(c, [u, v, 5], [u + 3, v, h], "#71583b", 2.2);
+  const [x, y] = point(u + 3, v, h);
+  c.strokeStyle = "#536e48";
+  c.lineWidth = 3;
+  for (let leaf = -2; leaf <= 2; leaf++) {
+    c.beginPath();
+    c.moveTo(x, y);
+    c.quadraticCurveTo(x + leaf * 8, y - 9, x + leaf * 11, y + 8);
+    c.stroke();
+  }
+}
+
+function drawCanalCity(c, scene) {
+  // Three islands joined by arched bridges make a different skyline from a
+  // solid quay. The blue channels remain visible between the roof clusters.
+  for (const u of [-39, 0, 39]) {
+    terrace(c, u, -8, 29, 43, -4, 5, scene.ground, scene.side);
+    for (const v of [-23, -3])
+      building(c, scene, {
+        u: u + (v < -10 ? -2 : 2),
+        v,
+        w: 19,
+        d: 14,
+        h: 26 + ((scene.variant * 3 + u + 39) % 13),
+        windows: 2,
+      });
+  }
+  for (const u of [-20, 20]) {
+    face(
+      c,
+      [
+        [u - 7, 2, 6],
+        [u + 7, 2, 6],
+        [u + 7, 10, 6],
+        [u - 7, 10, 6],
+      ],
+      scene.wall,
+    );
+    const [x, y] = point(u, 10, 4);
+    c.strokeStyle = scene.side;
+    c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(x - 7, y + 2);
+    c.quadraticCurveTo(x, y - 6, x + 7, y + 2);
+    c.stroke();
+  }
+  frustum(c, 0, -28, 5, 70, 9, 7, [scene.wall, scene.side]);
+  cone(c, 0, -28, 9, 70, 17, scene.roof);
+  for (const u of [-47, 47]) pier(c, u, 24, 10, 20, "#827356");
+  for (const u of [-35, 4, 36]) awning(c, u, 6, 12, 20, "#668888");
+}
+
+function drawFishingVillage(c, scene) {
+  landform(
+    c,
+    [
+      [-61, 8],
+      [-53, -25],
+      [-10, -34],
+      [48, -23],
+      [62, 13],
+    ],
+    -5,
+    7,
+    scene.ground,
+    scene.side,
+  );
+  for (const [u, v, h] of [
+    [-42, -10, 21],
+    [-19, -20, 29],
+    [7, -20, 34],
+    [37, -11, 24],
+  ])
+    building(c, scene, {
+      u,
+      v,
+      w: 19,
+      d: 16,
+      h: h + scene.variant * 2,
+      z: 7,
+      windows: 1,
+    });
+  // Tall drying racks, ropes, and nets identify the working waterfront.
+  for (const u of [-42, 0, 42]) {
+    pier(c, u, 26, 11, 32, "#778078");
+    line(c, [u - 8, 10, 7], [u - 8, 10, 35], "#594c3e", 1.4);
+    line(c, [u + 8, 10, 7], [u + 8, 10, 35], "#594c3e", 1.4);
+    line(c, [u - 8, 10, 35], [u + 8, 10, 35], "#665849", 1);
+    for (let thread = -6; thread <= 6; thread += 3) {
+      line(
+        c,
+        [u + thread, 10, 32],
+        [u + thread + 2, 10, 14],
+        "rgba(51,67,64,.55)",
+        0.6,
+      );
+      line(
+        c,
+        [u - 6, 10, 17 + thread],
+        [u + 6, 10, 17 + thread],
+        "rgba(51,67,64,.4)",
+        0.6,
+      );
+    }
+  }
+  frustum(c, -49, -27, 7, 62 + scene.variant * 3, 7, 5, [
+    scene.wall,
+    scene.side,
+  ]);
+  cone(c, -49, -27, 7, 62 + scene.variant * 3, 8, scene.roof);
+}
+
+function drawReedVillage(c, scene) {
+  for (const [u, v] of [
+    [-44, -12],
+    [-20, -24],
+    [10, -25],
+    [39, -10],
+    [-14, 5],
+    [21, 7],
+  ]) {
+    for (const side of [-1, 1])
+      line(
+        c,
+        [u + side * 6, v + 5, -4],
+        [u + side * 6, v + 5, 13],
+        "#5e6247",
+        1.8,
+      );
+    terrace(c, u, v, 18, 16, 9, 13, "#8f9166", "#626747");
+    building(c, scene, {
+      u,
+      v,
+      w: 15,
+      d: 13,
+      h: 15 + scene.variant * 3,
+      z: 13,
+      windows: 1,
+    });
+  }
+  terrace(c, 0, 17, 109, 6, 1, 5, "#9d9468", "#686344");
+  pier(c, 0, 33, 9, 28, "#85835d");
+  for (const u of [-58, -32, 32, 58])
+    for (let reed = 0; reed < 4; reed++) {
+      line(
+        c,
+        [u + reed * 2, 14, -1],
+        [u + reed * 2 - 2, 14, 12 + (reed % 2) * 5],
+        "#69724b",
+        0.8,
+      );
+      line(
+        c,
+        [u + reed * 2 - 2, 14, 12],
+        [u + reed * 2 - 2, 14, 16],
+        "#806e44",
+        1.8,
+      );
+    }
+  frustum(c, 0, -34, 5, 48, 7, 5, [scene.wall, scene.side]);
+  cone(c, 0, -34, 12, 48, 12, scene.roof);
+}
+
+function drawTropicalMarket(c, scene) {
+  landform(
+    c,
+    [
+      [-62, 12],
+      [-55, -22],
+      [-15, -34],
+      [46, -24],
+      [63, 13],
+    ],
+    -4,
+    5,
+    scene.ground,
+    "#978459",
+  );
+  for (const [u, v, h] of [
+    [-38, -18, 28],
+    [-12, -25, 34],
+    [15, -21, 29],
+    [40, -15, 26],
+  ])
+    building(c, scene, {
+      u,
+      v,
+      w: 20,
+      d: 16,
+      h: h + scene.variant * 3,
+      windows: 2,
+    });
+  frustum(c, 0, -30, 5, 68, 10, 8, [scene.wall, scene.side]);
+  cone(c, 0, -30, 12, 68, 16, "#4f8583");
+  for (const [u, color] of [
+    [-43, "#ae5b43"],
+    [-21, "#577e7b"],
+    [5, "#c79b51"],
+    [29, "#79618a"],
+  ]) {
+    awning(c, u, 6, 17, 23, color);
+    cargo(c, u - 4, 13, 2);
+  }
+  palm(c, -57, -20, 45);
+  palm(c, 57, -15, 48);
+  for (const u of [-38, 0, 38]) pier(c, u, 27, 10, 27, "#997449");
+}
+
+function drawMonastery(c, scene) {
+  landform(
+    c,
+    [
+      [-58, 12],
+      [-60, -12],
+      [-28, -33],
+      [37, -31],
+      [62, 12],
+    ],
+    -9,
+    17,
+    scene.ground,
+    scene.side,
+  );
+  terrace(c, 0, -12, 95, 39, 17, 25, scene.wall, scene.side);
+  for (const u of [-31, 31])
+    building(c, scene, { u, v: -13, w: 22, d: 29, h: 28, z: 25, windows: 3 });
+  building(c, scene, { u: 0, v: -22, w: 30, d: 23, h: 41, z: 25, windows: 2 });
+  frustum(c, 0, -25, 66, 93, 8, 6, [scene.wall, scene.side]);
+  cone(c, 0, -25, 9, 93, 18, scene.roof);
+  for (let step = 0; step < 7; step++)
+    terrace(
+      c,
+      0,
+      11 + step * 3,
+      24,
+      4,
+      2,
+      25 - step * 3,
+      scene.wall,
+      scene.side,
+    );
+  for (const u of [-49, 49]) {
+    frustum(c, u, -24, 17, 52, 5, 4, ["#4e6b4a", "#79906a"]);
+    cone(c, u, -24, 7, 52, 17, "#526f4c");
+  }
+  pier(c, 0, 36, 20, 20, "#96835f");
+}
+
 export function drawPortMiniature(
   c,
   name,
@@ -944,12 +1270,34 @@ export function drawPortMiniature(
     case "windmills":
       drawWindmillCity(c, scene);
       break;
+    case "canals":
+      drawCanalCity(c, scene);
+      break;
+    case "fishing":
+      drawFishingVillage(c, scene);
+      break;
+    case "marsh":
+      drawReedVillage(c, scene);
+      break;
+    case "tropical":
+      drawTropicalMarket(c, scene);
+      break;
+    case "monastery":
+      drawMonastery(c, scene);
+      break;
   }
-  if (evolution.warehouses)
+  const development = harborDevelopment(evolution);
+  for (let dock = 0; dock < development.docks; dock++)
+    pier(c, -51 + dock * 51, 31, 9, 26 + dock * 4, scene.side);
+  cargo(c, -31, 14, Math.ceil(development.cargo / 2));
+  cargo(c, 28, 14, Math.floor(development.cargo / 2));
+  if (development.warehouses)
     building(c, scene, { u: 62, v: 5, w: 13, d: 11, h: 21, windows: 1 });
-  if (evolution.cranes) crane(c, 61, 12, 36);
-  if (evolution.foundries) chimney(c, scene, -62, -9, 42);
-  if (evolution.fortifications) battlement(c, scene, -62, 0, 12, 14, 5, 18);
+  if (development.cranes) crane(c, 61, 12, 36);
+  if (development.foundries) chimney(c, scene, -62, -9, 42);
+  if (development.fortifications) battlement(c, scene, -62, 0, 12, 14, 5, 18);
+  if (development.level >= 3)
+    building(c, scene, { u: -57, v: -14, w: 13, d: 14, h: 38, windows: 2 });
   c.restore();
   return true;
 }
@@ -1001,13 +1349,49 @@ export function drawPortActivity(
   zoom,
   windAngle = 0,
   heading = DEFAULT_HEADING,
+  evolution = {},
 ) {
   const scene = SCENES.get(name);
   if (!scene || zoom < 1.08) return;
   setGridHeading(heading);
   const seconds = time / 1000;
+  const development = harborDevelopment(evolution);
   c.save();
   c.lineJoin = "round";
+  // Workers walk between the market and the quays. Prosperity changes the
+  // crowd density, while distressed harbors keep only a small working crew.
+  for (let worker = 0; worker < development.workers; worker++) {
+    const u =
+      -41 +
+      (worker * 83) / development.workers +
+      Math.sin(seconds * 0.45 + worker * 2.4) * 4;
+    const v = 9 + (worker % 2) * 5;
+    const [x, y] = point(u, v, 10);
+    c.fillStyle = worker % 3 ? "#4b5145" : "#9c6045";
+    c.fillRect(x - 1, y - 3, 2, 4);
+    c.fillStyle = "#d9bd8c";
+    c.beginPath();
+    c.arc(x, y - 4, 1.15, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = "#494033";
+    c.lineWidth = 0.7;
+    c.beginPath();
+    c.moveTo(x - 1, y + 1);
+    c.lineTo(x + Math.sin(seconds * 2 + worker), y + 3);
+    c.stroke();
+  }
+  if (["canals", "tropical", "quays"].includes(scene.kind)) {
+    for (let pennant = 0; pennant < 5; pennant++) {
+      const [x, y] = point(-38 + pennant * 19, 5, 29);
+      c.fillStyle = ["#aa5844", "#5b7e79", "#c69b52"][pennant % 3];
+      c.beginPath();
+      c.moveTo(x - 3, y);
+      c.lineTo(x + 3, y);
+      c.lineTo(x + Math.sin(seconds * 2 + pennant) * 2, y + 7);
+      c.closePath();
+      c.fill();
+    }
+  }
   if (scene.kind === "lighthouse") {
     const [x, y] = point(9, -17, 100);
     const glow = c.createRadialGradient(x, y, 1, x, y, 28);
@@ -1095,7 +1479,11 @@ export function drawPortActivity(
   const wind = Math.cos(windAngle) >= 0 ? 1 : -1;
   const flutter = Math.sin(seconds * 3 + fu) * 1.4;
   line(c, [fu, fv, fz - 15], [fu, fv, fz + 4], "#3e3025", 1.1);
-  c.fillStyle = "#a74836";
+  c.fillStyle = development.crisis
+    ? "#75664d"
+    : scene.kind === "monastery"
+      ? "#eee2bc"
+      : "#a74836";
   c.strokeStyle = "#493429";
   c.lineWidth = 0.7;
   c.beginPath();
@@ -1136,15 +1524,20 @@ export function drawHarborBoats(
   outwardX,
   outwardY,
   heading = DEFAULT_HEADING,
+  evolution = {},
 ) {
   if (!SCENES.has(name) || zoom < 1.08) return;
   setGridHeading(heading);
   const seconds = time / 1000;
   c.save();
   c.scale(0.75, 0.75);
-  for (const side of [-1, 1]) {
-    const x = outwardX * 9 - outwardY * side * 19;
-    const y = outwardY * 9 + outwardX * side * 19;
+  const development = harborDevelopment(evolution);
+  for (let index = 0; index < development.boats; index++) {
+    const side = index % 2 ? 1 : -1;
+    const x =
+      outwardX * (9 + Math.floor(index / 2) * 18) - outwardY * side * 19;
+    const y =
+      outwardY * (9 + Math.floor(index / 2) * 18) + outwardX * side * 19;
     const u = x * gridCos + y * gridSin;
     const v = -x * gridSin + y * gridCos;
     harborBoat(c, u, v, seconds, side * 1.2, windAngle);

@@ -53,6 +53,37 @@ export function sceneLighting(timeOfDay = 0.5, roughness = 0, day = 1) {
   };
 }
 
+// Shared relief lighting for ship faces, masonry, and raised coastlines. A
+// stronger diffuse response separates sunlit planes from their shaded sides.
+export function litPigment(color, normal, lighting = sceneLighting()) {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const length = Math.hypot(...normal);
+  const diffuse =
+    Number.isFinite(length) && length > 0
+      ? clamp01(
+          (normal[0] * LIGHT_DIRECTION.x +
+            normal[1] * LIGHT_DIRECTION.y +
+            normal[2] * LIGHT_DIRECTION.z) /
+            length,
+        )
+      : 0;
+  const light = 0.68 + diffuse * 0.62 * lighting.strength;
+  const tint = [
+    1 + lighting.dusk * 0.08 - lighting.storm * 0.08,
+    1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
+    1 - lighting.dusk * 0.09 + lighting.storm * 0.06,
+  ];
+  const channels = [1, 3, 5].map((offset, index) =>
+    Math.min(
+      255,
+      Math.round(
+        parseInt(color.slice(offset, offset + 2), 16) * light * tint[index],
+      ),
+    ),
+  );
+  return `rgb(${channels.join(",")})`;
+}
+
 export function nightSightLimit(lighting, weatherVisibilityKm) {
   const weather = Math.max(0, Number(weatherVisibilityKm) || 0);
   const nocturnal = 1.7 + lighting.moon * 1.6;

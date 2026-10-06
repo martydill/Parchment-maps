@@ -1,7 +1,7 @@
 import { sampleShipMotion } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
-import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
+import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
 import { createAlphaPalette } from "./style-palette.js";
 
 export { getShipModelProfile as shipDrawProfile } from "./core/ship-models.js";
@@ -10,10 +10,11 @@ const bowWaterStyle = createAlphaPalette("35,88,86", 0, 0.16, 128);
 const bowFoamStyle = createAlphaPalette("255,247,213", 0, 0.24, 128);
 const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
 const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
+const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
 const CONTACT_SHADOWS = [
-  [1.35, "rgba(29,52,42,0.035)"],
-  [1.16, "rgba(29,52,42,0.06)"],
-  [1, "rgba(29,52,42,0.13)"],
+  [1.45, "rgba(21,47,43,0.045)"],
+  [1.2, "rgba(21,47,43,0.085)"],
+  [1, "rgba(18,39,35,0.22)"],
 ];
 
 const HULL_STATIONS = Object.freeze([
@@ -186,31 +187,6 @@ function boxFaces(x1, x2, y1, y2, z1, z2, colors = {}) {
   ];
 }
 
-function lightInk(color, normal, lighting) {
-  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
-  const facingLight = Math.max(
-    0,
-    normal[0] * LIGHT_DIRECTION.x +
-      normal[1] * LIGHT_DIRECTION.y +
-      normal[2] * LIGHT_DIRECTION.z,
-  );
-  const light = 0.79 + facingLight * 0.28 * lighting.strength;
-  const tint = [
-    1 + lighting.dusk * 0.06 - lighting.storm * 0.08,
-    1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
-    1 - lighting.dusk * 0.07 + lighting.storm * 0.06,
-  ];
-  const channels = [1, 3, 5].map((offset, index) =>
-    Math.min(
-      255,
-      Math.round(
-        parseInt(color.slice(offset, offset + 2), 16) * light * tint[index],
-      ),
-    ),
-  );
-  return `rgb(${channels.join(",")})`;
-}
-
 function worldFace(face, heading, order, motion, lighting) {
   const vertices = face.vertices.map((vertex) =>
     rotatePoint(vertex, heading, motion),
@@ -236,7 +212,7 @@ function worldFace(face, heading, order, motion, lighting) {
     ) / vertices.length;
   return {
     ...face,
-    fill: lightInk(face.fill, normal, lighting),
+    fill: litPigment(face.fill, normal, lighting),
     projected: vertices.map((point) => [
       point.x,
       point.y - point.z * MAP_TILT_TAN,
@@ -543,6 +519,35 @@ function drawHullWater(c, profile, motion, heading, z) {
         0.5 + spread * 0.4,
         0.35 + spread * 0.2,
         0,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+    }
+    c.strokeStyle = bowSprayStyle(strength * 0.55);
+    c.lineWidth = (0.8 + strength * 0.5) / z;
+    c.beginPath();
+    c.moveTo(side * beam * 0.24, -length * 0.52);
+    c.bezierCurveTo(
+      side * beam * 0.85,
+      -length * 0.54,
+      side * (beam + 5 * strength),
+      -length * 0.4,
+      side * (beam + 7 * strength),
+      -length * 0.24,
+    );
+    c.stroke();
+    for (let drop = 0; drop < 5; drop++) {
+      const spread = drop / 5;
+      const lift = Math.abs(motion.heave) * 0.8;
+      c.fillStyle = bowSprayStyle(strength * (0.48 - spread * 0.3));
+      c.beginPath();
+      c.ellipse(
+        side * (beam * 0.7 + spread * strength * 10 + motion.flutter * 0.4),
+        -length * (0.48 - spread * 0.2) - lift * (1 - spread),
+        (0.65 + strength * 0.5) * (1 - spread * 0.5),
+        0.45 + strength * 0.4,
+        heading * 0.12,
         0,
         Math.PI * 2,
       );

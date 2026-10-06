@@ -106,6 +106,7 @@ test("investment changes markets, port artwork, fees, and creates a named magnat
     true,
   );
   assert.equal(portEvolution(regional).warehouses, true);
+  assert.equal(portEvolution(regional).level, regional.infrastructure);
   investInIndustry(regional, "forge", 500, "Forgeport");
   assert.equal(portEvolution(regional).cranes, true);
   investInIndustry(regional, "forge", 500, "Forgeport");

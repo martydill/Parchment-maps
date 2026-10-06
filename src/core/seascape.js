@@ -43,6 +43,20 @@ export function sampleLighthouse(time, index) {
   };
 }
 
+// Broken reflection bands share a deterministic clock, with wider distortion
+// and less coherent light on rough water. Call with zero time for reduced motion.
+export function sampleWaterReflection(time = 0, index = 0, roughness = 0) {
+  const t = Number.isFinite(time) ? time : 0;
+  const row = Number.isFinite(index) ? index : 0;
+  const sea = Number.isFinite(roughness) ? clamp(roughness, 0, 1) : 0;
+  const phase = row * 2.399963;
+  return {
+    offset: Math.sin(t * 1.8 + phase) * (1.2 + sea * 3.8),
+    width: 0.55 + (Math.sin(t * 1.1 + phase) + 1) * 0.2,
+    alpha: (0.42 + (Math.sin(t * 1.5 + phase) + 1) * 0.29) * (1 - sea * 0.55),
+  };
+}
+
 export function sampleSeaLife(time, index) {
   const phase = (((time + index * 2.7) % 22) + 22) % 22;
   const visible = phase < 11;

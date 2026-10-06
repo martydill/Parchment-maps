@@ -367,3 +367,144 @@ test("wave buffers discard old marks when the viewport shrinks or becomes empty"
   assert.equal(render({ camera: { x: 500, y: 4000, zoom: 1 } }).length, 0);
   assert.deepEqual(render({ vw: 100, vh: 100 }), small);
 });
+
+const reflectionSources = {
+  vessels: [{ x: 500, y: 400, vesselClass: "brig", angle: 0.4, scale: 1.82 }],
+  lamps: [{ x: 510, y: 420, index: 2 }],
+  lighting: { daylight: 0, night: 1 },
+};
+
+test("reflections wrap with their sources and remain still for reduced motion", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const render = (overrides = {}) => {
+    const recording = recordingContext();
+    recording.context.globalAlpha = 0.4;
+    renderer.drawReflections(recording.context, {
+      ...options,
+      ...reflectionSources,
+      ...overrides,
+    });
+    assert.equal(recording.context.globalAlpha, 0.4);
+    assert.equal(
+      recording.calls.filter(([method]) => method === "save").length,
+      recording.calls.filter(([method]) => method === "restore").length,
+    );
+    assert.ok(
+      recording.calls
+        .flat()
+        .filter((value) => typeof value === "number")
+        .every(Number.isFinite),
+    );
+    return recording.calls;
+  };
+  const first = render({ time: 1000 });
+  assert.notDeepEqual(first, render({ time: 2000 }));
+  assert.deepEqual(
+    render({ time: 1000, reducedMotion: true }),
+    render({ time: 99000, reducedMotion: true }),
+  );
+  const wrapped = render({
+    time: 1000,
+    camera: { ...options.camera, x: 1500 },
+  });
+  const geometry = (calls) =>
+    calls.filter(([method]) => method !== "translate");
+  assert.deepEqual(geometry(first), geometry(wrapped));
+  assert.ok(
+    wrapped.some(([method, x]) => method === "translate" && x === 1500),
+  );
+});
+
+test("reflections cull distant sources and keep harbor light out of daylight", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const render = (sources) => {
+    const recording = recordingContext();
+    renderer.drawReflections(recording.context, { ...options, ...sources });
+    return recording.calls;
+  };
+  assert.deepEqual(render({}), []);
+  const distant = render({
+    ...reflectionSources,
+    vessels: [{ x: 500, y: 1400 }],
+    lamps: [{ x: 500, y: 1400 }],
+  });
+  assert.ok(
+    !distant.some(([method]) => method === "fill" || method === "stroke"),
+  );
+  const daylight = render({ lamps: reflectionSources.lamps });
+  assert.ok(!daylight.some(([method]) => method === "stroke"));
+  assert.ok(
+    render({ vessels: [{ x: 500, y: 400, vesselClass: "dhow" }] }).some(
+      ([method]) => method === "fill",
+    ),
+  );
+});
+
+test("reflection and wake layers clip out wrapped land and raised cliff faces", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    rect() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+  };
+  try {
+    const renderer = createSeaRendering({
+      WORLD: { w: 1000, h: 800 },
+      lands: [
+        {
+          poly: [
+            [950, 300],
+            [1050, 300],
+            [1050, 500],
+            [950, 500],
+          ],
+        },
+      ],
+    });
+    const recording = recordingContext();
+    renderer.drawReflections(recording.context, {
+      ...options,
+      ...reflectionSources,
+      camera: { x: 0, y: 400, zoom: 1 },
+      vessels: [{ x: 0, y: 400 }],
+    });
+    const masks = recording.calls.filter(
+      ([method, , rule]) => method === "clip" && rule === "evenodd",
+    );
+    assert.equal(masks.length, 2);
+    assert.ok(
+      recording.calls.some(
+        ([method, x]) => method === "translate" && x === -1000,
+      ),
+    );
+    const wake = recordingContext();
+    renderer.drawWake(
+      wake.context,
+      [
+        { x: 990, y: 520, time: 9500, strength: 1 },
+        { x: 10, y: 540, time: 9000, strength: 1 },
+      ],
+      10000,
+      { x: 0, y: 400, zoom: 1 },
+      300,
+      200,
+    );
+    assert.equal(
+      wake.calls.filter(
+        ([method, , rule]) => method === "clip" && rule === "evenodd",
+      ).length,
+      2,
+    );
+    assert.ok(wake.calls.some(([method]) => method === "fill"));
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});

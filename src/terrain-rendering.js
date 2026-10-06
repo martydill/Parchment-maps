@@ -78,7 +78,7 @@ function drawRidge(c, { a, b, width }) {
   c.lineTo(b.x - LIGHT_DIRECTION.x * width, b.y - LIGHT_DIRECTION.y * width);
   c.lineTo(a.x - LIGHT_DIRECTION.x * width, a.y - LIGHT_DIRECTION.y * width);
   c.closePath();
-  c.fillStyle = "rgba(66,53,32,.18)";
+  c.fillStyle = "rgba(53,43,29,.28)";
   c.fill();
   c.strokeStyle = "rgba(62,48,28,.32)";
   c.lineWidth = 0.7;
@@ -101,7 +101,7 @@ function drawTree(c, tree, biome) {
   const palette = terrainPalette(biome);
   c.save();
   c.translate(x, y);
-  c.fillStyle = "rgba(38,43,27,.14)";
+  c.fillStyle = "rgba(26,38,25,.25)";
   c.beginPath();
   c.ellipse(
     -LIGHT_DIRECTION.x * s * 0.5,
@@ -112,6 +112,10 @@ function drawTree(c, tree, biome) {
     0,
     Math.PI * 2,
   );
+  c.fill();
+  c.fillStyle = "rgba(25,34,22,.26)";
+  c.beginPath();
+  c.ellipse(0, s * 0.13, s * 0.35, s * 0.13, 0, 0, Math.PI * 2);
   c.fill();
   c.strokeStyle = "rgba(46,43,28,.78)";
   c.lineWidth = 0.8;
@@ -191,7 +195,7 @@ function drawMountain(c, x, y, s, biome) {
   c.save();
   c.translate(x, y);
   const summit = -s * 0.08;
-  c.fillStyle = "rgba(35,29,22,.16)";
+  c.fillStyle = "rgba(32,30,23,.27)";
   c.beginPath();
   c.ellipse(
     -LIGHT_DIRECTION.x * s * 0.65,
@@ -203,7 +207,10 @@ function drawMountain(c, x, y, s, biome) {
     Math.PI * 2,
   );
   c.fill();
-  c.fillStyle = "rgba(209,190,140,.42)";
+  const litFace = c.createLinearGradient(-s * 0.7, -s, s * 0.1, s * 0.6);
+  litFace.addColorStop(0, "rgba(250,230,178,.82)");
+  litFace.addColorStop(1, "rgba(181,159,111,.48)");
+  c.fillStyle = litFace;
   c.beginPath();
   c.moveTo(-s, s * 0.58);
   c.lineTo(-s * 0.61, s * 0.03);
@@ -213,7 +220,10 @@ function drawMountain(c, x, y, s, biome) {
   c.lineTo(s * 0.08, s * 0.58);
   c.closePath();
   c.fill();
-  c.fillStyle = "rgba(64,54,37,.48)";
+  const shadedFace = c.createLinearGradient(0, -s, s, s * 0.6);
+  shadedFace.addColorStop(0, "rgba(88,76,53,.56)");
+  shadedFace.addColorStop(1, "rgba(45,40,30,.68)");
+  c.fillStyle = shadedFace;
   c.beginPath();
   c.moveTo(summit, -s);
   c.lineTo(s * 0.4, -s * 0.25);
@@ -353,7 +363,7 @@ export function drawTerrainIllustration(c, terrain) {
       hill.size * 0.8,
       -0.2,
       "54,46,28",
-      0.2,
+      0.29,
     );
     terrainWash(
       c,
@@ -363,7 +373,7 @@ export function drawTerrainIllustration(c, terrain) {
       hill.size * 0.6,
       -0.2,
       "235,215,159",
-      0.24,
+      0.34,
     );
     c.strokeStyle = "rgba(63,50,31,.27)";
     c.lineWidth = 1;

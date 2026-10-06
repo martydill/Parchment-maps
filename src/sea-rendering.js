@@ -11,16 +11,23 @@ import {
   sampleCreatureAppearance,
   sampleSeaLife,
   sampleShoreAnimal,
+  sampleWaterReflection,
 } from "./core/seascape.js";
+import { getShipModelProfile } from "./core/ship-models.js";
 
 const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
 // Finer opacity steps preserve the subtle response to daylight and storms.
-const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.35, 128);
-const surfStyle = createAlphaPalette("248,237,195", 0, 0.22);
-const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.396);
-const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.36);
-const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.27, 128);
-const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.322, 128);
+const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 128);
+const surfStyle = createAlphaPalette("248,237,195", 0, 0.35);
+const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.62);
+const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.52);
+const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
+const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
+const wakeBodyStyle = createAlphaPalette("26,87,86", 0, 0.14, 128);
+const reflectionHullStyle = createAlphaPalette("31,66,61", 0, 0.32, 128);
+const reflectionSailStyle = createAlphaPalette("244,224,177", 0, 0.38, 128);
+const reflectionLampStyle = createAlphaPalette("255,206,124", 0, 0.65, 128);
+const stormSeaStyle = createAlphaPalette("22,49,67", 0, 0.22, 128);
 const currentShadowStyles = Array.from(
   { length: 4 },
   (_, strength) => `rgba(38,104,107,${0.055 + strength * 0.009})`,
@@ -652,7 +659,17 @@ export function createSeaRendering({
 
   function drawSurface(
     c,
-    { camera, vw, vh, time, roughness, windAngle, reducedMotion, lighting },
+    {
+      camera,
+      vw,
+      vh,
+      time,
+      roughness,
+      windAngle,
+      reducedMotion,
+      lighting,
+      front,
+    },
   ) {
     const visible = visibleCoasts(camera, vw, vh);
     c.save();
@@ -662,6 +679,10 @@ export function createSeaRendering({
     const z = camera.zoom;
     const halfW = vw / (2 * z) + 100;
     const halfH = vh / (2 * z * MAP_TILT_COS) + 60;
+    if (front?.seaDarkness > 0.01) {
+      c.fillStyle = stormSeaStyle(front.seaDarkness * 0.22);
+      c.fillRect(camera.x - halfW, camera.y - halfH, halfW * 2, halfH * 2);
+    }
     drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
     // Periodic longitude coordinates keep phase and spacing continuous at the
     // world seam. Broad swells carry finer broken ivory glints.
@@ -705,8 +726,8 @@ export function createSeaRendering({
           length,
         );
         const glintAlpha =
-          (0.04 + pulse ** 3 * (0.19 + roughness * 0.12)) *
-          (0.42 + light * 0.58);
+          (0.055 + pulse ** 3 * (0.27 + roughness * 0.15)) *
+          (0.32 + light * 0.68);
         appendWaveMark(
           waveGlints,
           surfaceGlintStyle(glintAlpha),
@@ -717,9 +738,9 @@ export function createSeaRendering({
         );
         if (pulse > 0.65) {
           const quantizedGlint =
-            (Math.max(0, Math.min(127, Math.round((glintAlpha / 0.35) * 127))) /
+            (Math.max(0, Math.min(127, Math.round((glintAlpha / 0.48) * 127))) /
               127) *
-            0.35;
+            0.48;
           appendWaveMark(
             waveCrests,
             surfaceGlintStyle(quantizedGlint * (pulse - 0.65) * 1.8),
@@ -757,7 +778,9 @@ export function createSeaRendering({
       c.lineJoin = "round";
       for (let layer = 0; layer < 2; layer++) {
         const pulse = (t * 0.16 + layer * 0.5) % 1;
-        c.strokeStyle = surfStyle(Math.sin(pulse * Math.PI) * 0.22);
+        c.strokeStyle = surfStyle(
+          Math.sin(pulse * Math.PI) * (0.27 + roughness * 0.08),
+        );
         c.lineWidth = 4 + pulse * 16;
         c.setLineDash([12, 9, 3, 17]);
         c.lineDashOffset = -t * 2;
@@ -775,7 +798,7 @@ export function createSeaRendering({
         const reach = 3 + pulse * (8 + roughness * 6);
         const x = mark.x + mark.nx * reach;
         const y = mark.y + mark.ny * reach;
-        c.strokeStyle = foamStrokeStyle((pulse - 0.28) * 0.55);
+        c.strokeStyle = foamStrokeStyle((pulse - 0.28) * 0.86);
         c.lineWidth = (0.8 + pulse * 1.2) / z;
         c.beginPath();
         c.moveTo(x - mark.tx * 6, y - mark.ty * 6);
@@ -787,7 +810,7 @@ export function createSeaRendering({
         );
         c.stroke();
         if (pulse > 0.8) {
-          c.fillStyle = foamFillStyle((pulse - 0.8) * 1.8);
+          c.fillStyle = foamFillStyle((pulse - 0.8) * 2.6);
           c.beginPath();
           c.arc(x + mark.nx * 5, y + mark.ny * 5, 1.2 / z, 0, Math.PI * 2);
           c.fill();
@@ -822,23 +845,34 @@ export function createSeaRendering({
       const nx = -dy;
       const ny = dx;
 
+      // A translucent trough and two broken foam ribbons follow the actual
+      // turn history, rather than a straight streak behind the current bow.
+      c.fillStyle = wakeBodyStyle(b.alpha * 0.28);
+      c.beginPath();
+      c.moveTo(a.x + nx * a.width * 0.7, a.y + ny * a.width * 0.7);
+      c.lineTo(b.x + nx * b.width * 0.7, b.y + ny * b.width * 0.7);
+      c.lineTo(b.x - nx * b.width * 0.7, b.y - ny * b.width * 0.7);
+      c.lineTo(a.x - nx * a.width * 0.7, a.y - ny * a.width * 0.7);
+      c.closePath();
+      c.fill();
+
       // Occasional outer crests catch the light as the disturbed water spreads.
       for (const side of [-1, 1]) {
         const crest = wakeNoise(seed, side + 4);
-        if (crest < 0.78) continue;
+        if (crest < 0.32) continue;
         const along = 0.17 + wakeNoise(seed, side + 7) * 0.56;
         const lateral = (a.width + b.width) * (0.35 + crest * 0.23);
         const x = a.x + dx * length * along + nx * lateral * side;
         const y = a.y + dy * length * along + ny * lateral * side;
-        c.strokeStyle = wakeStrokeStyle(b.alpha * (0.38 + crest * 0.18));
+        c.strokeStyle = wakeStrokeStyle(b.alpha * (0.65 + crest * 0.35));
         c.lineWidth = (1 + b.alpha * 0.8) / camera.zoom;
         c.beginPath();
         c.moveTo(x - dx * 4, y - dy * 4);
         c.quadraticCurveTo(
-          x + nx * side * 5,
-          y + ny * side * 5,
-          x + dx * (6 + crest * 3) + nx * side * 6,
-          y + dy * (6 + crest * 3) + ny * side * 6,
+          x + nx * side * (5 + b.width * 0.15),
+          y + ny * side * (5 + b.width * 0.15),
+          x + dx * (8 + crest * 4) + nx * side * 6,
+          y + dy * (8 + crest * 4) + ny * side * 6,
         );
         c.stroke();
       }
@@ -851,7 +885,7 @@ export function createSeaRendering({
         const cross = (wakeNoise(seed, fleck + 23) - 0.5) * b.width * 1.5;
         const x = a.x + dx * length * along + nx * cross;
         const y = a.y + dy * length * along + ny * cross;
-        c.fillStyle = wakeFillStyle(b.alpha * (0.25 + scatter * 0.42));
+        c.fillStyle = wakeFillStyle(b.alpha * (0.4 + scatter * 0.6));
         c.beginPath();
         c.ellipse(
           x,
@@ -867,9 +901,137 @@ export function createSeaRendering({
     }
     c.restore();
   }
+
+  function drawReflections(
+    c,
+    {
+      camera,
+      vw,
+      vh,
+      time,
+      roughness = 0,
+      reducedMotion = false,
+      lighting,
+      vessels = [],
+      lamps = [],
+    },
+  ) {
+    if (!vessels.length && !lamps.length) return;
+    const halfW = vw / (2 * camera.zoom) + 150;
+    const halfH = vh / (2 * camera.zoom * MAP_TILT_COS) + 150;
+    const t = reducedMotion ? 0 : time / 1000;
+    const daylight = lighting?.daylight ?? 1;
+    const night = lighting?.night ?? 0;
+    c.save();
+    clipWater(c, visibleCoasts(camera, vw, vh));
+    for (const vessel of vessels) {
+      const x = nearestWrapped(vessel.x, camera.x, WORLD.w);
+      if (
+        Math.abs(x - camera.x) > halfW ||
+        Math.abs(vessel.y - camera.y) > halfH
+      )
+        continue;
+      const profile = getShipModelProfile(vessel.vesselClass, vessel.idNum);
+      const size = vessel.scale ?? 1;
+      const heading = (vessel.angle || 0) + Math.PI / 2;
+      const cos = Math.cos(heading),
+        sin = Math.sin(heading);
+      c.save();
+      c.translate(x, vessel.y);
+      c.scale(size, size);
+      const top = -profile.length * 0.6;
+      const span = profile.length * 1.2 + 42 * MAP_TILT_TAN;
+      // One striped clip per vessel breaks the mirrored silhouette into
+      // ripples. All geometry remains on the water side of coastline masks.
+      c.beginPath();
+      for (let row = 0; row < 14; row++) {
+        const ripple = sampleWaterReflection(t, row, roughness);
+        const y = top + (row * span) / 14;
+        c.rect(-75 + ripple.offset, y, 150, (span / 14) * ripple.width * 0.72);
+      }
+      c.clip();
+      c.fillStyle = reflectionHullStyle(0.16 + daylight * 0.16);
+      c.beginPath();
+      c.ellipse(
+        0,
+        profile.deckHeight * MAP_TILT_TAN,
+        profile.beam * 0.85,
+        profile.length * 0.46,
+        heading,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+      c.fillStyle = reflectionSailStyle(
+        (0.1 + daylight * 0.28) * (1 - Math.min(1, roughness) * 0.55),
+      );
+      for (const mast of profile.masts) {
+        const vertices =
+          profile.rig === "lateen"
+            ? [
+                [0, mast.y, mast.height],
+                [mast.yard * 0.8, mast.y, mast.height * 0.25],
+                [0, mast.y, mast.height * 0.25],
+              ]
+            : [
+                [-mast.yard * 0.5, mast.y, mast.height * 0.88],
+                [mast.yard * 0.5, mast.y, mast.height * 0.88],
+                [mast.yard * 0.45, mast.y, mast.height * 0.3],
+                [-mast.yard * 0.45, mast.y, mast.height * 0.3],
+              ];
+        c.beginPath();
+        vertices.forEach(([u, v, height], i) => {
+          const rx =
+            u * cos -
+            v * sin +
+            Math.sin(t * 1.8 + height * 0.5) * (0.6 + roughness * 1.8);
+          const ry = u * sin + v * cos + height * MAP_TILT_TAN;
+          if (i) c.lineTo(rx, ry);
+          else c.moveTo(rx, ry);
+        });
+        c.closePath();
+        c.fill();
+      }
+      c.restore();
+    }
+    if (night > 0.12) {
+      c.lineCap = "round";
+      for (const lamp of lamps) {
+        const x = nearestWrapped(lamp.x, camera.x, WORLD.w);
+        if (
+          Math.abs(x - camera.x) > halfW ||
+          Math.abs(lamp.y - camera.y) > halfH
+        )
+          continue;
+        c.save();
+        c.translate(x, lamp.y);
+        for (let row = 0; row < 11; row++) {
+          const ripple = sampleWaterReflection(
+            t,
+            row + (lamp.index || 0),
+            roughness,
+          );
+          const fade = (1 - row / 11) ** 1.5;
+          const y = 3 + row * 4.5;
+          const width = (2.5 + row * 0.9) * ripple.width;
+          c.strokeStyle = reflectionLampStyle(
+            night * fade * ripple.alpha * 0.65,
+          );
+          c.lineWidth = (1.2 + fade * 1.4) / camera.zoom;
+          c.beginPath();
+          c.moveTo(ripple.offset - width, y);
+          c.quadraticCurveTo(ripple.offset, y + 1.4, ripple.offset + width, y);
+          c.stroke();
+        }
+        c.restore();
+      }
+    }
+    c.restore();
+  }
   return {
     drawSurface,
     drawWake,
+    drawReflections,
     setRivers(paths) {
       riverPaths = paths;
     },
