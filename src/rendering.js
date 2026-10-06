@@ -9,6 +9,24 @@ import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { coastFaceDepth } from "./core/seascape.js";
 import { LIGHT_DIRECTION } from "./core/lighting.js";
+import {
+  WIND_ROSE_NAMES,
+  cartoucheInscription,
+  coastAspect,
+  createRhumbWeb,
+  edgeDepthAt,
+  foldCreases,
+  foxingClusters,
+  islandTint,
+  portChartLabel,
+  rhumbInk,
+  rhumbRayAngles,
+  scaleBarSpec,
+  tatteredEdge,
+  tidelineRingPoints,
+  tidelines,
+  waxDrops,
+} from "./core/chart-decor.js";
 import { createRadialStamp } from "./radial-stamp.js";
 import { drawPortMiniature } from "./port-miniatures.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
@@ -645,6 +663,7 @@ export function createMapRendering({
   game,
   merchantRoutePaths,
   portMiniaturePlacements = new Map(),
+  parchmentTexture = null,
 }) {
   const onLand = (x, y) => isLandPoint(x, y, WORLD.w);
   const wrappedDistance = (x1, y1, x2, y2) => {
@@ -1035,52 +1054,141 @@ export function createMapRendering({
     c.stroke();
     c.restore();
   }
+  // A Catalan-style wind rose: split vermilion-and-gold petals on the
+  // cardinal points, verdant ones between, a fleur-de-lis at north, a cross
+  // at east, and the classical winds named around the rim.
   function drawCompassRose(c, cx, cy, r = 86) {
     c.save();
     c.translate(cx, cy);
-    c.strokeStyle = "rgba(42,28,16,.78)";
-    c.fillStyle = "rgba(91,59,28,.2)";
-    c.lineWidth = 2;
+    c.strokeStyle = "rgba(42,28,16,.62)";
+    c.lineWidth = 1.6;
     c.beginPath();
     c.arc(0, 0, r, 0, Math.PI * 2);
     c.stroke();
+    c.lineWidth = 1;
     c.beginPath();
     c.arc(0, 0, r * 0.72, 0, Math.PI * 2);
     c.stroke();
-    c.beginPath();
-    for (let i = 0; i < 32; i++) {
-      const a = (i * Math.PI) / 16 - Math.PI / 2,
-        rr =
-          i % 8 === 0
-            ? r * 0.92
-            : i % 4 === 0
-              ? r * 0.66
-              : i % 2 === 0
-                ? r * 0.46
-                : r * 0.27;
-      const px = Math.cos(a) * rr,
-        py = Math.sin(a) * rr;
-      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    c.strokeStyle = "rgba(42,28,16,.45)";
+    for (let index = 0; index < 32; index += 1) {
+      const angle = -Math.PI / 2 + (index * Math.PI) / 16;
+      const inner = index % 8 === 0 ? r * 0.72 : r * 0.79;
+      c.beginPath();
+      c.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      c.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      c.stroke();
     }
-    c.closePath();
-    c.fill();
-    c.stroke();
+    const drawPetal = (angle, length, width, leftFill, rightFill) => {
+      c.save();
+      c.rotate(angle);
+      c.fillStyle = leftFill;
+      c.beginPath();
+      c.moveTo(0, -length);
+      c.lineTo(-width, 0);
+      c.lineTo(0, 0);
+      c.closePath();
+      c.fill();
+      c.fillStyle = rightFill;
+      c.beginPath();
+      c.moveTo(0, -length);
+      c.lineTo(width, 0);
+      c.lineTo(0, 0);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = "rgba(42,28,16,.55)";
+      c.lineWidth = 0.8;
+      c.beginPath();
+      c.moveTo(0, -length);
+      c.lineTo(-width, 0);
+      c.lineTo(0, 0);
+      c.lineTo(width, 0);
+      c.closePath();
+      c.stroke();
+      c.restore();
+    };
+    const VERMILION = "rgba(146,44,34,.82)";
+    const GOLD = "rgba(178,138,62,.8)";
+    const VIRIDIAN = "rgba(44,98,66,.78)";
+    const UMBER = "rgba(76,54,30,.78)";
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index * Math.PI) / 4;
+      const cardinal = index % 2 === 0;
+      drawPetal(
+        angle,
+        cardinal ? r * 0.95 : r * 0.72,
+        cardinal ? r * 0.11 : r * 0.09,
+        index % 2 === 0 ? VERMILION : VIRIDIAN,
+        index % 2 === 0 ? GOLD : UMBER,
+      );
+    }
+    for (let index = 0; index < 16; index += 1) {
+      if (index % 2 === 0) continue;
+      drawPetal(
+        (index * Math.PI) / 8,
+        r * 0.5,
+        r * 0.055,
+        "rgba(64,46,26,.5)",
+        "rgba(64,46,26,.5)",
+      );
+    }
+    // Gilded hub.
+    c.fillStyle = GOLD;
     c.beginPath();
-    c.moveTo(0, -r * 0.96);
-    c.lineTo(-9, 4);
-    c.lineTo(0, -8);
-    c.lineTo(9, 4);
-    c.closePath();
-    c.fillStyle = "rgba(48,31,17,.65)";
+    c.arc(0, 0, r * 0.09, 0, Math.PI * 2);
     c.fill();
+    c.strokeStyle = "rgba(42,28,16,.7)";
+    c.lineWidth = 1;
     c.stroke();
-    c.fillStyle = "rgba(45,30,17,.86)";
-    c.font = "700 21px Georgia";
+    // Fleur-de-lis marks north; the cross marks east.
+    const fleur = (x, y, s) => {
+      c.save();
+      c.translate(x, y);
+      c.scale(s, s);
+      c.fillStyle = "rgba(48,31,17,.85)";
+      c.beginPath();
+      c.moveTo(0, -7);
+      c.bezierCurveTo(3.2, -4.5, 3.4, -1.5, 0.9, 0.4);
+      c.lineTo(2.6, 0.4);
+      c.lineTo(2.6, 1.9);
+      c.lineTo(-2.6, 1.9);
+      c.lineTo(-2.6, 0.4);
+      c.lineTo(-0.9, 0.4);
+      c.bezierCurveTo(-3.4, -1.5, -3.2, -4.5, 0, -7);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.moveTo(-1.9, 2.7);
+      c.quadraticCurveTo(0, 5.6, 1.9, 2.7);
+      c.quadraticCurveTo(1.4, 4.6, 0, 5);
+      c.quadraticCurveTo(-1.4, 4.6, -1.9, 2.7);
+      c.closePath();
+      c.fill();
+      c.restore();
+    };
+    fleur(0, -r - 9, 1.15);
+    c.strokeStyle = "rgba(48,31,17,.85)";
+    c.lineWidth = 1.7;
+    c.save();
+    c.translate(r + 8, 0);
+    c.beginPath();
+    c.moveTo(0, -4.5);
+    c.lineTo(0, 4.5);
+    c.moveTo(-4.5, 0);
+    c.lineTo(4.5, 0);
+    c.stroke();
+    c.restore();
+    // The eight classical winds in small capitals around the rim.
+    c.fillStyle = "rgba(45,30,17,.78)";
+    c.font = `700 ${Math.max(7, Math.round(r * 0.1))}px Georgia`;
     c.textAlign = "center";
-    c.fillText("N", 0, -r - 12);
-    c.fillText("S", 0, r + 25);
-    c.fillText("W", -r - 18, 7);
-    c.fillText("E", r + 18, 7);
+    c.textBaseline = "middle";
+    for (const wind of WIND_ROSE_NAMES) {
+      c.fillText(
+        wind.label,
+        Math.cos(wind.angle) * r * 1.22,
+        Math.sin(wind.angle) * r * 1.22,
+      );
+    }
     c.restore();
   }
 
@@ -1171,7 +1279,36 @@ export function createMapRendering({
       c.stroke();
     }
     c.restore();
-    // folded creases
+    // The same weathered-skin photograph the opening scroll multiplies over
+    // the chart, so the living map keeps the intro's physical material.
+    if (parchmentTexture) {
+      c.save();
+      c.globalCompositeOperation = "multiply";
+      c.globalAlpha = 0.36;
+      const tileW = WORLD.w / 3;
+      const tileH =
+        tileW *
+        (parchmentTexture.naturalHeight / parchmentTexture.naturalWidth);
+      const rows = Math.ceil(WORLD.h / tileH);
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < 3; col++) {
+          // Mirror alternate tiles so the photograph never shows a seam.
+          const flipX = col % 2 === 1;
+          const flipY = row % 2 === 1;
+          c.save();
+          c.translate(
+            col * tileW + (flipX ? tileW : 0),
+            row * tileH + (flipY ? tileH : 0),
+          );
+          c.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+          c.drawImage(parchmentTexture, 0, 0, tileW, tileH);
+          c.restore();
+        }
+      }
+      c.restore();
+    }
+    // folded creases — one deep vertical fold from storage plus softer
+    // diagonal creases where the sheet was once half-opened on a table.
     c.save();
     c.globalAlpha = 0.18;
     c.strokeStyle = "rgba(76,42,17,.34)";
@@ -1187,6 +1324,20 @@ export function createMapRendering({
       WORLD.h,
     );
     c.stroke();
+    for (const crease of foldCreases(WORLD.w, WORLD.h, 6067)) {
+      c.beginPath();
+      c.moveTo(crease.x0, crease.y0);
+      c.quadraticCurveTo(crease.cx, crease.cy, crease.x1, crease.y1);
+      c.stroke();
+      c.strokeStyle = "rgba(255,244,205,.26)";
+      c.lineWidth = 1.4;
+      c.beginPath();
+      c.moveTo(crease.x0 + 4, crease.y0);
+      c.quadraticCurveTo(crease.cx + 4, crease.cy, crease.x1 + 4, crease.y1);
+      c.stroke();
+      c.strokeStyle = "rgba(76,42,17,.34)";
+      c.lineWidth = 3;
+    }
     c.strokeStyle = "rgba(255,244,205,.32)";
     c.lineWidth = 1;
     c.beginPath();
@@ -1213,6 +1364,97 @@ export function createMapRendering({
     c.fillStyle = polar;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
   }
+  function drawRhumbWeb(c, centers) {
+    const rays = rhumbRayAngles(16);
+    c.save();
+    c.beginPath();
+    c.rect(0, 38, WORLD.w, WORLD.h - 76);
+    c.clip();
+    for (const center of centers) {
+      const offsets = [0];
+      if (center.x - center.radius < 0) offsets.push(WORLD.w);
+      if (center.x + center.radius > WORLD.w) offsets.push(-WORLD.w);
+      for (const offset of offsets) {
+        for (let index = 0; index < rays.length; index += 1) {
+          const ink = rhumbInk(index);
+          c.strokeStyle = `rgba(${ink.color},${center.major ? 0.22 : 0.15})`;
+          c.lineWidth = center.major ? 1.1 : 0.9;
+          c.beginPath();
+          c.moveTo(center.x + offset, center.y);
+          c.lineTo(
+            center.x + offset + Math.cos(rays[index]) * center.radius,
+            center.y + Math.sin(rays[index]) * center.radius,
+          );
+          c.stroke();
+        }
+      }
+      if (!center.major) {
+        // Blind centers leave a pinprick and a small star at their hub, the
+        // way construction points show on surviving charts.
+        c.strokeStyle = "rgba(58,44,26,.4)";
+        c.lineWidth = 0.9;
+        for (const angle of rhumbRayAngles(8)) {
+          c.beginPath();
+          c.moveTo(
+            center.x + Math.cos(angle) * 4,
+            center.y + Math.sin(angle) * 4,
+          );
+          c.lineTo(
+            center.x + Math.cos(angle) * 11,
+            center.y + Math.sin(angle) * 11,
+          );
+          c.stroke();
+        }
+        c.fillStyle = "rgba(58,44,26,.5)";
+        c.beginPath();
+        c.arc(center.x, center.y, 1.6, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    c.restore();
+  }
+
+  // Portolan toponymy inked onto the sheet itself: names run parallel to the
+  // local coast, red in shield boxes for the great ports, plain black for
+  // minor landings. The interactive screen-space labels stay on top.
+  function drawPortChartLabels(c) {
+    c.save();
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    if ("letterSpacing" in c) c.letterSpacing = "1.5px";
+    for (const port of ports) {
+      const aspect = coastAspect(onLand, port.x, port.y, 46);
+      if (!aspect) continue;
+      const style = portChartLabel(
+        port,
+        portMiniaturePlacements.has(port.name),
+      );
+      const labelX = port.x + aspect.seaward.x * 26;
+      const labelY = port.y + aspect.seaward.y * 26;
+      const boxWidth = port.name.length * 7 + 14;
+      const half = boxWidth / 2 + 8;
+      const offsets = [0];
+      if (labelX - half < 0) offsets.push(WORLD.w);
+      if (labelX + half > WORLD.w) offsets.push(-WORLD.w);
+      for (const offset of offsets) {
+        c.save();
+        c.translate(labelX + offset, labelY);
+        c.rotate(aspect.angle);
+        if (style.boxed) {
+          c.strokeStyle = "rgba(146,44,34,.5)";
+          c.lineWidth = 1.1;
+          c.strokeRect(-boxWidth / 2, -8.5, boxWidth, 17);
+        }
+        c.font = "600 11.5px Georgia";
+        c.fillStyle =
+          style.tone === "red" ? "rgba(129,36,26,.78)" : "rgba(45,34,22,.66)";
+        c.fillText(port.name.toUpperCase(), 0, 0.5);
+        c.restore();
+      }
+    }
+    c.restore();
+  }
+
   function buildMapLayer() {
     drawParchmentBase(m);
     const rnd = seeded(91);
@@ -1294,6 +1536,27 @@ export function createMapRendering({
       }
     });
 
+    // The portolan rhumb web: fine bearing lines radiating from the great
+    // roses and from blind centers hidden out at sea, alternating vermillion
+    // and viridian ink like Benincasa's charts. Land painted later covers the
+    // lattice, so it reads across open water exactly as a navigator used it.
+    drawRhumbWeb(
+      m,
+      createRhumbWeb(
+        {
+          width: WORLD.w,
+          height: WORLD.h,
+          anchors: [
+            [WORLD.w * 0.36, WORLD.h * 0.1],
+            [WORLD.w * 0.72, WORLD.h * 0.13],
+            [WORLD.w * 0.94, WORLD.h * 0.88],
+          ],
+        },
+        (x, y) => !onLand(x, y),
+        4711,
+      ),
+    );
+
     // Trade routes are generated with the same transform as their ports.
     merchantRoutePaths.forEach((route) => drawRoute(m, route.points, null));
 
@@ -1335,22 +1598,41 @@ export function createMapRendering({
       m.lineTo(WORLD.w, y);
       m.stroke();
     }
+    // Gilded north and south borders with the chartmaker's tick divisions.
+    // East and west stay bare because those edges touch when sailing.
     m.setLineDash([]);
-    m.strokeStyle = "rgba(55,32,16,.72)";
-    m.lineWidth = 7;
+    const gold = m.createLinearGradient(0, 0, WORLD.w, 0);
+    gold.addColorStop(0, "#8a5f28");
+    gold.addColorStop(0.18, "#c49b47");
+    gold.addColorStop(0.5, "#9a7132");
+    gold.addColorStop(0.82, "#c49b47");
+    gold.addColorStop(1, "#8a5f28");
+    m.strokeStyle = gold;
+    m.lineWidth = 4.5;
     m.beginPath();
-    m.moveTo(0, 21);
-    m.lineTo(WORLD.w, 21);
-    m.moveTo(0, WORLD.h - 21);
-    m.lineTo(WORLD.w, WORLD.h - 21);
+    m.moveTo(0, 24);
+    m.lineTo(WORLD.w, 24);
+    m.moveTo(0, WORLD.h - 24);
+    m.lineTo(WORLD.w, WORLD.h - 24);
     m.stroke();
-    m.strokeStyle = "rgba(92,58,29,.58)";
-    m.lineWidth = 2;
+    m.strokeStyle = "rgba(55,32,16,.72)";
+    m.lineWidth = 1.6;
     m.beginPath();
-    m.moveTo(0, 34);
-    m.lineTo(WORLD.w, 34);
-    m.moveTo(0, WORLD.h - 34);
-    m.lineTo(WORLD.w, WORLD.h - 34);
+    m.moveTo(0, 33);
+    m.lineTo(WORLD.w, 33);
+    m.moveTo(0, WORLD.h - 33);
+    m.lineTo(WORLD.w, WORLD.h - 33);
+    m.stroke();
+    m.strokeStyle = "rgba(56,34,17,.6)";
+    m.lineWidth = 1;
+    m.beginPath();
+    for (let x = 0; x <= WORLD.w; x += 100) {
+      const long = x % 500 === 0;
+      m.moveTo(x, 15);
+      m.lineTo(x, long ? 24 : 20);
+      m.moveTo(x, WORLD.h - 15);
+      m.lineTo(x, WORLD.h - (long ? 24 : 20));
+    }
     m.stroke();
     m.restore();
 
@@ -1485,6 +1767,14 @@ export function createMapRendering({
         m.strokeStyle = "rgba(230,211,157,.54)";
         m.lineWidth = 2;
         m.stroke();
+        // Hand-mixed pigment washes on some islands, the way late chartmakers
+        // tinted their prize landfalls.
+        const tint = islandTint(l.name, li);
+        if (tint) {
+          polyPath(m, poly);
+          m.fillStyle = tint;
+          m.fill();
+        }
       });
 
       // land stipple and short hatching clipped to each island
@@ -1586,14 +1876,20 @@ export function createMapRendering({
     });
 
     ports.forEach((p) => drawPortIcon(m, p));
+    drawPortChartLabels(m);
 
-    // sea regions, calligraphic labels, and decorative flourishes
-    m.fillStyle = "rgba(45,42,29,.55)";
+    // sea regions, calligraphic labels, and decorative flourishes. The ink
+    // varies between iron-black and faded brown like a hand-cut quill let the
+    // chartmaker work at different hours.
     m.textAlign = "center";
-    for (const [label, x, y, size] of seaRegionLabels) {
+    seaRegionLabels.forEach(([label, x, y, size], index) => {
       m.font = "italic " + size + "px Georgia";
+      m.fillStyle =
+        index % 3 === 2
+          ? `rgba(86,62,34,${0.44 + (index % 5) * 0.03})`
+          : `rgba(45,42,29,${0.48 + (index % 4) * 0.03})`;
       m.fillText(label, x, y);
-    }
+    });
 
     drawCompassRose(m, WORLD.w * 0.36, WORLD.h * 0.1, 84);
     drawCompassRose(m, WORLD.w * 0.72, WORLD.h * 0.13, 70);
@@ -1606,16 +1902,199 @@ export function createMapRendering({
     m.fillStyle = "rgba(222,195,135,.25)";
     m.lineWidth = 2;
     m.beginPath();
-    roundedRectPath(m, -130, -45, 260, 90, 18);
+    roundedRectPath(m, -155, -52, 310, 112, 18);
     m.fill();
+    m.stroke();
+    m.strokeStyle = "rgba(196,155,71,.5)";
+    m.lineWidth = 1;
+    m.beginPath();
+    roundedRectPath(m, -149, -46, 298, 100, 15);
     m.stroke();
     m.fillStyle = "rgba(47,29,15,.78)";
     m.font = "700 24px Georgia";
     m.textAlign = "center";
-    m.fillText("THE ENCIRCLING WORLD", 0, -5);
+    m.fillText("THE ENCIRCLING WORLD", 0, -8);
     m.font = "italic 15px Georgia";
-    m.fillText("East and west meet beyond the First Meridian", 0, 20);
+    m.fillText("East and west meet beyond the First Meridian", 0, 17);
+    const homePort = ports.find((port) => port.home);
+    m.font = "italic 12.5px Georgia";
+    m.fillStyle = "rgba(84,60,32,.78)";
+    m.fillText(
+      cartoucheInscription(homePort?.name || PORT_NAMES.orvessaQuay, 17),
+      0,
+      40,
+    );
     m.restore();
+
+    drawScaleBar(m);
+
+    // Physical wear sits over the ink: foxing blooms in the damp margins,
+    // tide stains from an old soaking, drips of candle wax. Seeded so the
+    // sheet reads as one surviving object.
+    m.save();
+    const sheet = { width: WORLD.w, height: WORLD.h };
+    const foxingAnchors = [
+      { x: 110, y: 150, spread: 62 },
+      { x: WORLD.w - 80, y: 110, spread: 52 },
+      { x: WORLD.w * 0.62, y: 190, spread: 70 },
+      { x: WORLD.w * 0.38, y: WORLD.h - 160, spread: 64 },
+      { x: 170, y: WORLD.h * 0.62, spread: 46 },
+      { x: WORLD.w - 150, y: WORLD.h - 120, spread: 58 },
+    ];
+    for (const cluster of foxingClusters(911, foxingAnchors)) {
+      for (const speckle of cluster.speckles) {
+        m.fillStyle = `rgba(122,66,28,${speckle.alpha})`;
+        m.beginPath();
+        m.arc(
+          cluster.x + speckle.dx,
+          cluster.y + speckle.dy,
+          speckle.r,
+          0,
+          Math.PI * 2,
+        );
+        m.fill();
+      }
+    }
+    for (const stain of tidelines(sheet, 3391, 3)) {
+      stain.rings.forEach((radius, ringIndex) => {
+        const points = tidelineRingPoints(
+          stain.x,
+          stain.y,
+          radius,
+          stain.lobes,
+          stain.wobble,
+          stain.rotation,
+        );
+        m.beginPath();
+        points.forEach(([px, py], index) =>
+          index ? m.lineTo(px, py) : m.moveTo(px, py),
+        );
+        m.closePath();
+        if (ringIndex === 0) {
+          m.fillStyle = "rgba(112,66,26,.08)";
+          m.fill();
+        }
+        m.strokeStyle = `rgba(96,54,22,${0.15 - ringIndex * 0.03})`;
+        m.lineWidth = 2.6 - ringIndex * 0.7;
+        m.stroke();
+      });
+    }
+    for (const drop of waxDrops(sheet, 5153, 5)) {
+      m.fillStyle = `rgba(232,206,142,${drop.alpha})`;
+      m.beginPath();
+      m.arc(drop.x, drop.y, drop.r, 0, Math.PI * 2);
+      m.fill();
+      m.strokeStyle = "rgba(120,86,38,.26)";
+      m.lineWidth = 1;
+      m.stroke();
+      m.fillStyle = "rgba(255,240,200,.3)";
+      m.beginPath();
+      m.arc(
+        drop.x - drop.r * 0.28,
+        drop.y - drop.r * 0.3,
+        drop.r * 0.32,
+        0,
+        Math.PI * 2,
+      );
+      m.fill();
+    }
+    m.restore();
+
+    drawTatteredEdges(m);
+  }
+
+  function drawScaleBar(c) {
+    const spec = scaleBarSpec({ width: WORLD.w, height: WORLD.h });
+    if (!spec) return;
+    c.save();
+    c.translate(spec.x, spec.y);
+    const frame = c.createLinearGradient(0, 0, spec.width, 0);
+    frame.addColorStop(0, "#8a5f28");
+    frame.addColorStop(0.5, "#caa24d");
+    frame.addColorStop(1, "#8a5f28");
+    c.strokeStyle = frame;
+    c.lineWidth = 2.4;
+    c.strokeRect(-10, -14, spec.width + 20, spec.height + 30);
+    c.strokeStyle = "rgba(56,34,17,.5)";
+    c.lineWidth = 1;
+    c.strokeRect(-6, -10, spec.width + 12, spec.height + 22);
+    // The ladder of leagues: filled and open steps alternate.
+    for (let index = 0; index < spec.segments; index += 1) {
+      const x = index * spec.segment;
+      if (index % 2 === 0) {
+        c.fillStyle = "rgba(129,52,36,.66)";
+        c.fillRect(x, 0, spec.segment, 9);
+      }
+      c.strokeStyle = "rgba(56,34,17,.65)";
+      c.lineWidth = 1;
+      c.strokeRect(x, 0, spec.segment, 9);
+    }
+    c.fillStyle = "rgba(47,29,15,.8)";
+    c.font = "10.5px Georgia";
+    c.textAlign = "center";
+    c.textBaseline = "alphabetic";
+    for (const value of spec.values) {
+      const x = (value / spec.total) * spec.width;
+      c.fillText(String(value), x, 26);
+      c.beginPath();
+      c.moveTo(x, 9);
+      c.lineTo(x, 13);
+      c.stroke();
+    }
+    c.font = "italic 11.5px Georgia";
+    c.textAlign = "left";
+    c.fillText(spec.caption, 0, 40);
+    c.restore();
+  }
+
+  // Torn, deckled north and south sheet edges — the vellum ends even though
+  // the world it charts wraps east to west.
+  function drawTatteredEdges(c) {
+    const points = tatteredEdge(808, { maxDepth: 15, biteDepth: 24 });
+    const step = 8;
+    const topEdge = (offset) => {
+      c.beginPath();
+      for (let x = 0; x <= WORLD.w + step; x += step) {
+        const y = edgeDepthAt(points, x / WORLD.w) + offset;
+        if (x === 0) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      }
+    };
+    const bottomEdge = (offset) => {
+      c.beginPath();
+      for (let x = 0; x <= WORLD.w + step; x += step) {
+        const y = WORLD.h - edgeDepthAt(points, x / WORLD.w) - offset;
+        if (x === 0) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      }
+    };
+    c.save();
+    c.globalCompositeOperation = "destination-out";
+    topEdge(0);
+    c.lineTo(WORLD.w, -2);
+    c.lineTo(0, -2);
+    c.closePath();
+    c.fill();
+    bottomEdge(0);
+    c.lineTo(WORLD.w, WORLD.h + 2);
+    c.lineTo(0, WORLD.h + 2);
+    c.closePath();
+    c.fill();
+    c.restore();
+    c.save();
+    c.strokeStyle = "rgba(76,44,18,.5)";
+    c.lineWidth = 1.2;
+    topEdge(0);
+    c.stroke();
+    bottomEdge(0);
+    c.stroke();
+    c.strokeStyle = "rgba(240,214,160,.38)";
+    c.lineWidth = 0.8;
+    topEdge(2.2);
+    c.stroke();
+    bottomEdge(2.2);
+    c.stroke();
+    c.restore();
   }
 
   buildMapLayer();

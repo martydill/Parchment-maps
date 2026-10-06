@@ -1280,6 +1280,28 @@ const portMiniaturePlacements = new Map(
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
 );
 
+// The weathered-skin photograph that the opening scroll multiplies over the
+// chart, baked into the map layer too so the living chart keeps the intro's
+// material. Falls back to the procedural parchment if the asset never loads.
+function loadParchmentTexture(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const timeout = setTimeout(() => resolve(null), 2500);
+    image.onload = () => {
+      clearTimeout(timeout);
+      resolve(image);
+    };
+    image.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
+    };
+    image.src = url;
+  });
+}
+const parchmentTexture = await loadParchmentTexture(
+  "./assets/map-opening/parchment-weathered.jpg",
+);
+
 const {
   exploredCtx,
   exploredMask,
@@ -1295,6 +1317,7 @@ const {
   game,
   merchantRoutePaths,
   portMiniaturePlacements,
+  parchmentTexture,
 });
 seaRendering.setRivers(riverPaths);
 const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
