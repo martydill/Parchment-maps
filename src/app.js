@@ -1,7 +1,7 @@
 import { createSeaRendering } from "./sea-rendering.js?v=3";
 import { createAlphaPalette } from "./style-palette.js";
 import { createExplorationSampler } from "./exploration-mask.js";
-import { createElementBoundsCache, updateElementProperty } from "./ui/dom.js";
+import { updateElementProperty } from "./ui/dom.js";
 import {
   drawNightAtmosphere,
   drawShipLanterns,
@@ -34,7 +34,7 @@ import {
   visibleWorldCopies,
 } from "./core/projection.js";
 import { createRadialStamp } from "./radial-stamp.js";
-import { layoutMapLabels } from "./core/label-layout.js";
+import { anchorMapLabels } from "./core/label-layout.js?v=2";
 import {
   edgeInwardVector,
   limitOutwardWind,
@@ -3393,36 +3393,6 @@ const ui = {
   plottedCourseOpen: document.getElementById("plottedCourseOpen"),
   plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
-const portLabelPanels = [ui.course, ui.plottedCourse, ui.message].filter(
-  Boolean,
-);
-const portLabelPanelBounds = createElementBoundsCache(portLabelPanels);
-const panelResizeObserver = new ResizeObserver((entries) => {
-  for (const { target } of entries) portLabelPanelBounds.invalidate(target);
-});
-const panelMutationObserver = new MutationObserver((records) => {
-  for (const panel of portLabelPanels) {
-    if (records.some(({ target }) => panel.contains(target)))
-      portLabelPanelBounds.invalidate(panel);
-  }
-});
-for (const panel of portLabelPanels) {
-  panelResizeObserver.observe(panel, { box: "border-box" });
-  panelMutationObserver.observe(panel, {
-    subtree: true,
-    childList: true,
-    characterData: true,
-    attributes: true,
-    attributeFilter: ["class", "hidden", "style"],
-  });
-}
-addEventListener("resize", () => portLabelPanelBounds.invalidate());
-document.fonts?.addEventListener("loadingdone", () =>
-  portLabelPanelBounds.invalidate(),
-);
-ui.message.addEventListener("animationend", () =>
-  portLabelPanelBounds.invalidate(ui.message),
-);
 const panelContext = {
   clearCourse,
   courseBearing,
@@ -4816,7 +4786,7 @@ function drawHarborLights(c, lighting, z) {
 const portLabelWidths = new Map();
 // A font becoming available can change metrics even though port names do not.
 document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
-function drawPortLabels(c, z, shipScreen) {
+function drawPortLabels(c, z) {
   c.save();
   c.font = "700 14px Georgia";
   const labels = ports
@@ -4838,38 +4808,7 @@ function drawPortLabels(c, z, shipScreen) {
         (pointCurrentlyVisible(port.x, port.y) ? 10 : 0),
       port,
     }));
-  const blockers = [
-    { x: shipScreen.x - 53, y: shipScreen.y - 61, width: 106, height: 112 },
-    { x: 0, y: 0, width: vw, height: Math.min(vh * 0.12, 96) },
-    { x: vw - 83, y: 93, width: 83, height: 250 },
-  ];
-  for (const element of portLabelPanels) {
-    if (element === ui.message && !element.classList.contains("show")) continue;
-    const bounds = portLabelPanelBounds.get(element);
-    if (bounds) blockers.push(bounds);
-  }
-  for (const port of labels)
-    blockers.push({ x: port.x - 10, y: port.y - 10, width: 20, height: 20 });
-  for (const merchant of merchantShips) {
-    if (!merchantVisible(merchant)) continue;
-    const x = vw / 2 + (nearestWrappedX(merchant.x, camera.x) - camera.x) * z;
-    const y = vh / 2 + (merchant.y - camera.y) * z * MAP_TILT_COS;
-    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
-  }
-  const raider = game.seaRaid.raider;
-  if (raider && pointCurrentlyVisible(raider.x, raider.y)) {
-    const x = vw / 2 + (nearestWrappedX(raider.x, camera.x) - camera.x) * z;
-    const y = vh / 2 + (raider.y - camera.y) * z * MAP_TILT_COS;
-    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
-  }
-  for (const vessel of game.fleet?.ships || []) {
-    if (vessel.status === "laidUp") continue;
-    const position = fleetRenderObject(vessel);
-    const x = vw / 2 + (nearestWrappedX(position.x, camera.x) - camera.x) * z;
-    const y = vh / 2 + (position.y - camera.y) * z * MAP_TILT_COS;
-    blockers.push({ x: x - 32, y: y - 32, width: 64, height: 64 });
-  }
-  const placed = layoutMapLabels(labels, blockers, vw, vh);
+  const placed = anchorMapLabels(labels, vw, vh);
   c.textAlign = "center";
   c.textBaseline = "middle";
   for (const label of placed) {
@@ -5115,7 +5054,7 @@ function render() {
   }
   ctx.restore();
 
-  drawPortLabels(ctx, z, shipScreen);
+  drawPortLabels(ctx, z);
 
   // vignette
   ctx.fillStyle = vignetteGradient;
@@ -5579,7 +5518,6 @@ const fpsCounter = document.getElementById("fpsCounter");
 let fpsSampleStart = 0;
 let fpsFrameCount = 0;
 function loop(now) {
-  portLabelPanelBounds.refresh();
   if (!fpsSampleStart || now - fpsSampleStart > 2000) {
     fpsSampleStart = now;
     fpsFrameCount = 0;
@@ -7263,7 +7201,6 @@ if (restoredSavedGame && gameStarted) {
 
 // Capture the actual starting view so the cinematic lands on the same ship,
 // chart, camera, and weather for both new games and restored voyages.
-portLabelPanelBounds.refresh();
 render();
 mapOpening = createMapOpening({
   source: canvas,
@@ -7281,7 +7218,6 @@ mapOpening = createMapOpening({
 });
 addEventListener("resize", () => {
   if (!mapOpening.active) return;
-  portLabelPanelBounds.refresh();
   render();
   mapOpening.resize();
 });

@@ -7,6 +7,19 @@ function intersects(a, b) {
   );
 }
 
+// Sailing labels stay below their town. Clip at the viewport instead of moving
+// them around ships, other labels, or the HUD as the camera moves.
+export function anchorMapLabels(labels, width, height) {
+  const viewport = { x: 0, y: 0, width, height };
+  return labels
+    .map((label) => ({
+      ...label,
+      x: label.x - label.width / 2,
+      y: label.y + 18,
+    }))
+    .filter((label) => intersects(label, viewport));
+}
+
 // Labels are placed in screen pixels so their type remains crisp at every zoom.
 export function layoutMapLabels(labels, blockers, width, height) {
   const occupied = [...blockers];
