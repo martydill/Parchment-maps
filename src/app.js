@@ -1280,6 +1280,26 @@ const portMiniaturePlacements = new Map(
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
 );
 
+// The weathered-skin photograph that the opening scroll multiplies over the
+// chart, fetched out of band so module evaluation never awaits (top-level
+// await is unavailable at the es2020 bundle target). When it lands, the map
+// layer re-bakes with it; until then the procedural parchment stands in.
+function loadParchmentTexture(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const timeout = setTimeout(() => resolve(null), 2500);
+    image.onload = () => {
+      clearTimeout(timeout);
+      resolve(image);
+    };
+    image.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
+    };
+    image.src = url;
+  });
+}
+
 const {
   exploredCtx,
   exploredMask,
@@ -1290,12 +1310,21 @@ const {
   riverPaths,
   minimapFog,
   minimapFogCtx,
+  setParchmentTexture,
 } = createMapRendering({
   WORLD,
   game,
   merchantRoutePaths,
   portMiniaturePlacements,
 });
+
+loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
+  (texture) => {
+    if (!texture) return;
+    setParchmentTexture(texture);
+    minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
+  },
+);
 seaRendering.setRivers(riverPaths);
 const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
 
