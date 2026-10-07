@@ -145,6 +145,92 @@
       </defs>
     </svg>
     <canvas id="game"></canvas>
+    <button
+      id="debugButton"
+      type="button"
+      aria-controls="debugMenu"
+      aria-expanded="false"
+    >
+      Debug
+    </button>
+    <div id="debugMenu" role="dialog" aria-labelledby="debugTitle" hidden>
+      <div class="debug-heading">
+        <div>
+          <h2 id="debugTitle">Debug menu</h2>
+        </div>
+        <button id="closeDebug" type="button" aria-label="Close debug menu">
+          ×
+        </button>
+      </div>
+      <fieldset>
+        <legend>Encounter cinematics</legend>
+        <label for="debugRaiderStrength">Raider vessel</label>
+        <select id="debugRaiderStrength">
+          <option value="1">Light raider</option>
+          <option value="2" selected>Armed corsair</option>
+          <option value="3">Heavy boarding ship</option>
+        </select>
+        <div class="debug-encounters">
+          <button type="button" data-debug-encounter="raider">
+            Raider intro
+          </button>
+          <button type="button" data-debug-encounter="whale">
+            Whale sighting
+          </button>
+          <button type="button" data-debug-encounter="monster">
+            Sea monster
+          </button>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Scene controls</legend>
+        <div class="debug-scene-controls">
+          <label
+            >Weather<select id="debugWeather">
+              <option value="auto">Automatic</option>
+            </select></label
+          >
+          <label
+            >Time of day<select id="debugTime">
+              <option value="auto">Automatic</option>
+              <option value="0.25">Sunrise</option>
+              <option value="0.5">Daylight</option>
+              <option value="0.73">Sunset</option>
+              <option value="0">Night</option>
+            </select></label
+          >
+        </div>
+        <label class="debug-pause"
+          ><input id="debugPause" type="checkbox" /> Pause simulation</label
+        >
+      </fieldset>
+      <button id="resetDebug" type="button">Reset scene controls</button>
+      <p class="debug-note">
+        Scene overrides reset on reload. Water and cinematics keep animating
+        while paused.
+      </p>
+    </div>
+    <div id="encounterIntro" hidden data-kind="raider">
+      <div class="encounter-bar encounter-bar-top" aria-hidden="true"></div>
+      <div
+        class="encounter-banner"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <span id="encounterEyebrow">Hostile sails</span>
+        <h2 id="encounterName"></h2>
+      </div>
+      <div class="encounter-bar encounter-bar-bottom" aria-hidden="true"></div>
+      <div class="encounter-controls">
+        <button id="encounterSound" type="button" aria-pressed="true">
+          Drums on
+        </button>
+        <button id="skipEncounter" type="button">
+          Continue <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </div>
     <div id="mapOpening" aria-label="Opening your parchment chart">
       <canvas id="mapOpeningScene" aria-hidden="true"></canvas>
       <div class="map-opening-caption" aria-hidden="true">
