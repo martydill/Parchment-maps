@@ -324,7 +324,6 @@ export function createMapOpening({
   source,
   overlay,
   scene,
-  caption,
   skip,
   hud,
   reducedMotion,
@@ -402,7 +401,6 @@ export function createMapOpening({
     const th = table.height * scale;
     c.drawImage(table, (width - tw) / 2, (height - th) / 2, tw, th);
     drawChart(c, chart, paper, width, height, frame, edges);
-    caption.style.opacity = frame.captionOpacity;
     skip.style.opacity = 1 - frame.handoff * 0.8;
   }
 

@@ -11,7 +11,6 @@ test("the chart starts tightly rolled with the camera above the table", () => {
   assert.equal(frame.unroll, 0);
   assert.equal(frame.approach, 0);
   assert.equal(frame.handoff, 0);
-  assert.equal(frame.captionOpacity, 0);
   assert.ok(frame.curl > 0);
   assert.ok(frame.tilt > 0);
   assert.ok(frame.scale < 1);
@@ -31,7 +30,6 @@ test("the camera starts zooming while the chart is still unrolling", () => {
   const approach = mapOpeningFrame(1420);
   assert.ok(approach.unroll > middle.unroll && approach.unroll < 1);
   assert.equal(approach.approach, 0.5);
-  assert.equal(approach.captionOpacity, 0);
 });
 
 test("paper wear and curls remain until the final handoff", () => {
@@ -72,7 +70,6 @@ test("opening is monotonic and finishes exactly on the playable view", () => {
     rotation: 0,
     lift: 0,
     curl: 0,
-    captionOpacity: 0,
   });
   assert.deepEqual(
     mapOpeningFrame(MAP_OPENING_DURATION + 10000),

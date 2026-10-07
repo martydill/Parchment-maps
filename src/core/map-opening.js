@@ -29,7 +29,6 @@ export function mapOpeningFrame(elapsed, reducedMotion = false) {
       rotation: 0,
       lift: 0,
       curl: 0,
-      captionOpacity: 0,
     };
 
   return {
@@ -42,6 +41,5 @@ export function mapOpeningFrame(elapsed, reducedMotion = false) {
     rotation: (-0.025 + unroll * 0.012) * (1 - approach),
     lift: (Math.sin(unroll * Math.PI) * 10 + settle * 180) * (1 - approach),
     curl: (1 - handoff) * (0.06 - unroll * 0.036),
-    captionOpacity: smooth(time / 400) * (1 - smooth((time - 1050) / 450)),
   };
 }
