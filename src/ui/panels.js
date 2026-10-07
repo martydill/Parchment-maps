@@ -306,24 +306,6 @@ export function updateHud() {
         `bearing ${Math.round(((bearing.angle * 180) / Math.PI + 360) % 360)}°`,
     );
   }
-  if (ship.anchored)
-    updateElementProperty(
-      ui.steeringStatus,
-      "textContent",
-      "AT ANCHOR · DRAG THE WHEEL TO SAIL",
-    );
-  else if (Math.abs(ship.speed) < 5)
-    updateElementProperty(
-      ui.steeringStatus,
-      "textContent",
-      "DRAG TOWARD YOUR DESTINATION",
-    );
-  else
-    updateElementProperty(
-      ui.steeringStatus,
-      "textContent",
-      "SAILING · RELEASE TO COAST",
-    );
 }
 
 export function renderMilestone(root) {

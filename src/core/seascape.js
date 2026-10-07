@@ -36,10 +36,51 @@ export function coastalFlockSize(index) {
   return 3 + ((index * 7 + Math.floor(index / 3)) % 6);
 }
 
-export function sampleLighthouse(time, index) {
+// Screen-space presentation profiles. The port index is stable across saves
+// and wrapped world copies; none of these variations need persisted state.
+const LIGHTHOUSE_PROFILES = [
+  // kind, reach, beam half-angle, radians/ms, bloom, RGB, beam count
+  ["lens", 245, 0.065, 0.00013, 30, "255,230,185", 1],
+  ["flame", 62, 0, 0, 25, "255,151,67", 0],
+  ["lens", 195, 0.32, 0.000032, 36, "255,211,146", 1],
+  ["lens", 82, 0.18, -0.00018, 19, "208,235,231", 1],
+  ["lens", 275, 0.095, 0.000095, 32, "211,227,255", 2],
+  ["flame", 44, 0, 0, 19, "255,178,91", 0],
+  ["lantern", 110, 0.25, 0, 24, "255,218,175", 1],
+  ["lens", 170, 0.14, -0.00025, 27, "237,224,255", 1],
+];
+
+// Includes the maximum profile variation, bloom and flame/ember footprint.
+export const MAX_LIGHTHOUSE_REACH = 320;
+
+export function sampleLighthouse(time = 0, index = 0) {
+  const t = Number.isFinite(time) ? time : 0;
+  const id = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;
+  const [kind, range, width, speed, bloom, color, beams] =
+    LIGHTHOUSE_PROFILES[id % LIGHTHOUSE_PROFILES.length];
+  const fraction = (value) => value - Math.floor(value);
+  const seed = fraction(Math.sin(id * 127.1 + 4.7) * 43758.5453);
+  const phase = id * 2.399963;
+  const flame = kind === "flame";
+  const flicker =
+    Math.sin(t * 0.0071 + phase) * 0.09 +
+    Math.sin(t * 0.0173 + phase * 1.7) * 0.05;
   return {
-    angle: time * (0.00028 + (index % 5) * 0.00011) + index * 2.4,
-    reach: 135 + (index % 4) * 38,
+    kind,
+    angle: t * speed * (0.85 + seed * 0.3) + phase,
+    reach: range * (0.88 + seed * 0.24),
+    beamWidth: width * (0.85 + seed * 0.3),
+    rotationSpeed: speed * (0.85 + seed * 0.3),
+    glowRadius: bloom * (0.9 + seed * 0.2),
+    lampRadius: 2.1 + seed * 0.9,
+    color,
+    beams,
+    intensity: flame
+      ? 0.9 + flicker
+      : 0.94 + Math.sin(t * 0.0007 + phase) * 0.06,
+    flameHeight: 8 + seed * 4 + flicker * 12,
+    sway: Math.sin(t * 0.0043 + phase) * 1.5,
+    ember: fraction(t * 0.00027 + seed),
   };
 }
 

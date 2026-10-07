@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sampleLighthouse } from "../src/core/seascape.js";
 
 function canvasContext() {
   const calls = [];
@@ -8,7 +9,9 @@ function canvasContext() {
       calls,
       createRadialGradient(...args) {
         calls.push(["createRadialGradient", ...args]);
-        return { addColorStop() {} };
+        return {
+          addColorStop: (...stop) => calls.push(["colorStop", ...stop]),
+        };
       },
       createLinearGradient(...args) {
         calls.push(["createLinearGradient", ...args]);
@@ -22,7 +25,8 @@ function canvasContext() {
         );
       },
       set(target, property, value) {
-        if (typeof value === "string") calls.push([property, value]);
+        if (typeof value === "string" || typeof value === "number")
+          calls.push([property, value]);
         target[property] = value;
         return true;
       },
@@ -197,7 +201,8 @@ test("offscreen lighthouse effects are culled without dropping an incoming beam"
   );
   assert.ok(!context.calls.some(([name]) => name === "lineTo"));
   context.calls.length = 0;
-  state.lighthouses[0].x = -66.25;
+  const bloomRadius = sampleLighthouse(0, 0).glowRadius * 1.8;
+  state.lighthouses[0].x = -bloomRadius - 1.25;
   drawNightAtmosphere(context, state);
   assert.equal(
     context.calls.filter(([name]) => name === "createRadialGradient").length,
@@ -205,10 +210,109 @@ test("offscreen lighthouse effects are culled without dropping an incoming beam"
   );
   assert.ok(context.calls.some(([name, x]) => name === "lineTo" && x > 0));
   context.calls.length = 0;
-  state.lighthouses[0].x = -65.5;
+  state.lighthouses[0].x = -bloomRadius - 0.5;
   drawNightAtmosphere(context, state);
   assert.equal(
     context.calls.filter(([name]) => name === "createRadialGradient").length,
-    3,
+    5,
+  );
+});
+
+test("flame beacons draw flickering fire without a rotating cone", () => {
+  const context = canvasContext();
+  const state = options();
+  state.lighthouses = [{ x: 180, y: 200, index: 1 }];
+  drawNightAtmosphere(context, state);
+  assert.ok(!context.calls.some(([name]) => name === "lineTo"));
+  const flames = context.calls.filter(([name]) => name === "bezierCurveTo");
+  assert.equal(flames.length, 4);
+  const initialPaints = paints();
+  context.calls.length = 0;
+  drawNightAtmosphere(context, { ...state, time: 2000 });
+  assert.notDeepEqual(
+    context.calls.filter(([name]) => name === "bezierCurveTo"),
+    flames,
+  );
+  assert.equal(paints(), initialPaints);
+});
+
+test("reduced motion freezes fire, cinders, bloom and beams together", () => {
+  const context = canvasContext();
+  const state = options();
+  state.reducedMotion = true;
+  state.lighthouses = Array.from({ length: 8 }, (_, index) => ({
+    x: 60 + index * 70,
+    y: 200,
+    index,
+  }));
+  drawNightAtmosphere(context, state);
+  const still = [...context.calls];
+  context.calls.length = 0;
+  drawNightAtmosphere(context, { ...state, time: 59000 });
+  assert.deepEqual(context.calls, still);
+});
+
+test("paired optics cast opposite feathered beams in their own color", () => {
+  const context = canvasContext();
+  const state = options();
+  state.time = 0;
+  state.lighthouses = [{ x: 320, y: 240, index: 4 }];
+  drawNightAtmosphere(context, state);
+  const ends = context.calls.filter(([name]) => name === "lineTo");
+  assert.equal(ends.length, 10);
+  assert.ok(Math.abs(ends[0][1] + ends[5][1] - 640) < 1e-10);
+  assert.ok(Math.abs(ends[0][2] + ends[5][2] - 480) < 1e-10);
+  assert.ok(
+    context.calls.some(
+      ([name, , color]) =>
+        name === "colorStop" && color.startsWith("rgba(211,227,255,"),
+    ),
+  );
+  const falloffs = context.calls.filter(([name]) => name === "colorStop");
+  assert.ok(falloffs.some(([, position]) => position === 0.65));
+  assert.ok(
+    falloffs.some(
+      ([, position, color]) =>
+        position === 1 && color === "rgba(211,227,255,0)",
+    ),
+  );
+});
+
+test("local light reveals stay compact even for long-range optics", () => {
+  const context = canvasContext();
+  const state = options();
+  state.lighthouses = [{ x: 250, y: 200, index: 4 }];
+  mask.context.calls.length = 0;
+  drawNightAtmosphere(context, state);
+  const radii = mask.context.calls
+    .filter(([name]) => name === "createRadialGradient")
+    .map((call) => call[6]);
+  assert.equal(radii.length, 2);
+  assert.equal(radii[1], sampleLighthouse(0, 4).glowRadius * 1.8);
+  assert.ok(radii[1] < 65);
+  assert.ok(
+    mask.context.calls.some(
+      ([name, x, y]) => name === "scale" && x === 1 && y === 0.5,
+    ),
+  );
+});
+
+test("a fixed lantern keeps its cone still while the light gently breathes", () => {
+  const context = canvasContext();
+  const state = options();
+  state.lighthouses = [{ x: 180, y: 200, index: 6 }];
+  drawNightAtmosphere(context, state);
+  const ends = context.calls.filter(([name]) => name === "lineTo");
+  const colors = context.calls.filter(([name]) => name === "colorStop");
+  assert.equal(ends.length, 5);
+  context.calls.length = 0;
+  drawNightAtmosphere(context, { ...state, time: 9000 });
+  assert.deepEqual(
+    context.calls.filter(([name]) => name === "lineTo"),
+    ends,
+  );
+  assert.notDeepEqual(
+    context.calls.filter(([name]) => name === "colorStop"),
+    colors,
   );
 });

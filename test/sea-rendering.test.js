@@ -100,6 +100,28 @@ const options = {
   lighting: { daylight: 1, storm: 0 },
 };
 
+test("a focal creature remains surfaced through its encounter camera move", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+    creatures: [[500, 400, 1]],
+  });
+  const submerged = recordingContext();
+  const introduced = recordingContext();
+  renderer.drawSurface(submerged.context, { ...options, time: 8000 });
+  renderer.drawSurface(introduced.context, {
+    ...options,
+    time: 8000,
+    encounterCreature: 0,
+  });
+  const spout = (calls) =>
+    calls.some(
+      ([method, x, y]) => method === "moveTo" && x === 13 && y === -10,
+    );
+  assert.equal(spout(submerged.calls), false);
+  assert.equal(spout(introduced.calls), true);
+});
+
 test("surface marks reuse bounded palettes across time, weather, and zoom", () => {
   const renderer = createSeaRendering({
     WORLD: { w: 1000, h: 800 },

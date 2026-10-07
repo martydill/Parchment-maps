@@ -4,6 +4,15 @@ import {
   readingPages,
 } from "./ui/port-workspace.js?v=5";
 import { createSeaRendering } from "./sea-rendering.js?v=8";
+import {
+  advanceEncounter,
+  beginEncounter,
+  createEncounterState,
+  creatureEncounter,
+  encounterCamera,
+  encounterFrame,
+} from "./core/encounters.js";
+import { sampleCreatureAppearance } from "./core/seascape.js";
 import { createAlphaPalette } from "./style-palette.js";
 import {
   createRenderCadence,
@@ -17,7 +26,8 @@ import { updateElementProperty } from "./ui/dom.js";
 import {
   drawNightAtmosphere,
   drawShipLanterns,
-} from "./atmosphere-rendering.js?v=2";
+} from "./atmosphere-rendering.js?v=3";
+import { MAX_LIGHTHOUSE_REACH } from "./core/seascape.js";
 import {
   GAME_NAME,
   PORT_NAMES,
@@ -464,6 +474,19 @@ let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
 let pendingCombat = null;
+let pendingEncounterCombat = null;
+const encounters = createEncounterState();
+const encounterOverlay = document.getElementById("encounterIntro");
+let encounterFocus = null;
+let encounterInertElements = [];
+let encounterAudio = null;
+let encounterAudioGain = null;
+let encounterDrums = [];
+let encounterSoundEnabled = true;
+let debugWeather = null;
+let debugTimeOfDay = null;
+let debugPaused = false;
+let debugPreviewPanels = [];
 let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
@@ -502,7 +525,11 @@ const visibility = {
 };
 let weatherFrontProgress = -1;
 let weatherFront;
+function sceneTimeOfDay() {
+  return debugTimeOfDay ?? game.timeOfDay;
+}
 function getInterpolatedWeather() {
+  if (debugWeather) return debugWeather;
   const weatherInterval = 1050;
   const progress =
     ((game.day - 1) * 620 + game.voyageDistance) / weatherInterval;
@@ -533,6 +560,7 @@ function setWeatherForDay(_day) {
   visibility.lastRadius = -1;
 }
 function weatherInSeaZone(baseWeather, position = ship) {
+  if (debugWeather) return baseWeather;
   const sea = roughSeaAtPosition(position, roughSeas, WORLD.w);
   if (!sea) return baseWeather;
   return {
@@ -552,11 +580,12 @@ function weatherInSeaZone(baseWeather, position = ship) {
 function currentVisibilityKm(angle = ship.angle) {
   const weather = currentWeather(angle);
   return nightSightLimit(
-    sceneLighting(game.timeOfDay, weather.roughness, game.day),
+    sceneLighting(sceneTimeOfDay(), weather.roughness, game.day),
     weather.visibilityKm,
   );
 }
 function currentWeather(angle = ship.angle) {
+  if (debugWeather) return debugWeather;
   return localWeatherAtBearing({
     baseWeather: weatherInSeaZone(getInterpolatedWeather()),
     position: ship,
@@ -2778,7 +2807,7 @@ const visibilityLandGeometry = lands.map(({ poly }) => {
 function buildVisibilityPolygon(force = false) {
   const baseWeather = weatherInSeaZone(getInterpolatedWeather());
   const lighting = sceneLighting(
-    game.timeOfDay,
+    sceneTimeOfDay(),
     baseWeather.roughness,
     game.day,
   );
@@ -3417,7 +3446,6 @@ const ui = {
   town: document.getElementById("townButton"),
   explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
-  steeringStatus: document.getElementById("steeringStatus"),
   objective: document.getElementById("objectiveText"),
   course: document.getElementById("courseCard"),
   courseTitle: document.getElementById("courseTitle"),
@@ -5074,7 +5102,7 @@ function render() {
   const time = performance.now();
   const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
-  const lighting = sceneLighting(game.timeOfDay, weather.roughness, game.day);
+  const lighting = sceneLighting(sceneTimeOfDay(), weather.roughness, game.day);
   const moving =
     !ship.anchored &&
     !currentPort &&
@@ -5134,7 +5162,7 @@ function render() {
     }
   }
   seaRendering.drawSurface(ctx, {
-    bufferSurface: z < 1 && vw * vh > 1_000_000,
+    bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
     deferLighting: true,
     cacheLightBands: true,
     detail: renderQuality.quality,
@@ -5148,6 +5176,9 @@ function render() {
     reducedMotion: reducedMotion.matches,
     lighting,
     front: weather.front,
+    encounterCreature: encounters.active?.preview
+      ? undefined
+      : encounters.active?.index,
   });
   drawAnimatedRoughSeas(ctx, visualTime, z);
   drawNavigationalHazards(ctx, z);
@@ -5211,17 +5242,23 @@ function render() {
 
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
-  const beaconRange = Math.max(vw, vh) + 160;
   activeLighthouses.length = 0;
   if (lighting.night >= 0.015) {
+    const beaconCopies = visibleWorldCopies(
+      camera.x,
+      vw + MAX_LIGHTHOUSE_REACH * 2,
+      z,
+      WORLD.w,
+    );
     for (let index = 0; index < ports.length; index++) {
       const port = ports[index];
-      if (wrappedDistance(ship.x, ship.y, port.x, port.y) >= beaconRange / z)
-        continue;
-      const x = vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z;
       const y = vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS;
-      if (x > -160 && x < vw + 160 && y > -160 && y < vh + 160)
-        activeLighthouses.push({ x, y, index });
+      if (y < -MAX_LIGHTHOUSE_REACH || y > vh + MAX_LIGHTHOUSE_REACH) continue;
+      for (const copy of beaconCopies) {
+        const x = vw / 2 + (port.x + copy - camera.x) * z;
+        if (x > -MAX_LIGHTHOUSE_REACH && x < vw + MAX_LIGHTHOUSE_REACH)
+          activeLighthouses.push({ x, y, index });
+      }
     }
   }
   shipScreen.x = vw / 2 + (ship.x - camera.x) * z;
@@ -5261,6 +5298,38 @@ function render() {
     reducedMotion: reducedMotion.matches,
   });
   ctx.restore();
+  if (
+    encounters.active?.kind === "raider" &&
+    (encounters.active.preview || game.seaRaid.raider)
+  ) {
+    const raider = encounters.active.preview
+      ? encounters.active
+      : game.seaRaid.raider;
+    drawMerchantShip(
+      ctx,
+      {
+        ...raider,
+        vesselClass:
+          raider.vesselClass || (raider.attackStrength > 1 ? "brig" : "cutter"),
+      },
+      z,
+      nearestWrappedX(raider.x, camera.x),
+      {
+        time: reducedMotion.matches ? 0 : time / 1000,
+        roughness: weather.roughness,
+        windAngle: game.windAngle,
+        windStrength: game.windStrength,
+        reducedMotion: reducedMotion.matches,
+        lighting,
+      },
+    );
+  }
+  if (encounters.active?.preview && encounters.active.kind !== "raider") {
+    seaRendering.drawEncounterCreature(ctx, {
+      ...encounters.active,
+      x: nearestWrappedX(encounters.active.x, camera.x),
+    });
+  }
   seaRendering.drawReflections(ctx, {
     camera,
     vw,
@@ -5276,6 +5345,8 @@ function render() {
         angle: ship.angle,
         vesselClass: game.shipUpgrades.activeClass,
         scale: 1.82,
+        speed: moving ? ship.speed : 0,
+        anchored: ship.anchored,
       },
     ],
   });
@@ -5370,10 +5441,212 @@ function readInput() {
 }
 const MAP_MARGIN = 58;
 const EDGE_RECOVERY_ZONE = 155;
+
+function unlockEncounterAudio(event) {
+  if (!event.isTrusted || !encounterSoundEnabled) return;
+  try {
+    if (!encounterAudio) {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) return;
+      encounterAudio = new Audio();
+      encounterAudioGain = encounterAudio.createGain();
+      encounterAudioGain.gain.value = 0.22;
+      encounterAudioGain.connect(encounterAudio.destination);
+    }
+    if (encounterAudio.state === "suspended")
+      encounterAudio.resume().catch(() => {});
+  } catch {
+    // The visual entrance also works in browsers without Web Audio.
+    encounterAudio = null;
+  }
+}
+addEventListener("pointerdown", unlockEncounterAudio, { capture: true });
+addEventListener("keydown", unlockEncounterAudio, { capture: true });
+
+function stopEncounterDrums() {
+  for (const drum of encounterDrums) drum.stop();
+  encounterDrums = [];
+}
+
+function playEncounterDrums(kind) {
+  stopEncounterDrums();
+  if (!encounterSoundEnabled || encounterAudio?.state !== "running") return;
+  const wonder = kind === "whale";
+  const beats = wonder ? [0, 0.65] : [0, 0.24, 0.52, 1.03];
+  for (const [index, offset] of beats.entries()) {
+    const start = encounterAudio.currentTime + offset;
+    const drum = encounterAudio.createOscillator();
+    const gain = encounterAudio.createGain();
+    drum.type = "sine";
+    drum.frequency.setValueAtTime(wonder ? 110 : 145 - index * 12, start);
+    drum.frequency.exponentialRampToValueAtTime(wonder ? 48 : 38, start + 0.22);
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(wonder ? 0.45 : 0.85, start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    drum.connect(gain);
+    gain.connect(encounterAudioGain);
+    drum.onended = () => {
+      drum.disconnect();
+      gain.disconnect();
+      encounterDrums = encounterDrums.filter((source) => source !== drum);
+    };
+    drum.start(start);
+    drum.stop(start + 0.55);
+    encounterDrums.push(drum);
+  }
+}
+
+function startEncounterIntro(encounter) {
+  if (!beginEncounter(encounters, encounter, camera)) return false;
+  if (encounter.preview) {
+    debugPreviewPanels = [
+      ...document.querySelectorAll(
+        "body > div:not(#hud):not(#mapOpening):not(#encounterIntro):not(#debugMenu)",
+      ),
+    ]
+      .filter((panel) => panel.getClientRects().length > 0)
+      .map((panel) => ({
+        panel,
+        display: panel.style.display,
+      }));
+    for (const { panel } of debugPreviewPanels) panel.style.display = "none";
+  }
+  if (encounterOverlay.hidden) {
+    encounterFocus = document.activeElement;
+    encounterInertElements = [...document.body.children].filter(
+      (element) => element !== encounterOverlay && !element.inert,
+    );
+    for (const element of encounterInertElements) element.inert = true;
+  }
+  keys.clear();
+  input.x = input.y = input.power = 0;
+  joyPointer = null;
+  stick.style.transform = "translate(0,0)";
+  canvasTapStart = null;
+  encounterOverlay.dataset.kind = encounter.kind;
+  document.getElementById("encounterEyebrow").textContent = {
+    raider: "Hostile sails · encounter",
+    whale: "Lookout · whale sighting",
+    monster: "From the depths · sea monster",
+  }[encounter.kind];
+  document.getElementById("encounterName").textContent = encounter.name;
+  encounterOverlay.style.setProperty(
+    "--encounter-bars",
+    reducedMotion.matches ? 1 : 0,
+  );
+  encounterOverlay.style.setProperty(
+    "--encounter-banner",
+    reducedMotion.matches ? 1 : 0,
+  );
+  encounterOverlay.hidden = false;
+  document.body.classList.add("encounter-active");
+  document.getElementById("skipEncounter").focus({ preventScroll: true });
+  playEncounterDrums(encounter.kind);
+  return true;
+}
+
+function finishEncounterIntro() {
+  encounters.active = null;
+  stopEncounterDrums();
+  encounterOverlay.hidden = true;
+  document.body.classList.remove("encounter-active");
+  for (const element of encounterInertElements) element.inert = false;
+  encounterInertElements = [];
+  for (const { panel, display } of debugPreviewPanels)
+    panel.style.display = display;
+  debugPreviewPanels = [];
+  camera.x = ship.x;
+  camera.y = ship.y;
+  camera.zoom = clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+  keys.clear();
+  if (pendingEncounterCombat) {
+    const { encounter, stats } = pendingEncounterCombat;
+    pendingEncounterCombat = null;
+    openCombatEncounter(encounter, stats);
+    document
+      .querySelector("[data-combat-action]")
+      .focus({ preventScroll: true });
+  } else if (encounterFocus?.isConnected)
+    encounterFocus.focus({ preventScroll: true });
+  encounterFocus = null;
+}
+
+document
+  .getElementById("skipEncounter")
+  .addEventListener("click", finishEncounterIntro);
+encounterOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    finishEncounterIntro();
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    const sound = document.getElementById("encounterSound");
+    const skip = document.getElementById("skipEncounter");
+    (document.activeElement === sound ? skip : sound).focus();
+  }
+});
+document.getElementById("encounterSound").addEventListener("click", (event) => {
+  encounterSoundEnabled = !encounterSoundEnabled;
+  event.currentTarget.setAttribute(
+    "aria-pressed",
+    String(encounterSoundEnabled),
+  );
+  event.currentTarget.textContent = encounterSoundEnabled
+    ? "Drums on"
+    : "Drums off";
+  if (!encounterSoundEnabled) stopEncounterDrums();
+});
+
+function raiderEncounter(raider) {
+  return {
+    id: `raider:${raider.seed}`,
+    kind: "raider",
+    name: combatEnemyProfile(raider.seed, raider.attackStrength).label,
+    caption: "Hostile sails turn toward you. Prepare to run.",
+    x: raider.x,
+    y: raider.y,
+  };
+}
+
+function checkCreatureEncounters(now) {
+  if (
+    encounters.active ||
+    encounters.cooldown > 0 ||
+    ship.anchored ||
+    pendingCombat
+  )
+    return;
+  if (
+    [
+      ...document.querySelectorAll(
+        "[aria-modal='true'], #menuPanel, #minimapWrap",
+      ),
+    ].some((panel) => panel.getClientRects().length > 0)
+  )
+    return;
+  const time = reducedMotion.matches ? 0 : now;
+  for (const [index, creature] of worldMonsters.entries()) {
+    const [x, y] = creature;
+    if (
+      onLand(x, y) ||
+      !pointCurrentlyVisible(x, y) ||
+      !isWorldCircleInViewport(x, y, 0)
+    )
+      continue;
+    const encounter = creatureEncounter(
+      index,
+      creature,
+      sampleCreatureAppearance(time, index),
+    );
+    if (encounter && startEncounterIntro(encounter)) return;
+  }
+}
+
 function raiderOpenWater(x, y) {
   return y > MAP_MARGIN + 20 && y < WORLD.h - MAP_MARGIN - 20 && !onLand(x, y);
 }
 function updateSeaRaid(dt) {
+  if (pendingEncounterCombat) return;
   if (
     !game.seaRaid.checkedThisVoyage &&
     game.departedFromPort &&
@@ -5424,28 +5697,34 @@ function updateSeaRaid(dt) {
     isOpen: raiderOpenWater,
   });
   game.seaRaid.raider = result.raider;
-  if (result.event === "spotted")
+  if (result.event === "spotted") {
+    startEncounterIntro(raiderEncounter(result.raider));
     showMessage(
       "RAIDER · Hostile sails turn toward you! Steer away to escape.",
       4,
     );
-  else if (result.event === "caught") {
+  } else if (result.event === "caught") {
     const stats = operationalShipStats();
     stats.defense += routePlanEffects(game.operations.routePlan).defenseBonus;
-    openCombatEncounter(
-      {
-        encountered: true,
-        attackStrength: raider.attackStrength,
-        seed: raider.seed,
-      },
-      stats,
-    );
+    const encounter = {
+      encountered: true,
+      attackStrength: raider.attackStrength,
+      seed: raider.seed,
+    };
+    if (encounters.active?.kind !== "raider")
+      startEncounterIntro(raiderEncounter(raider));
+    if (encounters.active) {
+      game.seaRaid.raider = raider;
+      pendingEncounterCombat = { encounter, stats };
+    } else openCombatEncounter(encounter, stats);
   } else if (result.event === "escaped") {
     showMessage("RAIDER EVADED · The hostile ship falls behind.", 4);
     addNews(
       "Raider evaded",
       "Your course and seamanship shook a hostile ship at sea.",
     );
+  } else if (result.raider?.mode === "chase" && !encounters.active) {
+    startEncounterIntro(raiderEncounter(result.raider));
   }
 }
 
@@ -5524,6 +5803,7 @@ function updateSeaWarning() {
   if (warning.textContent !== text) warning.textContent = text;
 }
 function update(dt) {
+  if (debugPaused || encounters.active?.preview) return;
   // Fleet vessels trade autonomously in real time and keep sailing even while
   // the player is docked or has a town dossier open — otherwise commissioning a
   // ship, assigning a route, and checking the Fleet tab from port would appear
@@ -5535,7 +5815,7 @@ function update(dt) {
       ui.time,
       "textContent",
       timeOfDayLabel(
-        sceneLighting(game.timeOfDay, currentWeather().roughness, game.day),
+        sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
       ),
     );
     updateFleetShips(dt);
@@ -5741,8 +6021,10 @@ function update(dt) {
       );
     }
   }
-  camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
-  camera.y += (ship.y - camera.y) * Math.min(1, dt * 4.5);
+  if (!encounters.active || reducedMotion.matches) {
+    camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
+    camera.y += (ship.y - camera.y) * Math.min(1, dt * 4.5);
+  }
   visibility.revealCooldown -= dt;
   if (visibility.revealCooldown <= 0) {
     revealCurrentView();
@@ -5844,7 +6126,53 @@ function loop(now) {
       );
       if (Math.abs(ratio - DPR) > 0.01) resize();
     }
-    update(dt);
+    const hadEncounter = !encounterOverlay.hidden;
+    const frame = advanceEncounter(
+      encounters,
+      Math.max(0, frameMs / 1000),
+      reducedMotion.matches,
+    );
+    if (hadEncounter && !encounters.active) finishEncounterIntro();
+    update(dt * frame.timeScale);
+    if (encounters.active) {
+      if (
+        encounters.active.kind === "raider" &&
+        !encounters.active.preview &&
+        game.seaRaid.raider
+      ) {
+        encounters.active.x = game.seaRaid.raider.x;
+        encounters.active.y = game.seaRaid.raider.y;
+      }
+      const presentation = encounterFrame(
+        encounters.active.elapsed,
+        reducedMotion.matches,
+      );
+      if (!reducedMotion.matches)
+        Object.assign(
+          camera,
+          encounterCamera(
+            encounters.active,
+            presentation,
+            {
+              x: ship.x,
+              y: ship.y,
+              zoom: clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM),
+            },
+            WORLD.w,
+          ),
+        );
+      encounterOverlay.style.setProperty("--encounter-bars", presentation.bars);
+      encounterOverlay.style.setProperty(
+        "--encounter-banner",
+        presentation.banner,
+      );
+    } else if (
+      gameStarted &&
+      !currentPort &&
+      !selectedTown &&
+      !selectedMerchant
+    )
+      checkCreatureEncounters(now);
     render();
     animatePortPanels(now);
   }
@@ -5853,6 +6181,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 function changeZoom(direction) {
+  if (encounters.active) return;
   const targetZoom = Math.max(
     MIN_ZOOM,
     Math.min(
@@ -5865,6 +6194,7 @@ function changeZoom(direction) {
 }
 
 addEventListener("keydown", (e) => {
+  if (encounters.active) return;
   if (
     e.defaultPrevented ||
     e.target.closest?.(
@@ -7318,6 +7648,7 @@ document.getElementById("closePort").addEventListener("click", () => {
   ship.anchored = true;
   game.departedFromPort = leaving ? leaving.name : null;
   game.seaRaid = createSeaRaidState();
+  encounters.seen.clear();
   game.voyageDistance = 0;
   resetVoyageTimeState();
   revealCurrentView(true);
@@ -7453,6 +7784,162 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
     menuPanel.style.display = "none";
   }
 });
+
+const debugButton = document.getElementById("debugButton");
+const debugMenu = document.getElementById("debugMenu");
+const debugWeatherSelect = document.getElementById("debugWeather");
+const debugTimeSelect = document.getElementById("debugTime");
+const debugPauseToggle = document.getElementById("debugPause");
+const debugWeatherPatterns = [
+  ...new Map(
+    weatherPatterns.map((weather) => [weather.name, weather]),
+  ).values(),
+  { name: "Heavy storm", visibilityKm: 3, roughness: 0.9 },
+];
+for (const [index, weather] of debugWeatherPatterns.entries()) {
+  const option = document.createElement("option");
+  option.value = String(index);
+  option.textContent = weather.name;
+  debugWeatherSelect.append(option);
+}
+
+function closeDebugMenu(restoreFocus = true) {
+  debugMenu.hidden = true;
+  debugButton.setAttribute("aria-expanded", "false");
+  if (restoreFocus) debugButton.focus({ preventScroll: true });
+}
+debugButton.addEventListener("click", () => {
+  if (!debugMenu.hidden) {
+    closeDebugMenu();
+    return;
+  }
+  debugMenu.hidden = false;
+  debugButton.setAttribute("aria-expanded", "true");
+  document.getElementById("closeDebug").focus({ preventScroll: true });
+});
+document
+  .getElementById("closeDebug")
+  .addEventListener("click", () => closeDebugMenu());
+document.addEventListener("pointerdown", (event) => {
+  if (
+    !debugMenu.hidden &&
+    !debugMenu.contains(event.target) &&
+    !debugButton.contains(event.target)
+  )
+    closeDebugMenu(false);
+});
+debugMenu.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeDebugMenu();
+  } else if (event.key === "Tab") {
+    const controls = [...debugMenu.querySelectorAll("button, select, input")];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+});
+
+function refreshDebugScene() {
+  visibility.lastRadius = -1;
+  revealCurrentView(true);
+  fogCadence.reset();
+  updateHud();
+  ui.time.textContent = timeOfDayLabel(
+    sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
+  );
+  if (currentPort) renderHarborPresentation();
+  if (pendingCombat) {
+    const labels = ["", "Light raider", "Armed corsair", "Heavy boarding ship"];
+    renderCombatVisual(
+      labels[pendingCombat.encounter.attackStrength],
+      pendingCombat.profile,
+    );
+  }
+  render();
+}
+debugWeatherSelect.addEventListener("change", () => {
+  const pattern = debugWeatherPatterns[Number(debugWeatherSelect.value)];
+  debugWeather =
+    debugWeatherSelect.value === "auto"
+      ? null
+      : {
+          ...pattern,
+          front: sampleWeatherFront([pattern], 0),
+        };
+  refreshDebugScene();
+});
+debugTimeSelect.addEventListener("change", () => {
+  debugTimeOfDay =
+    debugTimeSelect.value === "auto" ? null : Number(debugTimeSelect.value);
+  refreshDebugScene();
+});
+debugPauseToggle.addEventListener("change", () => {
+  debugPaused = debugPauseToggle.checked;
+  keys.clear();
+  input.x = input.y = input.power = 0;
+});
+document.getElementById("resetDebug").addEventListener("click", () => {
+  debugWeather = null;
+  debugTimeOfDay = null;
+  debugPaused = false;
+  debugWeatherSelect.value = debugTimeSelect.value = "auto";
+  debugPauseToggle.checked = false;
+  refreshDebugScene();
+});
+
+function previewEncounter(kind) {
+  // Search from the ship's unwrapped longitude and keep the subject on open
+  // water with a clear line of sight, including beside a harbor or map seam.
+  let target = { x: ship.x, y: ship.y };
+  search: for (const distance of [85, 55, 25]) {
+    for (let step = 0; step < 16; step++) {
+      const angle = ship.angle + (step * Math.PI) / 8;
+      const x = ship.x + Math.cos(angle) * distance;
+      const y = ship.y + Math.sin(angle) * distance;
+      if (
+        raiderOpenWater(x, y) &&
+        segmentClear(seaField, ship.x, ship.y, x, y)
+      ) {
+        target = { x, y };
+        break search;
+      }
+    }
+  }
+  const strength = Number(document.getElementById("debugRaiderStrength").value);
+  const subject =
+    kind === "raider"
+      ? {
+          ...raiderEncounter({
+            ...target,
+            seed: 333,
+            attackStrength: strength,
+          }),
+          attackStrength: strength,
+          angle: Math.atan2(ship.y - target.y, ship.x - target.x),
+          seed: 333,
+          vesselClass: ["", "cutter", "brig", "carrack"][strength],
+        }
+      : {
+          ...creatureEncounter(kind === "whale" ? 0 : 2, [target.x, target.y], {
+            rise: 1,
+          }),
+          scale: 1.4,
+        };
+  closeDebugMenu();
+  startEncounterIntro({ ...subject, id: `debug:${kind}`, preview: true });
+}
+debugMenu.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-debug-encounter]");
+  if (button) previewEncounter(button.dataset.debugEncounter);
+});
+
 function renderChart() {
   renderChartPanel({
     activeRumorLeads,
@@ -7542,7 +8029,6 @@ mapOpening = createMapOpening({
   source: canvas,
   overlay: document.getElementById("mapOpening"),
   scene: document.getElementById("mapOpeningScene"),
-  caption: document.querySelector(".map-opening-caption"),
   skip: document.getElementById("skipMapOpening"),
   hud: document.getElementById("hud"),
   reducedMotion,

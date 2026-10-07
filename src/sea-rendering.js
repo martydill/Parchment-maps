@@ -18,6 +18,7 @@ import {
   sampleWaterReflection,
 } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
+import { drawHullReflection } from "./ship-rendering.js";
 
 const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
 // Finer opacity steps preserve the subtle response to daylight and storms.
@@ -30,7 +31,6 @@ const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.52);
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
 const wakeBodyStyle = createAlphaPalette("26,87,86", 0, 0.14, 128);
-const reflectionHullStyle = createAlphaPalette("31,66,61", 0, 0.32, 128);
 const reflectionSailStyle = createAlphaPalette("244,224,177", 0, 0.38, 128);
 const reflectionLampStyle = createAlphaPalette("255,206,124", 0, 0.65, 128);
 const stormSeaStyle = createAlphaPalette("22,49,67", 0, 0.22, 128);
@@ -818,6 +818,7 @@ export function createSeaRendering({
       front,
       detail = 1,
       focus,
+      encounterCreature,
       cacheLightBands = false,
       skipLighting = false,
       deferLighting = false,
@@ -982,7 +983,16 @@ export function createSeaRendering({
         Math.abs(nearestX - camera.x) <= halfW + 60 &&
         Math.abs(y - camera.y) <= halfH + 60
       )
-        drawCreature(c, nearestX, y, scale, index, t);
+        drawCreature(
+          c,
+          nearestX,
+          y,
+          scale,
+          index,
+          // Hold the focal creature at the crest of its surfacing cycle so
+          // it cannot disappear while the camera is introducing it.
+          encounterCreature === index ? 1 - index * 3.7 : t,
+        );
     });
     for (const { surf, offset } of visible) {
       c.save();
@@ -1221,10 +1231,18 @@ export function createSeaRendering({
       c.save();
       c.translate(x, vessel.y);
       c.scale(size, size);
+      drawHullReflection(c, profile, heading, {
+        time: t,
+        roughness,
+        reducedMotion,
+        seed: vessel.idNum || 0,
+        speed: vessel.speed || 0,
+        anchored: vessel.anchored ?? false,
+        lighting,
+      });
       const top = -profile.length * 0.6;
       const span = profile.length * 1.2 + 42 * MAP_TILT_TAN;
-      // One striped clip per vessel breaks the mirrored silhouette into
-      // ripples. All geometry remains on the water side of coastline masks.
+      // Sail glints retain their finer striped clip above the hull ink.
       c.beginPath();
       for (let row = 0; row < 14; row++) {
         const ripple = sampleWaterReflection(t, row, roughness);
@@ -1232,18 +1250,6 @@ export function createSeaRendering({
         c.rect(-75 + ripple.offset, y, 150, (span / 14) * ripple.width * 0.72);
       }
       c.clip();
-      c.fillStyle = reflectionHullStyle(0.16 + daylight * 0.16);
-      c.beginPath();
-      c.ellipse(
-        0,
-        profile.deckHeight * MAP_TILT_TAN,
-        profile.beam * 0.85,
-        profile.length * 0.46,
-        heading,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
       c.fillStyle = reflectionSailStyle(
         (0.1 + daylight * 0.28) * (1 - Math.min(1, roughness) * 0.55),
       );
@@ -1320,6 +1326,9 @@ export function createSeaRendering({
     drawCaustics: (c, options) => causticsRendering.draw(c, options),
     drawWake,
     drawReflections,
+    drawEncounterCreature(c, { x, y, scale, index }) {
+      drawCreature(c, x, y, scale, index, 1 - index * 3.7);
+    },
     setRivers(paths) {
       riverPaths = paths.map((rivers) =>
         rivers
