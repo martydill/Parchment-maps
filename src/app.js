@@ -3,7 +3,7 @@ import {
   refreshPortWorkspaces,
   readingPages,
 } from "./ui/port-workspace.js?v=5";
-import { createSeaRendering } from "./sea-rendering.js?v=7";
+import { createSeaRendering } from "./sea-rendering.js?v=8";
 import { createAlphaPalette } from "./style-palette.js";
 import {
   createRenderCadence,
@@ -5135,6 +5135,7 @@ function render() {
   }
   seaRendering.drawSurface(ctx, {
     bufferSurface: z < 1 && vw * vh > 1_000_000,
+    deferLighting: true,
     cacheLightBands: true,
     detail: renderQuality.quality,
     focus: { x: ship.x, y: ship.y, radius: 480 },
@@ -5150,6 +5151,16 @@ function render() {
   });
   drawAnimatedRoughSeas(ctx, visualTime, z);
   drawNavigationalHazards(ctx, z);
+  seaRendering.drawCaustics(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    lighting,
+    shoals: cachedShoals,
+    reducedMotion: reducedMotion.matches,
+    detail: renderQuality.quality,
+  });
   seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
   const reflectedVessels = merchantShips.filter(
     (vessel) =>
@@ -5228,6 +5239,28 @@ function render() {
 
   // The ship and immediate docking cue remain readable above the fog layer.
   worldTransform();
+  // Specular light sits above the night wash, within the current sight area.
+  ctx.save();
+  polygonPath(
+    ctx,
+    visibility.polygon,
+    1,
+    1,
+    nearestWrappedX(ship.x, camera.x) - ship.x,
+  );
+  ctx.clip();
+  seaRendering.drawLighting(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    lighting,
+    windAngle: game.windAngle,
+    roughness: weather.roughness,
+    detail: renderQuality.quality,
+    reducedMotion: reducedMotion.matches,
+  });
+  ctx.restore();
   seaRendering.drawReflections(ctx, {
     camera,
     vw,

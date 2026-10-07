@@ -1,5 +1,6 @@
 import { sampleLighthouse } from "./core/seascape.js";
 import { createAlphaPalette } from "./style-palette.js";
+import { celestialPosition } from "./core/sea-optics.js";
 
 const starStyle = createAlphaPalette("223,235,255", 0, 0.65, 128);
 
@@ -54,9 +55,9 @@ const stars = Array.from({ length: 95 }, (_, index) => {
 function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
   const twilight = Math.max(lighting.sunrise, lighting.sunset);
   if (twilight > 0.01) {
-    const rising = lighting.sunrise >= lighting.sunset;
-    const x = width * (rising ? 0.64 : 0.38);
-    const y = height * 0.28;
+    const sun = celestialPosition("sun", lighting);
+    const x = width * sun.x;
+    const y = height * sun.y;
     const warmth = twilight * (1 - lighting.storm * 0.72);
     c.save();
     c.globalCompositeOperation = "screen";
@@ -84,8 +85,9 @@ function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
   if (lighting.stars < 0.04) return;
   c.save();
   c.globalCompositeOperation = "screen";
-  const moonX = width * 0.76;
-  const moonY = height * 0.19;
+  const moon = celestialPosition("moon", lighting);
+  const moonX = width * moon.x;
+  const moonY = height * moon.y;
   const moonStrength =
     lighting.stars * lighting.moon * (1 - lighting.storm * 0.75);
   glow(
