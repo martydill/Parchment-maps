@@ -5243,6 +5243,8 @@ function render() {
         angle: ship.angle,
         vesselClass: game.shipUpgrades.activeClass,
         scale: 1.82,
+        speed: moving ? ship.speed : 0,
+        anchored: ship.anchored,
       },
     ],
   });

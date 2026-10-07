@@ -1,4 +1,4 @@
-import { sampleShipMotion } from "./core/seascape.js";
+import { sampleShipMotion, sampleWaterReflection } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
@@ -11,6 +11,7 @@ const bowFoamStyle = createAlphaPalette("255,247,213", 0, 0.24, 128);
 const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
 const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
 const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
+const reflectionInkStyle = createAlphaPalette("45,57,45", 0, 0.34, 128);
 const CONTACT_SHADOWS = [
   [1.45, "rgba(21,47,43,0.045)"],
   [1.2, "rgba(21,47,43,0.085)"],
@@ -146,6 +147,64 @@ function buildHullFaces(profile) {
   faces.push({ vertices: deck, fill: "#a8753d", outline: "#392419" });
 
   return faces;
+}
+
+// The caller centers/scales this pass and clips it to water. Mirror height
+// across z = 0, keeping the keel's map position and the live hull's pose.
+export function drawHullReflection(c, profile, heading, environment = {}) {
+  const motion = sampleShipMotion(environment);
+  const time = environment.reducedMotion ? 0 : (environment.time ?? 0);
+  const roughness = environment.roughness ?? 0;
+  const daylight = environment.lighting?.daylight ?? 1;
+  const polygons = buildHullFaces(profile).map(({ vertices }) => {
+    const points = vertices.map((vertex) => {
+      const point = rotatePoint(vertex, heading, motion);
+      return [point.x, point.y + Math.max(0, point.z) * MAP_TILT_TAN];
+    });
+    // Matching winding makes one ink silhouette, without dark seams where
+    // adjacent or overlapping hull faces meet in the mirrored projection.
+    const area = points.reduce((sum, [x, y], index) => {
+      const next = points[(index + 1) % points.length];
+      return sum + x * next[1] - next[0] * y;
+    }, 0);
+    return area < 0 ? points.toReversed() : points;
+  });
+  const points = polygons.flat();
+  const left = Math.min(...points.map(([x]) => x)) - 6;
+  const right = Math.max(...points.map(([x]) => x)) + 6;
+  const top = Math.min(...points.map(([, y]) => y));
+  const bottom = Math.max(...points.map(([, y]) => y));
+  const sliceHeight = (bottom - top) / 8;
+  const phase = (environment.seed ?? 0) * 2.399963;
+
+  for (let row = 0; row < 8; row++) {
+    const ripple = sampleWaterReflection(time + phase, row, roughness);
+    const fade = 1 - (row / 8) * 0.65;
+    c.save();
+    c.beginPath();
+    c.rect(
+      left,
+      top + row * sliceHeight,
+      right - left,
+      sliceHeight * (0.78 + ripple.width * 0.17),
+    );
+    c.clip();
+    // Shift the ink itself, rather than moving a wide clipping rectangle.
+    c.translate(ripple.offset, 0);
+    c.fillStyle = reflectionInkStyle(
+      (0.18 + daylight * 0.16) * fade * ripple.alpha,
+    );
+    c.beginPath();
+    for (const polygon of polygons) {
+      polygon.forEach(([x, y], index) => {
+        if (index) c.lineTo(x, y);
+        else c.moveTo(x, y);
+      });
+      c.closePath();
+    }
+    c.fill();
+    c.restore();
+  }
 }
 
 function boxFaces(x1, x2, y1, y2, z1, z2, colors = {}) {

@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { drawMerchantShip, drawShip } from "../src/ship-rendering.js";
-import { SHIP_MODEL_IDS } from "../src/core/ship-models.js";
+import {
+  drawHullReflection,
+  drawMerchantShip,
+  drawShip,
+} from "../src/ship-rendering.js";
+import {
+  getShipModelProfile,
+  SHIP_MODEL_IDS,
+} from "../src/core/ship-models.js";
+import { MAP_TILT_TAN } from "../src/core/projection.js";
+import { sampleWaterReflection } from "../src/core/seascape.js";
 
 function canvasContext() {
   const calls = [];
@@ -138,4 +147,89 @@ test("reduced motion keeps projected ships identical across frames", () => {
     reducedMotion: true,
   });
   assert.deepEqual(first.calls, second.calls);
+});
+
+test("hull reflections mirror model height across the water for every heading", () => {
+  for (const vesselClass of SHIP_MODEL_IDS) {
+    const profile = getShipModelProfile(vesselClass);
+    for (const heading of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const context = canvasContext();
+      drawHullReflection(context, profile, heading, { reducedMotion: true });
+      const x = profile.beam * 0.05;
+      const y = -profile.length / 2;
+      const height = profile.deckHeight + profile.bowRise;
+      const expectedX = x * Math.cos(heading) - y * Math.sin(heading);
+      const expectedY =
+        x * Math.sin(heading) + y * Math.cos(heading) + height * MAP_TILT_TAN;
+      assert.ok(
+        context.calls.some(
+          ([method, px, py]) =>
+            (method === "moveTo" || method === "lineTo") &&
+            Math.abs(px - expectedX) < 1e-10 &&
+            Math.abs(py - expectedY) < 1e-10,
+        ),
+        `${vesselClass} at ${heading}`,
+      );
+      assert.ok(
+        context.calls
+          .flat()
+          .filter((value) => typeof value === "number")
+          .every(Number.isFinite),
+      );
+    }
+  }
+});
+
+test("eight separate reflection slices shift the ink after clipping and fade out", () => {
+  const context = canvasContext();
+  drawHullReflection(context, getShipModelProfile("brig"), Math.PI / 2, {
+    time: 2,
+    roughness: 0.5,
+    anchored: true,
+  });
+  const slices = context.calls.filter(([method]) => method === "rect");
+  const offsets = context.calls.filter(([method]) => method === "translate");
+  assert.equal(slices.length, 8);
+  assert.equal(offsets.length, 8);
+  assert.equal(context.calls.filter(([method]) => method === "fill").length, 8);
+  for (let row = 0; row < 8; row++) {
+    assert.deepEqual(offsets[row], [
+      "translate",
+      sampleWaterReflection(2, row, 0.5).offset,
+      0,
+    ]);
+    assert.ok(slices[row][3] > 0 && slices[row][4] > 0);
+    if (row > 0)
+      assert.ok(slices[row - 1][2] + slices[row - 1][4] < slices[row][2]);
+  }
+  const firstClip = context.calls.findIndex(([method]) => method === "clip");
+  assert.equal(context.calls[firstClip + 1][0], "translate");
+  const opacities = context.calls
+    .filter(([property]) => property === "fillStyle")
+    .map(([, style]) => Number(style.slice(style.lastIndexOf(",") + 1, -1)));
+  assert.ok(opacities.every((alpha) => alpha > 0 && alpha <= 0.34));
+  assert.ok(opacities.at(-1) < opacities[0]);
+  assert.equal(
+    context.calls.filter(([method]) => method === "save").length,
+    context.calls.filter(([method]) => method === "restore").length,
+  );
+});
+
+test("reflected hull motion freezes with reduced motion and responds to rough seas", () => {
+  const render = (environment) => {
+    const context = canvasContext();
+    drawHullReflection(
+      context,
+      getShipModelProfile("carrack"),
+      0.4,
+      environment,
+    );
+    return context.calls;
+  };
+  assert.notDeepEqual(render({ time: 1 }), render({ time: 2 }));
+  assert.notDeepEqual(render({ roughness: 0 }), render({ roughness: 1 }));
+  assert.deepEqual(
+    render({ time: 1, roughness: 1, reducedMotion: true }),
+    render({ time: 99, roughness: 1, reducedMotion: true }),
+  );
 });
