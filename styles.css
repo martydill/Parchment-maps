@@ -1568,6 +1568,45 @@ button.parchment {
 .menu-options button {
   width: 100%;
 }
+/* Graphics quality lives in the game menu as a compact parchment fieldset;
+   the select inherits the shared ink-on-parchment dropdown styling. */
+.graphics-settings {
+  max-width: 340px;
+  margin: 0 auto 20px;
+  padding: 10px 16px 12px;
+  border: 1px solid rgba(109, 82, 50, 0.45);
+  border-radius: 4px;
+  background: rgba(255, 248, 224, 0.28);
+  text-align: center;
+}
+.graphics-settings legend {
+  padding: 0 8px;
+  color: #6d5232;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.graphics-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.graphics-row label {
+  font-size: 13px;
+  color: var(--ink);
+}
+.graphics-row select {
+  width: min(200px, 60vw);
+  min-height: 36px;
+  font-size: 12px;
+}
+#graphicsStatus {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #5d4a2e;
+}
 /* Dock panel: a compact header and a section tab bar sit above a single
    scrolling body, so each port area is one tap away instead of one long
    vertical scroll. The parchment frame and decorative pseudo-elements come

@@ -19,6 +19,11 @@ import {
   createRenderQuality,
   renderPixelRatio,
 } from "./core/render-quality.js?v=1";
+import {
+  createAutoQualityTier,
+  graphicsQualityProfile,
+  normalizeGraphicsSetting,
+} from "./core/graphics-quality.js";
 import { createMistRendering } from "./mist-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
 import { createExplorationSampler } from "./exploration-mask.js";
@@ -358,6 +363,37 @@ const ctx = canvas.getContext("2d");
 let DPR = 1;
 const renderQuality = createRenderQuality();
 const fogCadence = createRenderCadence();
+// Graphics quality: a user setting (auto/low/medium/high) persisted next to
+// the map seed, with "auto" tracking a frame-time detector. The resolved
+// profile scales particles, screen-space masks, grain, and lightning.
+const GRAPHICS_KEY = "gilded-archipelago-graphics";
+let graphicsSetting = normalizeGraphicsSetting(
+  localStorage.getItem(GRAPHICS_KEY),
+);
+let detectedTier = "high";
+let graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
+const autoGraphicsTier = createAutoQualityTier();
+// The tier caps render resolution; the continuous frame-time controller may
+// dip below the cap under load but can never exceed it.
+function resolutionQuality() {
+  return Math.min(renderQuality.quality, graphics.resolutionScale);
+}
+// Same shape for the sea renderers' continuous detail stride.
+function effectDetail() {
+  return Math.min(graphics.detail, renderQuality.quality);
+}
+function applyGraphicsProfile() {
+  graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
+  resize();
+  fogCadence.reset();
+  updateGraphicsStatus();
+}
+function setGraphicsSetting(next) {
+  graphicsSetting = normalizeGraphicsSetting(next);
+  localStorage.setItem(GRAPHICS_KEY, graphicsSetting);
+  autoGraphicsTier.reset();
+  applyGraphicsProfile();
+}
 let mapOpening = null;
 const MAP_SEED_KEY = "gilded-archipelago-map-seed";
 const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
@@ -3327,7 +3363,7 @@ const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
   return { sx, sy, rx, ry, name, shelf, bands, pebblePrimary, pebbleSecondary };
 });
 
-function drawAnimatedRoughSeas(c, time, z) {
+function drawAnimatedRoughSeas(c, time, z, particleScale = 1) {
   c.save();
   c.lineCap = "round";
   for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
@@ -3338,7 +3374,10 @@ function drawAnimatedRoughSeas(c, time, z) {
     const particles = roughSeaParticles[seaIndex];
     if (!particles || particles.length === 0) continue;
 
-    for (let i = 0; i < particles.length; i++) {
+    // Particle arrays are seeded shuffles, so a deterministic prefix subsample
+    // keeps the same look at reduced counts.
+    const count = Math.round(particles.length * particleScale);
+    for (let i = 0; i < count; i++) {
       const particle = particles[i];
       const phase = time * particle.speed + particle.phaseOffset;
       const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
@@ -3402,21 +3441,16 @@ minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
 function resize() {
   vw = innerWidth;
   vh = innerHeight;
-  DPR = renderPixelRatio(
-    vw,
-    vh,
-    window.devicePixelRatio,
-    renderQuality.quality,
-  );
+  DPR = renderPixelRatio(vw, vh, window.devicePixelRatio, resolutionQuality());
   canvas.width = Math.floor(vw * DPR);
   canvas.height = Math.floor(vh * DPR);
   canvas.style.width = vw + "px";
   canvas.style.height = vh + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   // The exploration haze contains only soft washes and masks. Keep every
-  // compositing pass at half CSS resolution, including in clear daylight.
-  fogCanvas.width = Math.ceil(vw * 0.5);
-  fogCanvas.height = Math.ceil(vh * 0.5);
+  // compositing pass at a fraction of CSS resolution, bounded by the tier.
+  fogCanvas.width = Math.ceil(vw * graphics.maskScale);
+  fogCanvas.height = Math.ceil(vh * graphics.maskScale);
   fogCadence.reset();
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
@@ -4518,7 +4552,7 @@ function renderFog(time, lighting) {
     return;
   }
   const f = fogCtx;
-  const scale = 0.5;
+  const scale = graphics.maskScale;
   const width = Math.ceil(vw * scale),
     height = Math.ceil(vh * scale);
   if (horizonMask.width !== width || horizonMask.height !== height) {
@@ -4559,10 +4593,14 @@ function renderFog(time, lighting) {
   );
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
-  f.globalAlpha = 0.28;
-  f.fillStyle = fogGrain;
-  f.fillRect(0, 0, vw, vh);
-  f.globalAlpha = 1;
+  // Engraved paper grain over the unexplored water; lower tiers lighten or
+  // skip the pass entirely.
+  if (graphics.grainAlpha > 0) {
+    f.globalAlpha = graphics.grainAlpha;
+    f.fillStyle = fogGrain;
+    f.fillRect(0, 0, vw, vh);
+    f.globalAlpha = 1;
+  }
 
   const z = camera.zoom;
   mistRendering.draw(f, {
@@ -5165,7 +5203,7 @@ function render() {
     bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
     deferLighting: true,
     cacheLightBands: true,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
     focus: { x: ship.x, y: ship.y, radius: 480 },
     camera,
     vw,
@@ -5180,7 +5218,7 @@ function render() {
       ? undefined
       : encounters.active?.index,
   });
-  drawAnimatedRoughSeas(ctx, visualTime, z);
+  drawAnimatedRoughSeas(ctx, visualTime, z, graphics.particleScale);
   drawNavigationalHazards(ctx, z);
   seaRendering.drawCaustics(ctx, {
     camera,
@@ -5190,7 +5228,7 @@ function render() {
     lighting,
     shoals: cachedShoals,
     reducedMotion: reducedMotion.matches,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
   });
   seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
   const reflectedVessels = merchantShips.filter(
@@ -5229,7 +5267,8 @@ function render() {
   const windCos = Math.cos(game.windAngle) * 30;
   const windSin = Math.sin(game.windAngle) * 30;
 
-  for (let i = 0; i < 14; i++) {
+  const windStreaks = Math.round(14 * graphics.particleScale);
+  for (let i = 0; i < windStreaks; i++) {
     const x = windLeft + ((i * 173 + visualTime * 0.025) % windSpan),
       y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
     ctx.beginPath();
@@ -5272,6 +5311,8 @@ function render() {
     lighthouses: activeLighthouses,
     time: visualTime,
     reducedMotion: reducedMotion.matches,
+    particleScale: graphics.particleScale,
+    maskScale: graphics.maskScale,
   });
 
   // The ship and immediate docking cue remain readable above the fog layer.
@@ -5294,7 +5335,7 @@ function render() {
     lighting,
     windAngle: game.windAngle,
     roughness: weather.roughness,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
     reducedMotion: reducedMotion.matches,
   });
   ctx.restore();
@@ -5394,7 +5435,9 @@ function render() {
   {
     drawWeatherEffects(ctx, {
       name: weather.name,
-      softLayerScale: 0.5,
+      softLayerScale: graphics.maskScale,
+      particleScale: graphics.particleScale,
+      lightning: graphics.lightning,
       front: weather.front,
       daylight: lighting.daylight,
       roughness: weather.roughness,
@@ -6122,9 +6165,16 @@ function loop(now) {
         vw,
         vh,
         window.devicePixelRatio,
-        renderQuality.quality,
+        resolutionQuality(),
       );
       if (Math.abs(ratio - DPR) > 0.01) resize();
+    }
+    if (
+      graphicsSetting === "auto" &&
+      autoGraphicsTier.sample(frameMs, renderQuality.quality)
+    ) {
+      detectedTier = autoGraphicsTier.tier;
+      applyGraphicsProfile();
     }
     const hadEncounter = !encounterOverlay.hidden;
     const frame = advanceEncounter(
@@ -7756,6 +7806,8 @@ const menuButton = document.getElementById("menuButton"),
   menuPanel = document.getElementById("menuPanel");
 menuButton.addEventListener("click", () => {
   menuPanel.style.display = "grid";
+  // Reduced motion can flip outside the session; read it fresh each open.
+  updateGraphicsStatus();
 });
 document
   .getElementById("closeMenu")
@@ -7784,6 +7836,30 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
     menuPanel.style.display = "none";
   }
 });
+
+const TIER_LABELS = { low: "Low", medium: "Medium", high: "High" };
+const graphicsQualitySelect = document.getElementById("graphicsQuality");
+const graphicsStatus = document.getElementById("graphicsStatus");
+function updateGraphicsStatus() {
+  if (!graphicsQualitySelect || !graphicsStatus) return;
+  updateElementProperty(graphicsQualitySelect, "value", graphicsSetting);
+  const tier = TIER_LABELS[graphics.tier] || "High";
+  const summary =
+    graphicsSetting === "auto"
+      ? `Auto — detected ${tier} from frame pacing.`
+      : `${tier} — particle counts, haze masks, grain, and storm flashes scale with this tier.`;
+  updateElementProperty(
+    graphicsStatus,
+    "textContent",
+    reducedMotion.matches
+      ? `${summary} Reduced motion keeps flashes and drifting weather still.`
+      : summary,
+  );
+}
+graphicsQualitySelect.addEventListener("change", () => {
+  setGraphicsSetting(graphicsQualitySelect.value);
+});
+updateGraphicsStatus();
 
 const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
