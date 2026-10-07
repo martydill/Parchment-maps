@@ -5,6 +5,8 @@ import { createAlphaPalette } from "./style-palette.js";
 import { createRadialStamp } from "./radial-stamp.js";
 import { createSeaLightRendering } from "./sea-light-rendering.js";
 import { createSeaSurfaceRendering } from "./sea-surface-rendering.js";
+import { createShallowCausticsRendering } from "./shallow-caustics-rendering.js";
+import { glitterCorridor, seaLightSources } from "./core/sea-optics.js";
 import {
   buildWakeRibbon,
   coastalFlockSize,
@@ -185,8 +187,14 @@ export function createSeaRendering({
   });
   const surfaceMarks = [];
   const lightBandStamps = new Map();
+  const glitterBatches = new Map();
+  const causticsRendering = createShallowCausticsRendering({
+    WORLD,
+    visibleCoasts,
+    clipWater,
+  });
   const seaLightRendering = createSeaLightRendering(
-    (c, camera, t, lighting, windAngle, halfW, halfH) => {
+    (c, camera, t, lighting, windAngle, halfW, halfH, viewport) => {
       c.save();
       clipWater(
         c,
@@ -196,7 +204,16 @@ export function createSeaRendering({
           halfH * 2 * camera.zoom * MAP_TILT_COS,
         ),
       );
-      drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
+      drawSeaLightBands(
+        c,
+        camera,
+        t,
+        lighting,
+        windAngle,
+        halfW,
+        halfH,
+        viewport,
+      );
       c.restore();
     },
   );
@@ -661,60 +678,118 @@ export function createSeaRendering({
     }
   }
 
-  function drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH) {
-    const daylight = lighting?.daylight ?? 1;
-    const dusk = Math.max(lighting?.sunrise ?? 0, lighting?.sunset ?? 0);
-    const storm = lighting?.storm ?? 0;
-    const strength = (daylight * 0.1 + dusk * 0.055) * (1 - storm * 0.8);
-    if (strength < 0.003) return;
-    const columns = Math.ceil(WORLD.w / 360);
-    const spacing = WORLD.w / columns;
-    const left = Math.floor((camera.x - halfW - 220) / spacing);
-    const right = Math.ceil((camera.x + halfW + 220) / spacing);
-    const top = Math.floor((camera.y - halfH - 60) / 170);
-    const bottom = Math.ceil((camera.y + halfH + 60) / 170);
+  function drawSeaLightBands(
+    c,
+    camera,
+    t,
+    lighting,
+    windAngle,
+    _halfW,
+    _halfH,
+    viewport,
+  ) {
+    const { vw, vh, roughness = 0, detail = 1 } = viewport;
+    const z = camera.zoom;
+    const left = camera.x - vw / (2 * z);
+    const top = camera.y - vh / (2 * z * MAP_TILT_COS);
+    const worldX = (x) => left + (x * vw) / z;
+    const worldY = (y) => top + (y * vh) / (z * MAP_TILT_COS);
     c.save();
     c.globalCompositeOperation = "screen";
+    c.lineCap = "round";
     const baseAlpha = c.globalAlpha;
-    for (let row = top; row <= bottom; row++) {
-      for (let column = left; column <= right; column++) {
-        const canonical = ((column % columns) + columns) % columns;
-        const phase = canonical * 2.17 + row * 3.31;
-        const x =
-          column * spacing +
-          Math.sin(phase) * 75 +
-          Math.sin(t * 0.12 + phase) * 14;
-        const y = row * 170 + Math.cos(phase * 1.4) * 36;
-        const width = 145 + (Math.sin(phase * 2.3) + 1) * 50;
-        // Width is fixed for each wrapped tile. Cache its normalized five-unit
-        // center as well as the ramp, rather than approximating it by scaling.
-        const key = row * columns + canonical;
-        let stamp = lightBandStamps.get(key);
-        if (!stamp) {
-          stamp = createRadialStamp({
-            innerRadius: 5 / width,
-            stops: [
-              [0, "rgba(255,235,181,1)"],
-              [0.55, "rgba(244,227,181,0.4)"],
-              [1, "rgba(244,227,181,0)"],
-            ],
-          });
-          lightBandStamps.set(key, stamp);
-        }
-        c.save();
-        c.translate(x, y);
-        c.rotate(windAngle * 0.18 + Math.sin(phase) * 0.12);
-        c.scale(1, 0.23);
-        const alpha =
-          strength * (0.55 + (Math.sin(t * 0.7 + phase) + 1) * 0.22);
-        // Retain the existing 128-step opacity palette without color strings.
-        const opacityStep = Math.max(
-          0,
-          Math.min(127, Math.round((alpha / 0.16) * 127)),
+    for (const source of seaLightSources(lighting)) {
+      if (source.strength < 0.003) continue;
+      const color =
+        source.kind === "moon"
+          ? "196,224,255"
+          : source.warm
+            ? "255,210,139"
+            : "255,241,201";
+      let stamp = lightBandStamps.get(color);
+      if (!stamp) {
+        stamp = createRadialStamp({
+          stops: [
+            [0, `rgba(${color},1)`],
+            [0.4, `rgba(${color},0.5)`],
+            [1, `rgba(${color},0)`],
+          ],
+        });
+        lightBandStamps.set(color, stamp);
+      }
+      c.strokeStyle = `rgb(${color})`;
+      for (const batch of glitterBatches.values()) batch.count = 0;
+      const rows = Math.ceil(vh / (detail >= 0.9 ? 7 : 11));
+      for (let row = 1; row <= rows; row++) {
+        const depth = row / rows;
+        const band = glitterCorridor(source, depth, roughness);
+        const phase = row * 2.399963;
+        const sway = Math.sin(t * 0.67 + phase) * band.width * 0.12;
+        const x = worldX(band.x + sway);
+        const y = worldY(band.y);
+        const width = (band.width * vw) / z;
+        const shimmer = 0.65 + Math.sin(t * 1.3 + phase) * 0.25;
+        c.globalAlpha =
+          baseAlpha * source.strength * band.intensity * shimmer * 0.7;
+        c.drawImage(
+          stamp,
+          x - width,
+          y - 5 / (z * MAP_TILT_COS),
+          width * 2,
+          10 / (z * MAP_TILT_COS),
         );
-        c.globalAlpha = baseAlpha * ((opacityStep / 127) * 0.16);
-        c.drawImage(stamp, -width, -width, width * 2, width * 2);
-        c.restore();
+        // Broken wavelets resolve over the soft envelope, never a solid beam.
+        for (let mark = -4; mark <= 4; mark++) {
+          const seed = row * 13 + mark * 7;
+          const twinkle = Math.max(
+            0,
+            Math.sin(t * (1.2 + roughness) + seed * 1.73),
+          );
+          if (twinkle < 0.2) continue;
+          const across = (mark + Math.sin(seed * 2.1) * 0.4) / 4.6;
+          const edge = (1 - Math.abs(across)) ** 1.7;
+          const mx = x + across * width;
+          const my = y + (Math.sin(t * 0.9 + seed) * 2) / (z * MAP_TILT_COS);
+          const length = ((2 + depth * 14) * (0.4 + twinkle * 0.6)) / z;
+          const opacity = Math.round(band.intensity * edge * twinkle * 15);
+          if (!opacity) continue;
+          const thickness = Math.round(depth * 2);
+          const key = opacity * 3 + thickness;
+          let batch = glitterBatches.get(key);
+          if (!batch) {
+            batch = {
+              points: [],
+              count: 0,
+              alpha: opacity / 15,
+              width: 0.8 + thickness * 0.55,
+            };
+            glitterBatches.set(key, batch);
+          }
+          const points = batch.points;
+          points[batch.count++] = mx - length;
+          points[batch.count++] = my;
+          points[batch.count++] = mx;
+          points[batch.count++] = my - Math.sin(windAngle) / z;
+          points[batch.count++] = mx + length;
+          points[batch.count++] = my;
+        }
+      }
+      // A bounded set of opacity paths avoids a coastline blend per sparkle.
+      for (const { points, count, alpha, width } of glitterBatches.values()) {
+        if (!count) continue;
+        c.globalAlpha = baseAlpha * source.strength * alpha * 5;
+        c.lineWidth = width / z;
+        c.beginPath();
+        for (let index = 0; index < count; index += 6) {
+          c.moveTo(points[index], points[index + 1]);
+          c.quadraticCurveTo(
+            points[index + 2],
+            points[index + 3],
+            points[index + 4],
+            points[index + 5],
+          );
+        }
+        c.stroke();
       }
     }
     c.restore();
@@ -746,6 +821,7 @@ export function createSeaRendering({
       encounterCreature,
       cacheLightBands = false,
       skipLighting = false,
+      deferLighting = false,
     },
   ) {
     const visible = visibleCoasts(camera, vw, vh);
@@ -766,7 +842,7 @@ export function createSeaRendering({
       c.fillStyle = stormSeaStyle(front.seaDarkness * 0.22);
       c.fillRect(camera.x - halfW, camera.y - halfH, halfW * 2, halfH * 2);
     }
-    if (!skipLighting) {
+    if (!skipLighting && !deferLighting) {
       if (cacheLightBands)
         seaLightRendering.draw(c, {
           camera,
@@ -775,8 +851,16 @@ export function createSeaRendering({
           time: reducedMotion ? 0 : time,
           lighting,
           windAngle,
+          roughness,
+          detail,
         });
-      else drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH);
+      else
+        drawSeaLightBands(c, camera, t, lighting, windAngle, halfW, halfH, {
+          vw,
+          vh,
+          roughness,
+          detail,
+        });
     }
     // Periodic longitude coordinates keep phase and spacing continuous at the
     // world seam. Broad swells carry finer broken ivory glints.
@@ -978,7 +1062,8 @@ export function createSeaRendering({
       );
     }
     c.restore();
-    seaLightRendering.draw(c, { ...options, time: reducedMotion ? 0 : time });
+    if (!options.deferLighting)
+      seaLightRendering.draw(c, { ...options, time: reducedMotion ? 0 : time });
     seaSurfaceRendering.draw(c, options);
   }
 
@@ -1233,6 +1318,12 @@ export function createSeaRendering({
   }
   return {
     drawSurface,
+    drawLighting: (c, options) =>
+      seaLightRendering.draw(c, {
+        ...options,
+        time: options.reducedMotion ? 0 : options.time,
+      }),
+    drawCaustics: (c, options) => causticsRendering.draw(c, options),
     drawWake,
     drawReflections,
     drawEncounterCreature(c, { x, y, scale, index }) {

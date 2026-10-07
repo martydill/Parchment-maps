@@ -215,7 +215,7 @@ test("current lanes reuse their exact fixed opacities at every phase", () => {
   }
 });
 
-test("sea light stamps retain their centers and reuse textures across motion and wrapping", () => {
+test("glitter envelopes reuse bounded textures across motion and wrapping", () => {
   const renderer = createSeaRendering({
     WORLD: { w: 1000, h: 800 },
     lands: [],
@@ -226,22 +226,12 @@ test("sea light stamps retain their centers and reuse textures across motion and
   const draws = first.calls.filter(([name]) => name === "drawImage");
   assert.ok(draws.length > 0);
   const count = stampCanvases.length;
-  for (const [, stamp, , , diameter] of draws) {
-    const gradient = stamp.calls.find(
-      ([name]) => name === "createRadialGradient",
-    );
-    assert.ok(
-      Math.abs((gradient[3] / gradient[6]) * (diameter / 2) - 5) < 1e-12,
-    );
-    assert.deepEqual(
-      stamp.calls.filter(([name]) => name === "addColorStop"),
-      [
-        ["addColorStop", 0, "rgba(255,235,181,1)"],
-        ["addColorStop", 0.55, "rgba(244,227,181,0.4)"],
-        ["addColorStop", 1, "rgba(244,227,181,0)"],
-      ],
-    );
-  }
+  assert.equal(new Set(draws.map(([, stamp]) => stamp)).size, 1);
+  assert.ok(draws.every(([, , , , width, height]) => width > height));
+  const gradient = draws[0][1].calls.find(
+    ([name]) => name === "createRadialGradient",
+  );
+  assert.equal(gradient[3], 0);
   for (let frame = 1; frame <= 60; frame++) {
     const next = recordingContext();
     renderer.drawSurface(next.context, {
@@ -599,7 +589,7 @@ test("reflection and wake layers clip out wrapped land and raised cliff faces", 
   }
 });
 
-test("buffered sun and waves clip land in their source layers and reuse images during camera motion", () => {
+test("buffered glitter follows the viewer while world ripples reuse their anchor", () => {
   const previousPath = globalThis.Path2D;
   globalThis.Path2D = class {
     rect() {}
@@ -653,14 +643,12 @@ test("buffered sun and waves clip land in their source layers and reuse images d
       time: 16,
       camera: { ...frame.camera, x: 505 },
     });
-    assert.deepEqual(
-      next.calls.filter(([method]) => method === "drawImage"),
-      layers,
-    );
-    assert.deepEqual(
-      layers.map(([, layer]) => layer.calls.length),
-      counts,
-    );
+    const nextLayers = next.calls.filter(([method]) => method === "drawImage");
+    assert.equal(nextLayers[0][1], layers[0][1]);
+    assert.equal(nextLayers[0][2], layers[0][2] + 5);
+    assert.ok(layers[0][1].calls.length > counts[0]);
+    assert.deepEqual(nextLayers[1], layers[1]);
+    assert.equal(layers[1][1].calls.length, counts[1]);
     assert.equal(first.context.globalAlpha, 0.4);
     assert.equal(next.context.globalAlpha, 0.4);
   } finally {
@@ -808,4 +796,136 @@ test("reduced detail lowers distant wave work while preserving every nearby wave
       assert.ok(Math.abs(value - canonicalMarks[index][coordinate]) < 1e-9),
     ),
   );
+});
+
+test("moon glitter uses a cool envelope and restores inherited opacity", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const night = recordingContext();
+  night.context.globalAlpha = 0.4;
+  renderer.drawSurface(night.context, {
+    ...options,
+    lighting: { daylight: 0, night: 1, moon: 1 },
+  });
+  const draws = night.calls.filter(([name]) => name === "drawImage");
+  assert.ok(draws.length > 0);
+  assert.ok(
+    draws[0][1].calls.some(
+      ([name, , color]) =>
+        name === "addColorStop" && color === "rgba(196,224,255,1)",
+    ),
+  );
+  assert.equal(night.context.globalAlpha, 0.4);
+});
+
+test("caustic lace blends once through shoal masks, caches, and freezes with reduced motion", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const shelf = {};
+  const frame = {
+    ...options,
+    shoals: [{ sx: 500, sy: 400, rx: 110, ry: 60, shelf }],
+  };
+  const first = recordingContext();
+  first.context.globalAlpha = 0.4;
+  renderer.drawCaustics(first.context, frame);
+  const blends = first.calls.filter(
+    ([name]) => name === "globalCompositeOperation",
+  );
+  assert.deepEqual(blends, [["globalCompositeOperation", "overlay"]]);
+  const draws = first.calls.filter(([name]) => name === "drawImage");
+  assert.equal(draws.length, 1);
+  const mask = draws[0][1];
+  assert.ok(
+    mask.calls.some(([name, path]) => name === "clip" && path === shelf),
+  );
+  assert.ok(
+    mask.calls.some(
+      ([name, value]) =>
+        name === "globalCompositeOperation" && value === "source-in",
+    ),
+  );
+  const web = mask.calls.filter(([name]) => name === "drawImage").at(-1)[1];
+  assert.ok(web.calls.some(([name]) => name === "quadraticCurveTo"));
+  assert.equal(web.calls.filter(([name]) => name === "stroke").length, 2);
+  assert.equal(first.context.globalAlpha, 0.4);
+  const count = mask.calls.length;
+  renderer.drawCaustics(first.context, { ...frame, time: 16 });
+  assert.equal(mask.calls.length, count);
+  renderer.drawCaustics(first.context, { ...frame, time: 34 });
+  assert.ok(mask.calls.length > count);
+  renderer.drawCaustics(first.context, {
+    ...frame,
+    time: 1000,
+    reducedMotion: true,
+  });
+  const frozen = mask.calls.length;
+  renderer.drawCaustics(first.context, {
+    ...frame,
+    time: 9999,
+    reducedMotion: true,
+  });
+  assert.equal(mask.calls.length, frozen);
+  const hidden = recordingContext();
+  renderer.drawCaustics(hidden.context, {
+    ...frame,
+    lighting: { daylight: 0 },
+  });
+  assert.equal(hidden.calls.length, 0);
+});
+
+test("deferred glitter leaves the base sea unlit and composes in its own pass", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  for (const bufferSurface of [false, true]) {
+    const base = recordingContext();
+    renderer.drawSurface(base.context, {
+      ...options,
+      bufferSurface,
+      deferLighting: true,
+    });
+    assert.ok(
+      !base.calls.some(
+        ([name, value]) =>
+          name === "globalCompositeOperation" && value === "screen",
+      ),
+    );
+  }
+  const lit = recordingContext();
+  renderer.drawLighting(lit.context, { ...options, reducedMotion: true });
+  const layer = lit.calls.find(([name]) => name === "drawImage")[1];
+  const count = layer.calls.length;
+  renderer.drawLighting(lit.context, {
+    ...options,
+    time: 9999,
+    reducedMotion: true,
+  });
+  assert.equal(layer.calls.length, count);
+  assert.ok(
+    lit.calls.some(
+      ([name, value]) =>
+        name === "globalCompositeOperation" && value === "screen",
+    ),
+  );
+});
+
+test("deep-water views skip caustic surfaces altogether", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const target = recordingContext();
+  const allocations = stampCanvases.length;
+  renderer.drawCaustics(target.context, {
+    ...options,
+    shoals: [{ sx: 10, sy: 10, rx: 20, ry: 10, shelf: {} }],
+  });
+  assert.equal(stampCanvases.length, allocations);
+  assert.equal(target.calls.length, 0);
 });

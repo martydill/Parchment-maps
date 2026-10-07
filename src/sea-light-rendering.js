@@ -1,4 +1,5 @@
 import { MAP_TILT_COS } from "./core/projection.js";
+import { seaLightSources } from "./core/sea-optics.js";
 
 // Sun reflections move slowly, but screen blending every individual stamp
 // through coastline clips is costly. Blend their padded image once instead.
@@ -9,12 +10,18 @@ export function createSeaLightRendering(drawBands) {
   const padding = 64;
   const scale = 0.5;
   return {
-    draw(c, { camera, vw, vh, time, lighting, windAngle }) {
-      const daylight = lighting?.daylight ?? 1;
-      const dusk = Math.max(lighting?.sunrise ?? 0, lighting?.sunset ?? 0);
-      const storm = lighting?.storm ?? 0;
-      const strength = (daylight * 0.1 + dusk * 0.055) * (1 - storm * 0.8);
-      if (strength < 0.003) return;
+    draw(
+      c,
+      { camera, vw, vh, time, lighting, windAngle, roughness = 0, detail = 1 },
+    ) {
+      const sources = seaLightSources(lighting);
+      if (sources.every(({ strength }) => strength < 0.003)) return;
+      const lightKey = sources
+        .map(
+          ({ strength, x, warm }) =>
+            `${Math.round(strength * 1000)}:${x.toFixed(3)}:${warm}`,
+        )
+        .join(":");
       layer ||= document.createElement("canvas");
       context ||= layer.getContext("2d");
       const width = Math.ceil((vw + padding * 2) * scale);
@@ -28,11 +35,13 @@ export function createSeaLightRendering(drawBands) {
         cached.zoom !== z ||
         cached.alpha !== alpha ||
         Math.abs(cached.windAngle - windAngle) > 0.01 ||
-        Math.abs(cached.strength - strength) > 0.001 ||
+        cached.lightKey !== lightKey ||
+        cached.roughness !== roughness ||
+        cached.detail !== detail ||
         time < cached.time ||
         time - cached.time >= 1000 / 30 ||
-        Math.abs(camera.x - cached.x) * z > padding ||
-        Math.abs(camera.y - cached.y) * z * MAP_TILT_COS > padding
+        Math.abs(camera.x - cached.x) * z > 0.5 ||
+        Math.abs(camera.y - cached.y) * z * MAP_TILT_COS > 0.5
       ) {
         if (layer.width !== width || layer.height !== height) {
           layer.width = width;
@@ -57,8 +66,17 @@ export function createSeaLightRendering(drawBands) {
           windAngle,
           width / (2 * z * scale),
           height / (2 * z * MAP_TILT_COS * scale),
+          { vw, vh, roughness, detail },
         );
-        cached = { ...camera, time, windAngle, strength, alpha };
+        cached = {
+          ...camera,
+          time,
+          windAngle,
+          lightKey,
+          roughness,
+          detail,
+          alpha,
+        };
       }
       c.save();
       c.globalCompositeOperation = "screen";

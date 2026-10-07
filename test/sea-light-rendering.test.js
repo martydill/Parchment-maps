@@ -127,15 +127,15 @@ test("sun bands blend once from a smaller padded layer and preserve target state
   assert.equal(env.target.globalCompositeOperation, "source-over");
 });
 
-test("slow sun motion reuses its world anchor between updates and freezes at time zero", (t) => {
+test("steady glitter reuses its layer between updates and freezes at time zero", (t) => {
   const env = setup(t);
   env.renderer.draw(env.target, options);
   const moved = {
     ...options,
     time: 1016,
     windAngle: 0.201,
-    camera: { ...options.camera, x: 40, y: 410 },
-    lighting: { daylight: 0.999 },
+    camera: { ...options.camera, x: 10.1, y: 400.1 },
+    lighting: { daylight: 1 },
   };
   env.renderer.draw(env.target, moved);
   assert.equal(env.paints.length, 1);
@@ -196,6 +196,24 @@ test("night and heavy cloud suppression avoid allocating or compositing a sun la
   env.renderer.draw(env.target, { ...options, lighting: undefined });
   assert.equal(env.allocations, 1);
   assert.equal(env.blits.length, 1);
+});
+
+test("moon phase, source position, sea state, and quality invalidate cached glitter", (t) => {
+  const env = setup(t);
+  const changes = [
+    { lighting: { daylight: 0, night: 1, moon: 1 } },
+    { lighting: { daylight: 0, night: 1, moon: 0.32 } },
+    { lighting: { daylight: 0, sunrise: 1 } },
+    { lighting: { daylight: 0, sunset: 1 } },
+    { roughness: 0.7 },
+    { detail: 0.5 },
+    { camera: { ...options.camera, x: 12 } },
+  ];
+  for (const change of changes) {
+    const count = env.paints.length;
+    env.renderer.draw(env.target, { ...options, ...change });
+    assert.equal(env.paints.length, count + 1);
+  }
 });
 
 test("buffered ripples reuse a padded world anchor and refresh at edges and projection changes", (t) => {
