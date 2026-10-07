@@ -743,6 +743,7 @@ export function createSeaRendering({
       front,
       detail = 1,
       focus,
+      encounterCreature,
       cacheLightBands = false,
       skipLighting = false,
     },
@@ -898,7 +899,16 @@ export function createSeaRendering({
         Math.abs(nearestX - camera.x) <= halfW + 60 &&
         Math.abs(y - camera.y) <= halfH + 60
       )
-        drawCreature(c, nearestX, y, scale, index, t);
+        drawCreature(
+          c,
+          nearestX,
+          y,
+          scale,
+          index,
+          // Hold the focal creature at the crest of its surfacing cycle so
+          // it cannot disappear while the camera is introducing it.
+          encounterCreature === index ? 1 - index * 3.7 : t,
+        );
     });
     for (const { surf, offset } of visible) {
       c.save();
@@ -1225,6 +1235,9 @@ export function createSeaRendering({
     drawSurface,
     drawWake,
     drawReflections,
+    drawEncounterCreature(c, { x, y, scale, index }) {
+      drawCreature(c, x, y, scale, index, 1 - index * 3.7);
+    },
     setRivers(paths) {
       riverPaths = paths.map((rivers) =>
         rivers
