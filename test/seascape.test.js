@@ -8,6 +8,7 @@ import {
   sampleCreatureAppearance,
   coastalFlockSize,
   sampleLighthouse,
+  MAX_LIGHTHOUSE_REACH,
   sampleSeaLife,
   sampleShoreAnimal,
   sampleWaterReflection,
@@ -83,6 +84,69 @@ test("beacons have stable individual sweep speeds and ranges", () => {
     sampleLighthouse(1000, 1).angle - sampleLighthouse(0, 1).angle,
     sampleLighthouse(1000, 0).angle - first.angle,
   );
+});
+
+test("lighthouse profiles mix open fire, fixed lamps and distinct rotating optics", () => {
+  const profiles = Array.from({ length: 32 }, (_, index) =>
+    sampleLighthouse(0, index),
+  );
+  assert.equal(profiles.filter(({ kind }) => kind === "flame").length, 8);
+  assert.equal(new Set(profiles.map(({ color }) => color)).size, 8);
+  assert.ok(profiles.some(({ reach }) => reach < 50));
+  assert.ok(profiles.some(({ reach }) => reach > 270));
+  assert.ok(profiles.some(({ beamWidth }) => beamWidth > 0.3));
+  assert.ok(
+    profiles.some(({ beamWidth, beams }) => beams > 0 && beamWidth < 0.07),
+  );
+  assert.ok(profiles.some(({ beams }) => beams === 2));
+  const rotating = profiles.filter(({ rotationSpeed }) => rotationSpeed !== 0);
+  assert.ok(rotating.some(({ rotationSpeed }) => rotationSpeed < 0));
+  const speeds = rotating.map(({ rotationSpeed }) => Math.abs(rotationSpeed));
+  assert.ok(Math.max(...speeds) > Math.min(...speeds) * 6);
+  // Even the same optical family has different proportions at another port.
+  assert.notEqual(profiles[0].reach, profiles[8].reach);
+  assert.notEqual(profiles[0].beamWidth, profiles[8].beamWidth);
+});
+
+test("flames flicker in place and fixed lanterns keep their bearing", () => {
+  for (const index of [1, 5, 6, 9, 13, 14]) {
+    const still = sampleLighthouse(0, index);
+    const later = sampleLighthouse(1234, index);
+    assert.equal(later.angle, still.angle);
+    assert.equal(later.rotationSpeed, 0);
+    assert.equal(later.reach, still.reach);
+    assert.notEqual(later.intensity, still.intensity);
+    if (still.kind === "flame") {
+      assert.equal(still.beams, 0);
+      assert.equal(still.beamWidth, 0);
+      assert.notEqual(later.flameHeight, still.flameHeight);
+      assert.notEqual(later.sway, still.sway);
+      assert.notEqual(later.ember, still.ember);
+    } else assert.equal(still.beams, 1);
+  }
+});
+
+test("lighthouse sampling normalizes invalid inputs and bounds all effects", () => {
+  assert.deepEqual(sampleLighthouse(), sampleLighthouse(0, 0));
+  assert.deepEqual(sampleLighthouse(NaN, Infinity), sampleLighthouse());
+  assert.deepEqual(sampleLighthouse(Infinity, NaN), sampleLighthouse());
+  assert.deepEqual(sampleLighthouse(100, -3.9), sampleLighthouse(100, 3));
+  for (let index = 0; index < 64; index++) {
+    for (const time of [-60000, 0, 250, 1750, 60000]) {
+      const sample = sampleLighthouse(time, index);
+      assert.deepEqual(sampleLighthouse(time, index), sample);
+      const numbers = Object.values(sample).filter(
+        (value) => typeof value === "number",
+      );
+      assert.ok(numbers.every(Number.isFinite));
+      assert.ok(sample.reach > 0 && sample.reach < MAX_LIGHTHOUSE_REACH);
+      assert.ok(sample.glowRadius * 1.8 < MAX_LIGHTHOUSE_REACH);
+      assert.ok(sample.intensity >= 0.76 && sample.intensity <= 1.04);
+      assert.ok(sample.flameHeight > 6 && sample.flameHeight < 14);
+      assert.ok(Math.abs(sample.sway) <= 1.5);
+      assert.ok(sample.ember >= 0 && sample.ember < 1);
+    }
+  }
 });
 
 test("sea life and shore animals move deterministically within their locations", () => {

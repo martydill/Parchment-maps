@@ -43,6 +43,105 @@ function intersectsScreen(left, top, right, bottom, width, height) {
   return right >= -1 && bottom >= -1 && left <= width + 1 && top <= height + 1;
 }
 
+function lightBloom(c, x, y, radius, color, strength, aspect = 1) {
+  c.save();
+  c.translate(x, y);
+  c.scale(1, aspect);
+  const gradient = c.createRadialGradient(0, 0, 0, 0, 0, radius);
+  gradient.addColorStop(0, `rgba(${color},${strength})`);
+  gradient.addColorStop(0.18, `rgba(${color},${strength * 0.55})`);
+  gradient.addColorStop(0.5, `rgba(${color},${strength * 0.13})`);
+  gradient.addColorStop(1, `rgba(${color},0)`);
+  c.fillStyle = gradient;
+  c.fillRect(-radius, -radius, radius * 2, radius * 2);
+  c.restore();
+}
+
+// Nested, low-opacity cones feather the angular edge as well as the range.
+// The outer arc has no visible rim because the radial falloff reaches zero.
+const BEAM_FEATHER = [
+  [1, 0.08],
+  [0.82, 0.13],
+  [0.64, 0.18],
+  [0.46, 0.25],
+  [0.28, 0.36],
+];
+
+function drawLighthouseBeam(c, light, sample, angle, strength, width, height) {
+  const { reach, beamWidth, color } = sample;
+  const ax = light.x + Math.cos(angle - beamWidth) * reach;
+  const ay = light.y + Math.sin(angle - beamWidth) * reach;
+  const bx = light.x + Math.cos(angle + beamWidth) * reach;
+  const by = light.y + Math.sin(angle + beamWidth) * reach;
+  const bulge = reach * (1 - Math.cos(beamWidth));
+  if (
+    !intersectsScreen(
+      Math.min(light.x, ax, bx) - bulge,
+      Math.min(light.y, ay, by) - bulge,
+      Math.max(light.x, ax, bx) + bulge,
+      Math.max(light.y, ay, by) + bulge,
+      width,
+      height,
+    )
+  )
+    return;
+  const beam = c.createRadialGradient(
+    light.x,
+    light.y,
+    0,
+    light.x,
+    light.y,
+    reach,
+  );
+  beam.addColorStop(0, `rgba(${color},${strength * 0.16})`);
+  beam.addColorStop(0.06, `rgba(${color},${strength * 0.28})`);
+  beam.addColorStop(0.25, `rgba(${color},${strength * 0.2})`);
+  beam.addColorStop(0.65, `rgba(${color},${strength * 0.075})`);
+  beam.addColorStop(1, `rgba(${color},0)`);
+  c.save();
+  c.fillStyle = beam;
+  for (const [spread, alpha] of BEAM_FEATHER) {
+    const halfAngle = beamWidth * spread;
+    c.globalAlpha = alpha;
+    c.beginPath();
+    c.moveTo(light.x, light.y);
+    c.lineTo(
+      light.x + Math.cos(angle - halfAngle) * reach,
+      light.y + Math.sin(angle - halfAngle) * reach,
+    );
+    c.arc(light.x, light.y, reach, angle - halfAngle, angle + halfAngle);
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
+}
+
+function drawBeaconFlame(c, light, sample, strength) {
+  const { flameHeight: h, sway, lampRadius: r, ember } = sample;
+  c.save();
+  c.translate(light.x, light.y);
+  c.fillStyle = `rgba(255,112,38,${strength * 0.85})`;
+  c.beginPath();
+  c.moveTo(-r, 2);
+  c.bezierCurveTo(-r * 2, -h * 0.3, sway - r, -h * 0.62, sway, -h);
+  c.bezierCurveTo(sway + r * 0.35, -h * 0.45, r * 2, -h * 0.3, r, 2);
+  c.closePath();
+  c.fill();
+  c.fillStyle = `rgba(255,224,137,${strength})`;
+  c.beginPath();
+  c.moveTo(-r * 0.6, 1);
+  c.bezierCurveTo(-r, -h * 0.2, sway * 0.5, -h * 0.4, sway * 0.6, -h * 0.65);
+  c.bezierCurveTo(r * 0.9, -h * 0.25, r, -h * 0.1, r * 0.6, 1);
+  c.closePath();
+  c.fill();
+  // A tiny rising cinder sells open fire without becoming a particle cloud.
+  c.fillStyle = `rgba(255,190,89,${strength * (1 - ember) * 0.65})`;
+  c.beginPath();
+  c.arc(sway + Math.sin(ember * 5) * 3, -h - ember * 13, 0.7, 0, Math.PI * 2);
+  c.fill();
+  c.restore();
+}
+
 const stars = Array.from({ length: 95 }, (_, index) => {
   const fraction = (value) => value - Math.floor(value);
   return {
@@ -154,71 +253,66 @@ export function drawNightAtmosphere(
   c.save();
   c.globalCompositeOperation = "screen";
   glow(c, ship.x, ship.y, 110, `rgba(255,180,76,${lighting.night * 0.26})`);
-  const beamStyle = `rgba(255,223,151,${lighting.night * 0.1})`;
-  const lighthouseGlowStyle = `rgba(255,206,110,${lighting.night * 0.32})`;
-  const lighthouseLampStyle = `rgba(255,242,187,${lighting.night})`;
   for (const light of lighthouses) {
-    const { angle: sweep, reach } = sampleLighthouse(
-      reducedMotion ? 0 : time,
-      light.index,
-    );
-    const ax = light.x + Math.cos(sweep - 0.13) * reach;
-    const ay = light.y + Math.sin(sweep - 0.13) * reach;
-    const bx = light.x + Math.cos(sweep + 0.13) * reach;
-    const by = light.y + Math.sin(sweep + 0.13) * reach;
-    if (
-      intersectsScreen(
-        Math.min(light.x, ax, bx),
-        Math.min(light.y, ay, by),
-        Math.max(light.x, ax, bx),
-        Math.max(light.y, ay, by),
+    const sample = sampleLighthouse(reducedMotion ? 0 : time, light.index);
+    const strength =
+      lighting.night * sample.intensity * (1 - lighting.storm * 0.3);
+    for (let beam = 0; beam < sample.beams; beam++)
+      drawLighthouseBeam(
+        c,
+        light,
+        sample,
+        sample.angle + beam * Math.PI,
+        strength * (beam === 0 ? 1 : 0.7),
         width,
         height,
-      )
-    ) {
-      const beam = c.createRadialGradient(
-        light.x,
-        light.y,
-        0,
-        light.x,
-        light.y,
-        reach,
       );
-      beam.addColorStop(0, beamStyle);
-      beam.addColorStop(1, "rgba(255,223,151,0)");
-      c.fillStyle = beam;
-      c.beginPath();
-      c.moveTo(light.x, light.y);
-      c.lineTo(ax, ay);
-      c.lineTo(bx, by);
-      c.closePath();
-      c.fill();
-    }
+    const radius = sample.glowRadius * 1.8;
     if (
       intersectsScreen(
-        light.x - 65,
-        light.y - 65,
-        light.x + 65,
-        light.y + 65,
-        width,
-        height,
-      )
-    )
-      glow(c, light.x, light.y, 65, lighthouseGlowStyle);
-    if (
-      intersectsScreen(
-        light.x - 3.5,
-        light.y - 3.5,
-        light.x + 3.5,
-        light.y + 3.5,
+        light.x - radius,
+        light.y - radius,
+        light.x + radius,
+        light.y + radius,
         width,
         height,
       )
     ) {
-      c.fillStyle = lighthouseLampStyle;
-      c.beginPath();
-      c.arc(light.x, light.y, 3.5, 0, Math.PI * 2);
-      c.fill();
+      // Flattened spill follows the chart's sea plane; tight bloom leaves
+      // darkness between neighboring ports instead of identical lit discs.
+      lightBloom(
+        c,
+        light.x,
+        light.y + 5,
+        radius,
+        sample.color,
+        strength * 0.2,
+        0.5,
+      );
+      lightBloom(
+        c,
+        light.x,
+        light.y,
+        sample.glowRadius,
+        sample.color,
+        strength * 0.42,
+      );
+      if (sample.kind === "flame") drawBeaconFlame(c, light, sample, strength);
+      else {
+        lightBloom(c, light.x, light.y, 9, sample.color, strength * 0.65);
+        c.fillStyle = `rgba(255,248,226,${strength})`;
+        c.beginPath();
+        c.ellipse(
+          light.x,
+          light.y,
+          sample.lampRadius,
+          sample.lampRadius * 0.65,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        c.fill();
+      }
     }
   }
   c.restore();
@@ -237,10 +331,17 @@ function paintDarkness(lighting, width, height, ship, lighthouses) {
   d.fillRect(0, 0, width, height);
   d.globalCompositeOperation = "destination-out";
   glow(d, ship.x, ship.y, 170, `rgba(0,0,0,${lighting.night * 0.85})`);
-  const lighthouseRevealStyle = `rgba(0,0,0,${lighting.night * 0.9})`;
   for (const light of lighthouses) {
-    const { reach } = sampleLighthouse(0, light.index);
-    glow(d, light.x, light.y, reach * 0.65, lighthouseRevealStyle);
+    const { glowRadius, kind } = sampleLighthouse(0, light.index);
+    lightBloom(
+      d,
+      light.x,
+      light.y + 5,
+      glowRadius * 1.8,
+      "0,0,0",
+      lighting.night * (kind === "flame" ? 0.48 : 0.38),
+      0.5,
+    );
   }
   d.globalCompositeOperation = "source-over";
 }

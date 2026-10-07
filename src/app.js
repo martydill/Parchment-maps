@@ -26,7 +26,8 @@ import { updateElementProperty } from "./ui/dom.js";
 import {
   drawNightAtmosphere,
   drawShipLanterns,
-} from "./atmosphere-rendering.js?v=2";
+} from "./atmosphere-rendering.js?v=3";
+import { MAX_LIGHTHOUSE_REACH } from "./core/seascape.js";
 import {
   GAME_NAME,
   PORT_NAMES,
@@ -5231,17 +5232,23 @@ function render() {
 
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
-  const beaconRange = Math.max(vw, vh) + 160;
   activeLighthouses.length = 0;
   if (lighting.night >= 0.015) {
+    const beaconCopies = visibleWorldCopies(
+      camera.x,
+      vw + MAX_LIGHTHOUSE_REACH * 2,
+      z,
+      WORLD.w,
+    );
     for (let index = 0; index < ports.length; index++) {
       const port = ports[index];
-      if (wrappedDistance(ship.x, ship.y, port.x, port.y) >= beaconRange / z)
-        continue;
-      const x = vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z;
       const y = vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS;
-      if (x > -160 && x < vw + 160 && y > -160 && y < vh + 160)
-        activeLighthouses.push({ x, y, index });
+      if (y < -MAX_LIGHTHOUSE_REACH || y > vh + MAX_LIGHTHOUSE_REACH) continue;
+      for (const copy of beaconCopies) {
+        const x = vw / 2 + (port.x + copy - camera.x) * z;
+        if (x > -MAX_LIGHTHOUSE_REACH && x < vw + MAX_LIGHTHOUSE_REACH)
+          activeLighthouses.push({ x, y, index });
+      }
     }
   }
   shipScreen.x = vw / 2 + (ship.x - camera.x) * z;
