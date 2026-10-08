@@ -429,6 +429,12 @@ body.encounter-active #hud {
   color: #f2dfb3;
   white-space: nowrap;
 }
+#hullText.worn {
+  color: #e8b365;
+}
+#hullText.critical {
+  color: #ec7d55;
+}
 .instrument-secondary {
   display: block;
   margin-top: 4px;

@@ -555,3 +555,21 @@ test("favored factions create obligations that can be fulfilled or failed", () =
     null,
   );
 });
+
+test("repair patch days persist through normalization and older saves", () => {
+  assert.equal(createOperationsState().patchedDay, 0);
+  assert.equal(normalizeOperationsState({}).patchedDay, 0);
+  assert.equal(normalizeOperationsState(null).patchedDay, 0);
+  assert.equal(normalizeOperationsState({ patchedDay: 12 }).patchedDay, 12);
+  assert.equal(normalizeOperationsState({ patchedDay: 9.7 }).patchedDay, 9);
+  assert.equal(normalizeOperationsState({ patchedDay: -4 }).patchedDay, 0);
+  assert.equal(
+    normalizeOperationsState({ patchedDay: "yesterday" }).patchedDay,
+    0,
+  );
+  const damaged = applyComponentDamage(
+    normalizeOperationsState({ patchedDay: 12 }),
+    { hull: 10 },
+  );
+  assert.equal(damaged.operations.patchedDay, 12);
+});

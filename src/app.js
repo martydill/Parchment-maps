@@ -3,7 +3,7 @@ import {
   refreshPortWorkspaces,
   readingPages,
 } from "./ui/port-workspace.js?v=5";
-import { createSeaRendering } from "./sea-rendering.js?v=8";
+import { createSeaRendering } from "./sea-rendering.js?v=9";
 import {
   advanceEncounter,
   beginEncounter,
@@ -170,6 +170,7 @@ import {
   SHIP_COMPONENTS,
   weatherRoughness,
 } from "./core/operations.js";
+import { shipDamageVisuals } from "./core/ship-damage.js";
 import {
   advanceRegionalResources,
   availableMarketGoods,
@@ -323,7 +324,7 @@ import {
   drawWeatherEffects,
   portAccentColor,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=7";
+} from "./rendering.js?v=8";
 import {
   advanceTimeOfDay,
   nightSightLimit,
@@ -348,9 +349,9 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=16";
+} from "./ui/panels.js?v=17";
 import { activateSectionTabs } from "./ui/tabs.js";
-import { configurePortPanels } from "./ui/port-panels.js?v=10";
+import { configurePortPanels } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
 
 const canvas = document.getElementById("game");
@@ -630,6 +631,12 @@ function operationalShipStats() {
   stats.stormResistance *= hull;
   stats.defense *= componentEfficiency(components.weapons);
   return stats;
+}
+
+// The player vessel's damage state at sea: torn sails, list, splinters,
+// smoke, and fresh repair patches all read from the modeled components.
+function shipDamageState() {
+  return shipDamageVisuals(game.operations, { seed: 0, day: game.day });
 }
 
 function activeShipClass() {
@@ -3438,6 +3445,7 @@ const ui = {
   speed: document.getElementById("speedText"),
   wind: document.getElementById("windText"),
   visibility: document.getElementById("visibilityText"),
+  hull: document.getElementById("hullText"),
   coins: document.getElementById("coinText"),
   day: document.getElementById("dayText"),
   time: document.getElementById("timeText"),
@@ -4872,7 +4880,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
   }
   for (const ship of game.fleet?.ships || []) {
     if (ship.status === "laidUp") continue;
-    const render = fleetRenderObject(ship);
+    const render = fleetRenderObject(ship, game.day);
     const x = nearestWrappedX(render.x, camera.x);
     if (!isWorldCircleInViewport(render.x, render.y, 60, z)) continue;
     // A green halo marks player vessels apart from rival traffic, and the name
@@ -4891,6 +4899,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
       lighting,
+      worldWidth: WORLD.w,
     });
     c.fillStyle = "#ddf1d9";
     c.font = "bold " + 11 / z + "px Georgia";
@@ -5330,6 +5339,7 @@ function render() {
       x: nearestWrappedX(encounters.active.x, camera.x),
     });
   }
+  const playerDamage = shipDamageState();
   seaRendering.drawReflections(ctx, {
     camera,
     vw,
@@ -5347,6 +5357,8 @@ function render() {
         scale: 1.82,
         speed: moving ? ship.speed : 0,
         anchored: ship.anchored,
+        heel: playerDamage?.heel ?? 0,
+        settle: playerDamage?.settle ?? 0,
       },
     ],
   });
@@ -5366,6 +5378,9 @@ function render() {
       anchored: ship.anchored,
       reducedMotion: reducedMotion.matches,
       lighting,
+      worldWidth: WORLD.w,
+      damage: playerDamage,
+      damageKey: game,
     },
   );
   if (nearPort) {
@@ -5763,6 +5778,7 @@ function resolveUnderwayDanger(type, exposure, speed, label) {
     .join(", ");
   addNews(result.outcome, `${label}: ${damage}.${cargoText}`);
   showMessage(`${result.outcome.toUpperCase()} · ${damage}`, 4);
+  updateHud();
   return true;
 }
 

@@ -233,3 +233,288 @@ test("reflected hull motion freezes with reduced motion and responds to rough se
     render({ time: 99, roughness: 1, reducedMotion: true }),
   );
 });
+
+function stampDocument() {
+  const previous = globalThis.document;
+  return {
+    set() {
+      globalThis.document = {
+        createElement: () => {
+          const calls = [];
+          const context = new Proxy(
+            {
+              calls,
+              createRadialGradient: (...args) => {
+                calls.push(["createRadialGradient", ...args]);
+                return {
+                  addColorStop: (...stop) =>
+                    calls.push(["addColorStop", ...stop]),
+                };
+              },
+            },
+            {
+              get(target, property) {
+                if (property in target) return target[property];
+                return (...args) => calls.push([property, ...args]);
+              },
+              set(target, property, value) {
+                calls.push([property, value]);
+                target[property] = value;
+                return true;
+              },
+            },
+          );
+          return {
+            width: 0,
+            height: 0,
+            getContext: () => context,
+            calls,
+          };
+        },
+      };
+    },
+    restore() {
+      globalThis.document = previous;
+    },
+  };
+}
+
+function callCount(context, method) {
+  return context.calls.filter(([name]) => name === method).length;
+}
+
+test("damaged vessels list in place while torn sails and splinters appear", () => {
+  const merchant = {
+    x: 10,
+    y: 20,
+    idNum: 3,
+    vesselClass: "brig",
+    speed: 30,
+  };
+  const healthy = canvasContext();
+  drawMerchantShip(healthy, merchant, 1, 1010, {
+    time: 2,
+    reducedMotion: true,
+  });
+  const damage = {
+    hull: 0.8,
+    rigging: 0.8,
+    tear: 0.9,
+    splinters: 0.8,
+    smoke: 0,
+    patch: 0,
+    patchedDay: 0,
+    heel: 0.12,
+    settle: 1.2,
+  };
+  const wounded = canvasContext();
+  drawMerchantShip(wounded, { ...merchant, damage }, 1, 1010, {
+    time: 2,
+    reducedMotion: true,
+  });
+  // The hull stays at its map position, but the pose leans and the deck
+  // geometry, sail lattice, and floating debris all differ.
+  assert.deepEqual(
+    healthy.calls.filter(([method]) => method === "translate"),
+    wounded.calls.filter(([method]) => method === "translate"),
+  );
+  assert.notDeepEqual(
+    healthy.calls.filter(([method]) => method === "lineTo"),
+    wounded.calls.filter(([method]) => method === "lineTo"),
+  );
+  const healthyFills = callCount(healthy, "fill");
+  assert.ok(callCount(wounded, "fill") > healthyFills);
+  assert.ok(callCount(wounded, "ellipse") > callCount(healthy, "ellipse"));
+  for (const context of [healthy, wounded]) {
+    assert.equal(callCount(context, "save"), callCount(context, "restore"));
+    assert.ok(
+      context.calls
+        .flat()
+        .filter((value) => typeof value === "number")
+        .every(Number.isFinite),
+    );
+  }
+});
+
+test("torn sails carve real gaps instead of painting over the hole", () => {
+  const merchant = { x: 5, y: 5, idNum: 2, vesselClass: "carrack" };
+  const healthy = canvasContext();
+  drawMerchantShip(healthy, merchant, 1, 1005, { reducedMotion: true });
+  const shredded = canvasContext();
+  drawMerchantShip(
+    shredded,
+    {
+      ...merchant,
+      damage: {
+        hull: 0.1,
+        rigging: 0.95,
+        tear: 1,
+        splinters: 0,
+        smoke: 0,
+        patch: 0,
+        patchedDay: 0,
+        heel: 0,
+        settle: 0,
+      },
+    },
+    1,
+    1005,
+    { reducedMotion: true },
+  );
+  // Fan-triangle outlines keep the surviving panels reading as canvas.
+  const canvasStrokes = shredded.calls.filter(
+    ([property, style]) =>
+      property === "strokeStyle" && String(style).startsWith("rgba(70,49,29"),
+  );
+  assert.ok(canvasStrokes.length > 0);
+  // The lit sail pigment still dominates; the lattice just lost cells.
+  assert.ok(
+    shredded.calls.filter(
+      ([property, style]) =>
+        property === "fillStyle" && String(style).startsWith("rgb(2"),
+    ).length > 20,
+  );
+  assert.notDeepEqual(
+    healthy.calls.filter(([property]) => property === "fillStyle"),
+    shredded.calls.filter(([property]) => property === "fillStyle"),
+  );
+});
+
+test("critical hulls trail thin smoke that reduced motion suppresses", () => {
+  const stamp = stampDocument();
+  stamp.set();
+  try {
+    const merchant = {
+      x: 10,
+      y: 20,
+      idNum: 1,
+      vesselClass: "cutter",
+      damageKey: {},
+      damage: {
+        hull: 0.95,
+        rigging: 0,
+        tear: 0,
+        splinters: 0.9,
+        smoke: 1,
+        patch: 0,
+        patchedDay: 0,
+        heel: 0.1,
+        settle: 1.5,
+      },
+    };
+    const first = canvasContext();
+    drawMerchantShip(first, merchant, 1, 1010, {
+      time: 1,
+      worldWidth: 2400,
+    });
+    const firstPuffs = callCount(first, "drawImage");
+    assert.ok(firstPuffs > 0, "a burning hull smokes immediately");
+    const later = canvasContext();
+    drawMerchantShip(later, merchant, 1, 1010, {
+      time: 3,
+      worldWidth: 2400,
+    });
+    const laterPuffs = callCount(later, "drawImage");
+    assert.ok(laterPuffs > firstPuffs, "the trail builds as it sails on");
+    const still = canvasContext();
+    drawMerchantShip(still, merchant, 1, 1010, {
+      time: 9,
+      reducedMotion: true,
+    });
+    assert.equal(callCount(still, "drawImage"), 0);
+    assert.equal(callCount(still, "translate"), callCount(first, "translate"));
+  } finally {
+    stamp.restore();
+  }
+});
+
+test("fresh canvas patches pop on after a repair and weather out", () => {
+  const merchant = { x: 8, y: 9, idNum: 5, vesselClass: "cutter" };
+  const bare = canvasContext();
+  drawMerchantShip(bare, merchant, 1, 1008, { reducedMotion: true });
+  assert.equal(
+    bare.calls.filter(
+      ([property, style]) =>
+        property === "fillStyle" && style.startsWith("rgba(234,"),
+    ).length,
+    0,
+  );
+  const patched = canvasContext();
+  drawMerchantShip(
+    patched,
+    {
+      ...merchant,
+      damageKey: {},
+      damage: {
+        hull: 0,
+        rigging: 0,
+        tear: 0,
+        splinters: 0,
+        smoke: 0,
+        patch: 1,
+        patchedDay: 12,
+        heel: 0,
+        settle: 0,
+      },
+    },
+    1,
+    1008,
+    { reducedMotion: true },
+  );
+  const freshPatches = patched.calls.filter(
+    ([property, style]) =>
+      property === "fillStyle" && style.startsWith("rgba(234,"),
+  );
+  assert.ok(freshPatches.length === 3, "three planking patches");
+  const weathered = canvasContext();
+  drawMerchantShip(
+    weathered,
+    {
+      ...merchant,
+      damageKey: {},
+      damage: {
+        hull: 0,
+        rigging: 0,
+        tear: 0,
+        splinters: 0,
+        smoke: 0,
+        patch: 0.2,
+        patchedDay: 19,
+        heel: 0,
+        settle: 0,
+      },
+    },
+    1,
+    1008,
+    { reducedMotion: true },
+  );
+  const oldPatches = weathered.calls.filter(
+    ([property, style]) =>
+      property === "fillStyle" && style.startsWith("rgba(204,"),
+  );
+  assert.ok(oldPatches.length === 3, "aged patches lose their fresh tone");
+});
+
+test("hull reflections lean with a damaged hull", () => {
+  const level = canvasContext();
+  drawHullReflection(level, getShipModelProfile("brig"), 0.5, {
+    reducedMotion: true,
+  });
+  const heeled = canvasContext();
+  drawHullReflection(heeled, getShipModelProfile("brig"), 0.5, {
+    reducedMotion: true,
+    heel: 0.12,
+    settle: 1.4,
+  });
+  assert.notDeepEqual(
+    level.calls.filter(([method]) => method === "lineTo"),
+    heeled.calls.filter(([method]) => method === "lineTo"),
+  );
+  assert.equal(
+    callCount(level, "rect"),
+    callCount(heeled, "rect"),
+    "the ink stays sliced into the same eight bands",
+  );
+  assert.equal(callCount(level, "save"), callCount(level, "restore"));
+  assert.equal(callCount(heeled, "save"), callCount(heeled, "restore"));
+});

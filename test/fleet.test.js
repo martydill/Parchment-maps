@@ -1245,3 +1245,45 @@ test("runFleetDay returns a repaired vessel with no route to laid-up, not sailin
   assert.equal(drydocked.status, "laidUp");
   assert.ok(drydocked.operations.condition > 40);
 });
+
+test("fleetRenderObject carries damage visuals and a persistent key", () => {
+  assert.equal(fleetRenderObject(null), null);
+  const game = makeGame();
+  const { ship } = commissionFleetShip(game, "sloop");
+  assert.equal(fleetRenderObject(ship, 4).damage, null);
+
+  ship.operations.components.hull = 20;
+  ship.operations.components.rigging = 30;
+  ship.operations.patchedDay = 4;
+  const render = fleetRenderObject(ship, 6);
+  assert.equal(render.damageKey, ship);
+  assert.ok(render.damage.heel !== 0, "a holed hull lists");
+  assert.ok(render.damage.tear > 0, "worn rigging tears the sails");
+  assert.ok(render.damage.patch > 0, "fresh patches still show");
+  assert.ok(
+    render.damage.smoke > 0 && render.damage.smoke < 1,
+    "a 20% hull is smoking but not fully ablative",
+  );
+});
+
+test("a fleet repair completes with fresh canvas patches nailed on", () => {
+  const game = makeGame(5000);
+  game.day = 30;
+  game.fleet = { ships: [], templates: [], captainAssignments: {}, nextId: 1 };
+  const wounded = freshShip(game, "cutter");
+  wounded.status = "repairing";
+  wounded.repairDaysLeft = 1;
+  wounded.operations.condition = 30;
+  wounded.operations.patchedDay = 0;
+  runFleetDay(game);
+  assert.equal(wounded.operations.condition, 100);
+  assert.equal(wounded.operations.patchedDay, 30);
+
+  // A vessel hove to with no damage to mend records no patch day.
+  const sound = freshShip(game, "cutter");
+  sound.status = "repairing";
+  sound.repairDaysLeft = 1;
+  sound.operations.condition = 100;
+  runFleetDay(game);
+  assert.equal(sound.operations.patchedDay, 0);
+});

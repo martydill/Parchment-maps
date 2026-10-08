@@ -14,13 +14,13 @@ import {
   renderShipyard,
   renderWarehouse,
   upgradeEffects,
-} from "./port-panels.js?v=10";
+} from "./port-panels.js?v=11";
 import {
   assignCaptain,
   clearFleetRoute,
   decommissionFleetShip,
 } from "../core/fleet.js";
-import { drawShip } from "../rendering.js?v=4";
+import { drawShip } from "../rendering.js?v=5";
 
 let panelContext;
 let acceptContract,
@@ -237,6 +237,16 @@ export function updateHud() {
       " km sight · " +
       Math.round((wrapX(ship.x) / WORLD.w) * 360) +
       "° longitude",
+  );
+  // The hull condition modeled in the dockyard, surfaced while under way.
+  const hullCondition = Math.round(
+    Math.max(0, Math.min(100, Number(game.operations.components?.hull) || 0)),
+  );
+  updateElementProperty(ui.hull, "textContent", "Hull " + hullCondition + "%");
+  updateElementProperty(
+    ui.hull,
+    "className",
+    hullCondition < 25 ? "critical" : hullCondition < 60 ? "worn" : "",
   );
   updateElementProperty(ui.coins, "textContent", game.coins + " crowns");
   updateElementProperty(ui.day, "textContent", "Day " + game.day);
