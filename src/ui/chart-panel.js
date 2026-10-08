@@ -1,6 +1,6 @@
 import { chartedCityIndicators } from "../core/chart.js";
 import { layoutMapLabels } from "../core/label-layout.js";
-import { drawShip } from "../rendering.js?v=4";
+import { drawShip } from "../rendering.js?v=5";
 import { drawExplorationSite } from "../exploration-rendering.js";
 
 export function renderChartPanel({

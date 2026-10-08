@@ -1,4 +1,5 @@
 import { clamp } from "./math.js";
+import { shipDamageVisuals } from "./ship-damage.js";
 import {
   SHIP_CLASSES,
   calculateShipStats,
@@ -792,6 +793,9 @@ export function runFleetDay(game) {
         game.coins = Math.max(0, (Number(game.coins) || 0) - cost);
         const repaired = repairOperations(ship.operations, 10 ** 9);
         ship.operations = repaired.operations;
+        // Fresh canvas over the mended planking; the crew nailed it on while
+        // hove to, so the patches show the moment the vessel sails again.
+        if (damage > 0) ship.operations.patchedDay = game.day;
         ship.status = ship.route ? "sailing" : "laidUp";
       }
       continue;
@@ -852,7 +856,7 @@ function bumpFleetLegacy(game, { revenue = 0, deliveries = 0 }) {
   );
 }
 
-export function fleetRenderObject(ship) {
+export function fleetRenderObject(ship, day = 0) {
   if (!ship) return null;
   return {
     x: Number(ship.x) || 0,
@@ -862,6 +866,13 @@ export function fleetRenderObject(ship) {
     idNum: parseShipIdNumber(ship.id),
     color: ship.color,
     name: ship.name,
+    damage: shipDamageVisuals(ship.operations, {
+      seed: parseShipIdNumber(ship.id),
+      day,
+    }),
+    // Persistent identity for presentation-only state (smoke trails, patch
+    // spawn animation); the vessel object survives across frames.
+    damageKey: ship,
   };
 }
 

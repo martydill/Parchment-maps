@@ -45,7 +45,7 @@ export {
   drawMerchantShip,
   drawShip,
   shipDrawProfile,
-} from "./ship-rendering.js?v=4";
+} from "./ship-rendering.js?v=5";
 import {
   lands,
   ports,

@@ -209,6 +209,9 @@ export function createOperationsState() {
     obligations: [],
     nextObligationId: 1,
     routePlan: "balanced",
+    // Day of the most recent repair, or 0. Drives the fresh canvas patches
+    // shown on the hull at sea; absent from older saves and normalized to 0.
+    patchedDay: 0,
   };
 }
 
@@ -241,6 +244,7 @@ export function normalizeOperationsState(value) {
     obligations: Array.isArray(value.obligations) ? value.obligations : [],
     nextObligationId: Math.max(1, Math.floor(value.nextObligationId ?? 1)),
     routePlan: normalizeRoutePlan(value.routePlan),
+    patchedDay: Math.max(0, Math.floor(Number(value.patchedDay) || 0)),
   };
 }
 

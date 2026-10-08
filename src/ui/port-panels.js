@@ -756,6 +756,8 @@ export function renderReadiness() {
       if (!result.ok || !result.repaired) return;
       game.operations = result.operations;
       game.coins = result.coins;
+      // Fresh canvas patches show on the hull at sea after a yard repair.
+      game.operations.patchedDay = game.day;
       applyShipUpgrades();
       showMessage(
         `Repaired ${SHIP_COMPONENTS[key].label.toLowerCase()} by ${Number(result.repaired.toFixed(2))} points.`,
@@ -811,6 +813,7 @@ export function renderReadiness() {
     const result = repairOperations(game.operations, game.coins);
     game.operations = result.operations;
     game.coins = result.coins;
+    if (result.repaired > 0) game.operations.patchedDay = game.day;
     applyShipUpgrades();
     showMessage(
       `Repaired ${result.repaired} component point${result.repaired === 1 ? "" : "s"}.`,

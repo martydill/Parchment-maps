@@ -206,7 +206,8 @@ body.map-opening #debugButton {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.debug-season-control {
+.debug-season-control,
+.debug-damage-control {
   grid-column: 1 / -1;
 }
 .debug-pause {
@@ -431,6 +432,12 @@ body.encounter-active #hud {
   font: 700 12px/1.2 var(--font-ui);
   color: #f2dfb3;
   white-space: nowrap;
+}
+#hullText.worn {
+  color: #e8b365;
+}
+#hullText.critical {
+  color: #ec7d55;
 }
 .instrument-secondary {
   display: block;

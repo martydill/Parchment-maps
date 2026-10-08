@@ -1336,6 +1336,8 @@ export function createSeaRendering({
         seed: vessel.idNum || 0,
         speed: vessel.speed || 0,
         anchored: vessel.anchored ?? false,
+        heel: vessel.heel || 0,
+        settle: vessel.settle || 0,
         lighting,
       });
       const top = -profile.length * 0.6;

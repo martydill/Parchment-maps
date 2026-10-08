@@ -7,10 +7,21 @@ import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
 import {
+  SAIL_TEAR_GRID,
+  damageNoise,
+  sailTearLayout,
+  smokePuffRender,
+  splinterFlecks,
+  createSmokeTrail,
+  updateSmokeTrail,
+} from "./core/ship-damage.js";
+import { clamp, wrappedDelta } from "./core/math.js";
+import {
   BIOLUMINESCENT_RGB,
   bioluminescentTwinkle,
 } from "./core/bioluminescence.js";
 import { createAlphaPalette } from "./style-palette.js";
+import { createRadialStamp } from "./radial-stamp.js";
 
 export { getShipModelProfile as shipDrawProfile } from "./core/ship-models.js";
 
@@ -20,6 +31,8 @@ const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
 const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
 const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
 const reflectionInkStyle = createAlphaPalette("45,57,45", 0, 0.34, 128);
+const splinterPitchStyle = createAlphaPalette("46,30,17", 0.14, 0.72, 64);
+const splinterWoodStyle = createAlphaPalette("171,124,66", 0.14, 0.76, 64);
 const eddyGlowStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.3, 48);
 const eddySpeckStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.85, 96);
 const CONTACT_SHADOWS = [
@@ -27,6 +40,25 @@ const CONTACT_SHADOWS = [
   [1.2, "rgba(21,47,43,0.085)"],
   [1, "rgba(18,39,35,0.22)"],
 ];
+
+// Presentation-only per-vessel state: smoke trails and the one-shot patch
+// spawn animation. Keys are the persistent vessel objects the callers pass.
+const smokeTrails = new WeakMap();
+const patchSpawns = new WeakMap();
+let smokeStamp = null;
+function getSmokeStamp() {
+  if (!smokeStamp) {
+    smokeStamp = createRadialStamp({
+      stops: [
+        [0, "rgba(209,204,194,0.9)"],
+        [0.5, "rgba(146,142,136,0.42)"],
+        [1, "rgba(118,114,108,0)"],
+      ],
+      size: 64,
+    });
+  }
+  return smokeStamp;
+}
 
 const HULL_STATIONS = Object.freeze([
   [-0.5, 0.05],
@@ -163,6 +195,9 @@ function buildHullFaces(profile) {
 // across z = 0, keeping the keel's map position and the live hull's pose.
 export function drawHullReflection(c, profile, heading, environment = {}) {
   const motion = sampleShipMotion(environment);
+  // A damaged hull lists and settles; its ink reflection leans with it.
+  motion.roll += environment.heel || 0;
+  motion.heave -= environment.settle || 0;
   const time = environment.reducedMotion ? 0 : (environment.time ?? 0);
   const roughness = environment.roughness ?? 0;
   const daylight = environment.lighting?.daylight ?? 1;
@@ -326,27 +361,68 @@ function drawLine3d(c, a, b, heading, color, width, z, motion, alpha = 1) {
   c.restore();
 }
 
-function sailFaces(mast, profile, windX, windY, mastIndex) {
+function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
   const faces = [];
+  const fringes = [];
+  const seams = [];
   const baseY = mast.y;
   const sails = Math.max(1, mast.sails);
   const addCloth = (vertices, panel = 0) => {
+    let panelIndex = panel;
     const center = vertices.reduce(
       (sum, vertex) =>
         sum.map((value, index) => value + vertex[index] / vertices.length),
       [0, 0, 0],
     );
     const bowed = [center[0] + windX, center[1] + windY, center[2]];
+    const emit = (triangle, outline) =>
+      faces.push({
+        vertices: triangle,
+        fill: panelIndex % 2 ? "#d8c697" : "#eadbb1",
+        outline: outline ? "rgba(70,49,29,.75)" : undefined,
+        doubleSided: true,
+        order: 20 + mastIndex * 10 + panelIndex,
+      });
+    const layout =
+      tear > 0
+        ? sailTearLayout(seed * 7 + mastIndex * 131 + panel * 29, tear)
+        : null;
+    if (!layout || !layout.torn.size) {
+      for (let index = 0; index < vertices.length; index++) {
+        const next = (index + 1) % vertices.length;
+        emit([vertices[index], vertices[next], bowed], true);
+        panelIndex++;
+      }
+      return center;
+    }
+    // Torn cloth: the intact lattice cells of each fan triangle stay up while
+    // the ripped ones leave genuine gaps that the sky and sea show through.
     for (let index = 0; index < vertices.length; index++) {
       const next = (index + 1) % vertices.length;
-      faces.push({
-        vertices: [vertices[index], vertices[next], bowed],
-        fill: panel % 2 ? "#d8c697" : "#eadbb1",
-        outline: "rgba(70,49,29,.75)",
-        doubleSided: true,
-        order: 20 + mastIndex * 10 + panel,
+      const a = vertices[index];
+      const b = vertices[next];
+      const corner = (u, v) => [
+        a[0] + (b[0] - a[0]) * u + (bowed[0] - a[0]) * v,
+        a[1] + (b[1] - a[1]) * u + (bowed[1] - a[1]) * v,
+        a[2] + (b[2] - a[2]) * u + (bowed[2] - a[2]) * v,
+      ];
+      layout.cells.forEach((cell, cellIndex) => {
+        if (layout.torn.has(cellIndex)) return;
+        emit(
+          cell.points.map(([u, v]) =>
+            corner(u / SAIL_TEAR_GRID, v / SAIL_TEAR_GRID),
+          ),
+          false,
+        );
+        panelIndex++;
       });
-      panel++;
+      // The remaining cloth keeps its panel outline along the fan edges.
+      seams.push([a, b], [a, bowed], [b, bowed]);
+      for (const [start, end] of layout.fringes)
+        fringes.push([
+          corner(start[0] / SAIL_TEAR_GRID, start[1] / SAIL_TEAR_GRID),
+          corner(end[0] / SAIL_TEAR_GRID, end[1] / SAIL_TEAR_GRID),
+        ]);
     }
     return center;
   };
@@ -358,7 +434,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex) {
     const forward = [-yard * 0.28, baseY - 4, mast.height * 0.9];
     const aft = [yard * 0.9, baseY + 11, lower];
     addCloth([peak, forward, aft], mastIndex);
-    return faces;
+    return { faces, fringes, seams };
   }
 
   if (profile.rig === "gaff" || (profile.rig === "barque" && mastIndex === 2)) {
@@ -368,7 +444,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex) {
     const clew = [mast.yard * 0.72, baseY + 12, low];
     const tack = [-mast.yard * 0.22, baseY + 7, low];
     addCloth([top, peak, clew, tack], mastIndex);
-    return faces;
+    return { faces, fringes, seams };
   }
 
   for (let tier = 0; tier < sails; tier++) {
@@ -383,7 +459,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex) {
     ];
     addCloth(vertices, tier + mastIndex);
   }
-  return faces;
+  return { faces, fringes, seams };
 }
 
 // Deck hands scramble as the storm arc builds: tiny ink figures hurry between
@@ -758,6 +834,179 @@ function drawHullBioluminescence(c, profile, bioluminescence, strength) {
   c.restore();
 }
 
+// Wood chips and torn timbers float in the ship's wake after a battering.
+// Positions are deterministic; animation time only streams them slowly aft.
+function drawSplinterFlecks(
+  c,
+  profile,
+  heading,
+  z,
+  motion,
+  damage,
+  time,
+  seed,
+) {
+  const flecks = splinterFlecks(seed, damage.splinters);
+  if (!flecks.length) return;
+  // The hull's clock freezes under reduced motion, and the chips follow it.
+  const t = Number(motion.time ?? time) || 0;
+  c.save();
+  c.rotate(heading);
+  for (const fleck of flecks) {
+    const drift = (t * 0.05 + fleck.phase) % 0.45;
+    const wobble = 0.5 + 0.5 * Math.sin(t * 1.2 + fleck.phase * 7);
+    const x =
+      fleck.side * profile.beam * fleck.athwart +
+      Math.sin(t * 0.6 + fleck.phase * 9) * 0.9 +
+      motion.flutter * 0.3;
+    const y = (fleck.along * 1.3 - drift + 0.22) * profile.length;
+    c.fillStyle = fleck.fresh
+      ? splinterWoodStyle(0.22 + wobble * 0.32)
+      : splinterPitchStyle(0.2 + wobble * 0.36);
+    c.beginPath();
+    c.ellipse(
+      x,
+      y,
+      fleck.size * 1.5,
+      fleck.size * 0.55,
+      fleck.spin + wobble * 0.6,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
+  }
+  c.restore();
+}
+
+// Fresh canvas nailed over mended planking. Patches pop on over a few frames
+// after a repair, then weather and fade across the following days.
+const PATCH_FRAMES = 16;
+function drawRepairPatches(
+  c,
+  profile,
+  heading,
+  z,
+  motion,
+  damage,
+  damageKey,
+  lighting,
+  seed,
+) {
+  let spawn = patchSpawns.get(damageKey);
+  if (!spawn || spawn.day !== damage.patchedDay) {
+    spawn = { day: damage.patchedDay, frames: 0 };
+    patchSpawns.set(damageKey, spawn);
+  }
+  spawn.frames += 1;
+  const grow = 1 - Math.pow(1 - Math.min(1, spawn.frames / PATCH_FRAMES), 3);
+  const side = Math.sin(heading) >= 0 ? 1 : -1;
+  const dim = 0.55 + 0.45 * (lighting?.strength ?? 1);
+  for (let index = 0; index < 3; index++) {
+    const along = Math.max(
+      -0.34,
+      Math.min(
+        0.4,
+        -0.26 + index * 0.27 + (damageNoise(seed, 300 + index) - 0.5) * 0.12,
+      ),
+    );
+    const py = along * profile.length;
+    const px = side * hullWidth(profile, along) * 1.04;
+    const centerZ = clamp(
+      1.6 + damageNoise(seed, 320 + index) * profile.deckHeight * 0.5,
+      1.4,
+      Math.max(1.4, deckHeight(profile, along) - 0.6),
+    );
+    const halfY = profile.beam * (0.3 + damageNoise(seed, 340 + index) * 0.14);
+    const halfZ = 0.9 + damageNoise(seed, 360 + index) * 0.7;
+    const corners = [
+      [px, py - halfY, centerZ - halfZ],
+      [px, py + halfY, centerZ - halfZ],
+      [px, py + halfY, centerZ + halfZ],
+      [px, py - halfY, centerZ + halfZ],
+    ].map(([, y, height]) => [
+      px,
+      py + (y - py) * grow,
+      centerZ + (height - centerZ) * grow,
+    ]);
+    const fresh = damage.patch;
+    const tone = 196 + Math.round(38 * fresh);
+    const alpha = (0.5 + fresh * 0.36) * dim;
+    c.beginPath();
+    corners
+      .map((corner) => projectedPoint(corner, heading, motion))
+      .forEach(([x, y], cornerIndex) => {
+        if (cornerIndex) c.lineTo(x, y);
+        else c.moveTo(x, y);
+      });
+    c.closePath();
+    c.fillStyle = `rgba(${tone},${tone - 24},${Math.round(tone * 0.72)},${alpha.toFixed(3)})`;
+    c.fill();
+    c.strokeStyle = `rgba(84,60,34,${(0.7 * dim).toFixed(3)})`;
+    c.lineWidth = 0.7 / z;
+    c.stroke();
+    // A cross-stitch and four nails hold each patch to the planking.
+    drawLine3d(
+      c,
+      corners[0],
+      corners[2],
+      heading,
+      `rgba(96,68,38,${(0.55 * dim).toFixed(3)})`,
+      0.5,
+      z,
+      motion,
+    );
+    c.fillStyle = `rgba(59,42,26,${(0.9 * dim).toFixed(3)})`;
+    for (const corner of corners) {
+      const [x, y] = projectedPoint(corner, heading, motion);
+      c.beginPath();
+      c.arc(x, y, 0.3 / z, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+}
+
+// Thin smoke streaming from a critically holed hull. The trail lives in world
+// space and is keyed to the persistent vessel so it survives across frames.
+export function drawShipSmokeTrail(
+  c,
+  damageKey,
+  x,
+  y,
+  z,
+  environment = {},
+  damage = null,
+) {
+  if (!damageKey || !damage?.smoke || environment.reducedMotion) return;
+  const time = environment.time ?? 0;
+  let trail = smokeTrails.get(damageKey);
+  if (!trail) {
+    trail = createSmokeTrail();
+    smokeTrails.set(damageKey, trail);
+  }
+  const puffs = updateSmokeTrail(trail, {
+    x,
+    y,
+    smoke: damage.smoke,
+    time,
+  });
+  if (!puffs.length) return;
+  const worldWidth = environment.worldWidth ?? 0;
+  const daylight = environment.lighting?.daylight ?? 1;
+  const stamp = getSmokeStamp();
+  c.save();
+  for (const puff of puffs) {
+    const render = smokePuffRender(puff, environment);
+    const px = worldWidth
+      ? x + wrappedDelta(render.x, x, worldWidth)
+      : render.x;
+    const py = render.y - render.z * MAP_TILT_TAN;
+    const size = render.radius * 2.2;
+    c.globalAlpha = clamp(render.alpha * (0.5 + daylight * 0.5), 0, 1);
+    c.drawImage(stamp, px - size / 2, py - size / 2, size, size);
+  }
+  c.restore();
+}
+
 function drawShipModel(
   c,
   vesselClass,
@@ -772,10 +1021,20 @@ function drawShipModel(
   motion = sampleShipMotion(),
   lighting = sceneLighting(),
   isPlayer = false,
+  damage = null,
+  damageKey = null,
+  time = 0,
   crew = 0,
   bioluminescence = null,
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
+  // A holed hull lists to one side and settles lower into the water.
+  if (damage)
+    motion = {
+      ...motion,
+      roll: motion.roll + damage.heel,
+      heave: motion.heave - damage.settle,
+    };
   c.save();
   c.translate(x, y);
   drawHullWater(c, profile, motion, heading, z, bioluminescence);
@@ -795,6 +1054,8 @@ function drawShipModel(
     );
     c.fill();
   }
+  if (damage?.splinters > 0)
+    drawSplinterFlecks(c, profile, heading, z, motion, damage, time, seed);
 
   const hull = buildHullFaces(profile);
   const cabinStart = profile.length * 0.17;
@@ -823,16 +1084,34 @@ function drawShipModel(
       starboard: "#92633b",
     },
   );
-  const faces = [
-    ...hull,
-    ...structures,
-    ...profile.masts.flatMap((mast, index) =>
-      sailFaces(mast, profile, windX, windY, index),
-    ),
-  ]
+  const sails = profile.masts.map((mast, index) =>
+    sailFaces(mast, profile, windX, windY, index, damage?.tear ?? 0, seed),
+  );
+  const faces = [...hull, ...structures, ...sails.flatMap((sail) => sail.faces)]
     .map((face, order) => worldFace(face, heading, order, motion, lighting))
     .filter(Boolean);
   paintFaces(c, faces, z);
+
+  // Ragged cloth threads hang off every tear, and the surviving panels keep
+  // their outline so a shredded sail still reads as canvas, not noise.
+  if (damage?.tear > 0) {
+    for (const sail of sails) {
+      for (const [a, b] of sail.seams)
+        drawLine3d(c, a, b, heading, "rgba(70,49,29,.75)", 0.85, z, motion);
+      for (const [a, b] of sail.fringes)
+        drawLine3d(
+          c,
+          a,
+          b,
+          heading,
+          "rgba(58,40,24,.85)",
+          0.55,
+          z,
+          motion,
+          0.9,
+        );
+    }
+  }
 
   // A narrow painted waterline carries each vessel's color across the hull.
   // It also keeps smaller ships identifiable when their pennants are tiny.
@@ -854,6 +1133,18 @@ function drawShipModel(
       );
     }
   }
+  if (damage?.patch > 0 && damageKey)
+    drawRepairPatches(
+      c,
+      profile,
+      heading,
+      z,
+      motion,
+      damage,
+      damageKey,
+      lighting,
+      seed,
+    );
 
   // The raised stern works as a quarterdeck; a rail and cabin windows make
   // the larger merchant hulls read clearly even at chart scale.
@@ -1056,6 +1347,8 @@ export function drawMerchantShip(
   environment = {},
 ) {
   const angle = merchant.angle || 0;
+  const damage = merchant.damage || null;
+  const damageKey = merchant.damageKey || null;
   const motion = sampleShipMotion({
     time: 0,
     speed: merchant.speed || 0,
@@ -1078,9 +1371,24 @@ export function drawMerchantShip(
     motion,
     lighting,
     false,
+    damage,
+    damageKey,
+    environment.time ?? 0,
     0,
     hullBioluminescence({ ...environment, seed: merchant.idNum || 0 }),
   );
+  // Smoke climbs from the deck and drifts astern, so it renders above the
+  // hull while the oldest puffs fall away behind it.
+  if (damage?.smoke)
+    drawShipSmokeTrail(
+      c,
+      damageKey,
+      renderX,
+      merchant.y,
+      z,
+      environment,
+      damage,
+    );
 }
 
 export function drawShip(
@@ -1095,6 +1403,8 @@ export function drawShip(
   environment = {},
 ) {
   const relativeWind = windAngle - angle;
+  const damage = environment.damage || null;
+  const damageKey = environment.damageKey || null;
   const clock = environment.time ?? performance.now() / 1000;
   const motion = {
     ...sampleShipMotion({
@@ -1124,8 +1434,15 @@ export function drawShip(
     motion,
     lighting,
     true,
+    damage,
+    damageKey,
+    environment.time ?? 0,
     environment.crew || 0,
     hullBioluminescence(environment),
   );
   c.restore();
+  // Smoke climbs from the deck and drifts astern, drawn in the caller's
+  // transform so its sizes match the merchant fleet's smoke.
+  if (damage?.smoke)
+    drawShipSmokeTrail(c, damageKey, x, y, z, environment, damage);
 }

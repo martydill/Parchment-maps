@@ -15,13 +15,13 @@ import {
   renderShipyard,
   renderWarehouse,
   upgradeEffects,
-} from "./port-panels.js?v=10";
+} from "./port-panels.js?v=11";
 import {
   assignCaptain,
   clearFleetRoute,
   decommissionFleetShip,
 } from "../core/fleet.js";
-import { drawShip } from "../rendering.js?v=4";
+import { drawShip } from "../rendering.js?v=5";
 
 let panelContext;
 let acceptContract,
@@ -82,6 +82,7 @@ let acceptContract,
   legacyReadyForCapstone,
   legalStatusAt,
   localCurrent,
+  hullConditionReadout,
   operationalShipStats,
   PORT_NAMES,
   portEvolution,
@@ -174,6 +175,7 @@ function syncPanelContext() {
     legacyReadyForCapstone,
     legalStatusAt,
     localCurrent,
+    hullConditionReadout,
     operationalShipStats,
     PORT_NAMES,
     portEvolution,
@@ -242,6 +244,22 @@ export function updateHud() {
       " · " +
       Math.round((wrapX(ship.x) / WORLD.w) * 360) +
       "° longitude",
+  );
+  // The hull condition modeled in the dockyard, surfaced while under way.
+  // A debug damage preset overrides the readout without touching the save.
+  const hullCondition = hullConditionReadout
+    ? hullConditionReadout()
+    : Math.round(
+        Math.max(
+          0,
+          Math.min(100, Number(game.operations.components?.hull) || 0),
+        ),
+      );
+  updateElementProperty(ui.hull, "textContent", "Hull " + hullCondition + "%");
+  updateElementProperty(
+    ui.hull,
+    "className",
+    hullCondition < 25 ? "critical" : hullCondition < 60 ? "worn" : "",
   );
   updateElementProperty(ui.coins, "textContent", game.coins + " crowns");
   const calendar = seasonAtDay(game.day);

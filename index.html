@@ -218,6 +218,11 @@
               <option value="73">Winter</option>
             </select></label
           >
+          <label class="debug-damage-control"
+            >Ship damage<select id="debugDamage">
+              <option value="auto">Automatic (real condition)</option>
+            </select></label
+          >
         </div>
         <label class="debug-pause"
           ><input id="debugPause" type="checkbox" /> Pause simulation</label
@@ -272,6 +277,7 @@
           <div class="instrument-readouts">
             <span id="speedText">0 knots</span>
             <span id="windText">Wind E · 14 knots</span>
+            <span id="hullText">Hull 100%</span>
           </div>
           <span class="instrument-secondary" id="visibilityText"
             >Clear · 12 km sight</span
