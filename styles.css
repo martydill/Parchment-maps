@@ -206,7 +206,8 @@ body.map-opening #debugButton {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.debug-season-control {
+.debug-season-control,
+.debug-damage-control {
   grid-column: 1 / -1;
 }
 .debug-pause {

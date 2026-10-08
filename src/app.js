@@ -370,7 +370,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=18";
+} from "./ui/panels.js?v=19";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
@@ -563,6 +563,68 @@ let debugPreviewPanels = [];
 let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
+// Visual-only ship damage presets for the debug menu. They never touch the
+// persisted operations state, so an override disappears on reload like the
+// other scene controls.
+const DEBUG_DAMAGE_PRESETS = {
+  sound: {
+    label: "Sound · 100%",
+    components: {
+      hull: 100,
+      rigging: 100,
+      rudder: 100,
+      fittings: 100,
+      weapons: 100,
+    },
+  },
+  frayed: {
+    label: "Fraying sails · rigging 45%",
+    components: {
+      hull: 100,
+      rigging: 45,
+      rudder: 95,
+      fittings: 100,
+      weapons: 95,
+    },
+  },
+  worn: {
+    label: "Worn hull · 55%",
+    components: {
+      hull: 55,
+      rigging: 70,
+      rudder: 80,
+      fittings: 85,
+      weapons: 80,
+    },
+  },
+  holed: {
+    label: "Holed & listing · hull 25%",
+    components: {
+      hull: 25,
+      rigging: 40,
+      rudder: 60,
+      fittings: 70,
+      weapons: 55,
+    },
+  },
+  critical: {
+    label: "Critical · holed & smoking · 6%",
+    components: { hull: 6, rigging: 14, rudder: 45, fittings: 60, weapons: 40 },
+  },
+  patched: {
+    label: "Freshly patched · new canvas on sound planking",
+    components: {
+      hull: 100,
+      rigging: 100,
+      rudder: 100,
+      fittings: 100,
+      weapons: 100,
+    },
+    patchedToday: true,
+  },
+};
+let debugDamagePreset = null;
+
 const game = createGameState();
 game.mapSeed = mapSeed;
 const ship = {
@@ -706,9 +768,27 @@ function operationalShipStats() {
 }
 
 // The player vessel's damage state at sea: torn sails, list, splinters,
-// smoke, and fresh repair patches all read from the modeled components.
+// smoke, and fresh repair patches all read from the modeled components. A
+// debug-menu preset overrides the read without touching the saved state.
 function shipDamageState() {
+  if (debugDamagePreset) {
+    return shipDamageVisuals(
+      {
+        components: debugDamagePreset.components,
+        patchedDay: debugDamagePreset.patchedToday ? game.day : 0,
+      },
+      { seed: 0, day: game.day },
+    );
+  }
   return shipDamageVisuals(game.operations, { seed: 0, day: game.day });
+}
+
+// Hull percentage for the sea HUD, honoring any debug damage override.
+function hullConditionReadout() {
+  if (debugDamagePreset) return debugDamagePreset.components.hull;
+  return Math.round(
+    Math.max(0, Math.min(100, Number(game.operations.components?.hull) || 0)),
+  );
 }
 
 function activeShipClass() {
@@ -3627,6 +3707,7 @@ const panelContext = {
   legacyReadyForCapstone,
   legalStatusAt,
   localCurrent,
+  hullConditionReadout,
   operationalShipStats,
   PORT_NAMES,
   portEvolution,
@@ -8083,6 +8164,7 @@ const debugMenu = document.getElementById("debugMenu");
 const debugWeatherSelect = document.getElementById("debugWeather");
 const debugTimeSelect = document.getElementById("debugTime");
 const debugSeasonSelect = document.getElementById("debugSeason");
+const debugDamageSelect = document.getElementById("debugDamage");
 const debugPauseToggle = document.getElementById("debugPause");
 const debugWeatherPatterns = [
   ...new Map(
@@ -8095,6 +8177,12 @@ for (const [index, weather] of debugWeatherPatterns.entries()) {
   option.value = String(index);
   option.textContent = weather.name;
   debugWeatherSelect.append(option);
+}
+for (const [id, preset] of Object.entries(DEBUG_DAMAGE_PRESETS)) {
+  const option = document.createElement("option");
+  option.value = id;
+  option.textContent = preset.label;
+  debugDamageSelect.append(option);
 }
 
 function closeDebugMenu(restoreFocus = true) {
@@ -8181,6 +8269,10 @@ debugSeasonSelect.addEventListener("change", () => {
     debugSeasonSelect.value === "auto" ? null : Number(debugSeasonSelect.value);
   refreshDebugScene();
 });
+debugDamageSelect.addEventListener("change", () => {
+  debugDamagePreset = DEBUG_DAMAGE_PRESETS[debugDamageSelect.value] ?? null;
+  refreshDebugScene();
+});
 debugPauseToggle.addEventListener("change", () => {
   debugPaused = debugPauseToggle.checked;
   keys.clear();
@@ -8191,8 +8283,10 @@ document.getElementById("resetDebug").addEventListener("click", () => {
   debugTimeOfDay = null;
   debugSeasonDay = null;
   debugSeasonSelect.value = "auto";
+  debugDamagePreset = null;
   debugPaused = false;
   debugWeatherSelect.value = debugTimeSelect.value = "auto";
+  debugDamageSelect.value = "auto";
   debugPauseToggle.checked = false;
   refreshDebugScene();
 });

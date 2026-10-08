@@ -82,6 +82,7 @@ let acceptContract,
   legacyReadyForCapstone,
   legalStatusAt,
   localCurrent,
+  hullConditionReadout,
   operationalShipStats,
   PORT_NAMES,
   portEvolution,
@@ -173,6 +174,7 @@ function syncPanelContext() {
     legacyReadyForCapstone,
     legalStatusAt,
     localCurrent,
+    hullConditionReadout,
     operationalShipStats,
     PORT_NAMES,
     portEvolution,
@@ -240,9 +242,15 @@ export function updateHud() {
       "° longitude",
   );
   // The hull condition modeled in the dockyard, surfaced while under way.
-  const hullCondition = Math.round(
-    Math.max(0, Math.min(100, Number(game.operations.components?.hull) || 0)),
-  );
+  // A debug damage preset overrides the readout without touching the save.
+  const hullCondition = hullConditionReadout
+    ? hullConditionReadout()
+    : Math.round(
+        Math.max(
+          0,
+          Math.min(100, Number(game.operations.components?.hull) || 0),
+        ),
+      );
   updateElementProperty(ui.hull, "textContent", "Hull " + hullCondition + "%");
   updateElementProperty(
     ui.hull,
