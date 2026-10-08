@@ -1571,6 +1571,45 @@ button.parchment {
 .menu-options button {
   width: 100%;
 }
+/* Graphics quality lives in the game menu as a compact parchment fieldset;
+   the select inherits the shared ink-on-parchment dropdown styling. */
+.graphics-settings {
+  max-width: 340px;
+  margin: 0 auto 20px;
+  padding: 10px 16px 12px;
+  border: 1px solid rgba(109, 82, 50, 0.45);
+  border-radius: 4px;
+  background: rgba(255, 248, 224, 0.28);
+  text-align: center;
+}
+.graphics-settings legend {
+  padding: 0 8px;
+  color: #6d5232;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.graphics-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.graphics-row label {
+  font-size: 13px;
+  color: var(--ink);
+}
+.graphics-row select {
+  width: min(200px, 60vw);
+  min-height: 36px;
+  font-size: 12px;
+}
+#graphicsStatus {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #5d4a2e;
+}
 /* Dock panel: a compact header and a section tab bar sit above a single
    scrolling body, so each port area is one tap away instead of one long
    vertical scroll. The parchment frame and decorative pseudo-elements come
@@ -5931,5 +5970,90 @@ body.port-open {
   .inspection-plate-caption {
     bottom: 4px;
     font-size: 9px;
+  }
+}
+
+/* The arriving ship's painted harbor settles into the Dock illustration. */
+.port-arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  pointer-events: auto;
+}
+.port-arrival[hidden] {
+  display: none;
+}
+#portArrivalScene {
+  position: absolute;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+}
+.port-arrival-caption {
+  position: absolute;
+  left: 7vw;
+  top: 9vh;
+  color: #fff0ce;
+  text-shadow: 0 2px 12px #152536;
+  opacity: var(--arrival-caption, 1);
+}
+.port-arrival-caption > span {
+  font: 12px var(--font-ui);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.port-arrival-caption h2 {
+  margin: 12px 0 6px;
+  font-size: clamp(32px, 5vw, 64px);
+}
+.port-arrival-caption p {
+  font: 14px var(--font-ui);
+}
+#skipPortArrival {
+  position: absolute;
+  right: 5vw;
+  bottom: 6vh;
+  padding: 12px 20px;
+}
+#portPanel.port-arriving {
+  opacity: var(--port-reveal, 0);
+}
+.dock-harbor-scene {
+  margin: 0 0 18px;
+}
+.dock-harbor-scene canvas {
+  height: clamp(160px, 25vh, 240px);
+  object-fit: cover;
+}
+.dock-harbor-caption {
+  position: absolute;
+  bottom: 10px;
+  left: 14px;
+  padding: 5px 10px;
+  color: #f9ebc9;
+  background: #253341a6;
+  font: 11px var(--font-ui);
+  pointer-events: none;
+}
+#portPanel .port-panel[data-tab="harbor"].active {
+  grid-template-rows: clamp(150px, 22vh, 210px) 34px minmax(0, 1fr);
+}
+#portPanel .dock-harbor-scene {
+  min-height: 0;
+  margin: 0;
+}
+#portPanel .dock-harbor-scene canvas {
+  height: 100%;
+  width: 100%;
+}
+@media (max-width: 1000px) {
+  #portPanel .port-panel[data-tab="harbor"].active {
+    grid-template-rows: 180px auto auto;
+  }
+}
+@media (min-width: 801px) and (min-height: 560px) {
+  #portPanel .port-panel[data-tab="harbor"] .port-activity,
+  #portPanel .port-panel[data-tab="harbor"] .inspection-detail {
+    overflow: auto;
   }
 }

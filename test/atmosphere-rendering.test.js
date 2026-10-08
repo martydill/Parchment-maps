@@ -316,3 +316,49 @@ test("a fixed lantern keeps its cone still while the light gently breathes", () 
     colors,
   );
 });
+
+test("graphics tiers thin the star field while keeping the layout stable", () => {
+  const state = options();
+  state.lighting.stars = 1;
+  const full = canvasContext();
+  drawNightAtmosphere(full, state);
+  const scaled = canvasContext();
+  drawNightAtmosphere(scaled, { ...state, particleScale: 0.45 });
+  const styles = (context) =>
+    context.calls.filter(
+      ([property, style]) =>
+        property === "fillStyle" && style.startsWith("rgba(223,235,255,"),
+    ).length;
+  assert.equal(styles(scaled), Math.round(95 * 0.45));
+  const arcs = (context) =>
+    context.calls.filter(([name]) => name === "arc").map(([, x]) => x);
+  // The moon disc draws first, then stars in their fixed order: the scaled
+  // sky's moon-and-stars window matches the full sky's, never a reshuffle.
+  const window = 1 + Math.round(95 * 0.45);
+  assert.deepEqual(arcs(scaled).slice(0, window), arcs(full).slice(0, window));
+});
+
+test("the darkness mask follows the tier's mask resolution", () => {
+  const context = canvasContext();
+  const state = options();
+  drawNightAtmosphere(context, state);
+  assert.equal(mask.canvas.width, Math.ceil(641 * 0.5));
+  const basePaints = paints();
+  drawNightAtmosphere(context, { ...state, maskScale: 0.3 });
+  assert.equal(mask.canvas.width, Math.ceil(641 * 0.3));
+  assert.equal(mask.canvas.height, Math.ceil(481 * 0.3));
+  assert.equal(paints(), basePaints + 1, "the smaller mask is repainted once");
+  drawNightAtmosphere(context, { ...state, maskScale: 0.3 });
+  assert.equal(
+    paints(),
+    basePaints + 1,
+    "the same tier reuses the painted mask",
+  );
+  drawNightAtmosphere(context, state);
+  assert.equal(mask.canvas.width, Math.ceil(641 * 0.5));
+  assert.equal(
+    paints(),
+    basePaints + 2,
+    "returning to the default tier repaints once",
+  );
+});

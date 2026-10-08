@@ -1,11 +1,11 @@
 import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
 import {
-  mixSeasonColor,
   seasonalAppearance,
   seasonalFishingBoats,
   seasonAtDay,
 } from "./core/seasons.js";
 import { terrainBiome } from "./core/terrain.js";
+import { drawHarborPlate } from "./harbor-plate.js?v=3";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -27,6 +27,11 @@ import {
   createRenderQuality,
   renderPixelRatio,
 } from "./core/render-quality.js?v=1";
+import {
+  createAutoQualityTier,
+  graphicsQualityProfile,
+  normalizeGraphicsSetting,
+} from "./core/graphics-quality.js";
 import { createMistRendering } from "./mist-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
 import { createExplorationSampler } from "./exploration-mask.js";
@@ -294,6 +299,7 @@ import {
   sampleWeatherFront,
 } from "./core/weather.js";
 import {
+  bioluminescentSeas,
   discoverySites,
   explorationSites,
   forests,
@@ -310,6 +316,10 @@ import {
   worldMonsters,
   worldShoals,
 } from "./world-data.js";
+import {
+  bioluminescentSeaAt,
+  vesselBioluminescence,
+} from "./core/bioluminescence.js";
 import {
   createDistinctMapSeed,
   createMapTransform,
@@ -341,11 +351,13 @@ import {
 } from "./core/lighting.js";
 import {
   drawHarborBoats,
+  drawPortScene,
   drawSeasonalFishingBoat,
   createPortMiniatureCache,
   drawPortActivity,
   hasPortMiniature,
-} from "./port-miniatures.js?v=3";
+} from "./port-miniatures.js?v=5";
+import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
 import {
@@ -367,6 +379,37 @@ const ctx = canvas.getContext("2d");
 let DPR = 1;
 const renderQuality = createRenderQuality();
 const fogCadence = createRenderCadence();
+// Graphics quality: a user setting (auto/low/medium/high) persisted next to
+// the map seed, with "auto" tracking a frame-time detector. The resolved
+// profile scales particles, screen-space masks, grain, and lightning.
+const GRAPHICS_KEY = "gilded-archipelago-graphics";
+let graphicsSetting = normalizeGraphicsSetting(
+  localStorage.getItem(GRAPHICS_KEY),
+);
+let detectedTier = "high";
+let graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
+const autoGraphicsTier = createAutoQualityTier();
+// The tier caps render resolution; the continuous frame-time controller may
+// dip below the cap under load but can never exceed it.
+function resolutionQuality() {
+  return Math.min(renderQuality.quality, graphics.resolutionScale);
+}
+// Same shape for the sea renderers' continuous detail stride.
+function effectDetail() {
+  return Math.min(graphics.detail, renderQuality.quality);
+}
+function applyGraphicsProfile() {
+  graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
+  resize();
+  fogCadence.reset();
+  updateGraphicsStatus();
+}
+function setGraphicsSetting(next) {
+  graphicsSetting = normalizeGraphicsSetting(next);
+  localStorage.setItem(GRAPHICS_KEY, graphicsSetting);
+  autoGraphicsTier.reset();
+  applyGraphicsProfile();
+}
 let mapOpening = null;
 const MAP_SEED_KEY = "gilded-archipelago-map-seed";
 const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
@@ -441,6 +484,11 @@ function transformWorldData() {
     sea.rx = mapTransform.horizontalLength(sea.rx);
     sea.ry = mapTransform.verticalLength(sea.ry);
   }
+  for (const sea of bioluminescentSeas) {
+    mapRecord(sea);
+    sea.rx = mapTransform.horizontalLength(sea.rx);
+    sea.ry = mapTransform.verticalLength(sea.ry);
+  }
   const spawn = mapPoint(
     HOME_PORT.spawnX,
     HOME_PORT.spawnY,
@@ -475,6 +523,7 @@ const keys = new Set();
 let last = performance.now();
 let gameStarted = false;
 let nearPort = null;
+let glowingSeaName = null;
 let nearExplorationSite = null;
 let nearDiscovery = null;
 let currentPort = null;
@@ -1316,7 +1365,7 @@ const portMiniaturePlacements = new Map(
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
 );
 const chartPortArt = createPortMiniatureCache();
-const menuPortArt = createPortMiniatureCache();
+const menuPortArt = createPortMiniatureCache(4);
 const seasonalWorldRendering = createSeasonalWorldRendering({
   world: WORLD,
   lands,
@@ -3360,7 +3409,7 @@ const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
   return { sx, sy, rx, ry, name, shelf, bands, pebblePrimary, pebbleSecondary };
 });
 
-function drawAnimatedRoughSeas(c, time, z) {
+function drawAnimatedRoughSeas(c, time, z, particleScale = 1) {
   c.save();
   c.lineCap = "round";
   for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
@@ -3371,7 +3420,10 @@ function drawAnimatedRoughSeas(c, time, z) {
     const particles = roughSeaParticles[seaIndex];
     if (!particles || particles.length === 0) continue;
 
-    for (let i = 0; i < particles.length; i++) {
+    // Particle arrays are seeded shuffles, so a deterministic prefix subsample
+    // keeps the same look at reduced counts.
+    const count = Math.round(particles.length * particleScale);
+    for (let i = 0; i < count; i++) {
       const particle = particles[i];
       const phase = time * particle.speed + particle.phaseOffset;
       const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
@@ -3435,21 +3487,16 @@ minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
 function resize() {
   vw = innerWidth;
   vh = innerHeight;
-  DPR = renderPixelRatio(
-    vw,
-    vh,
-    window.devicePixelRatio,
-    renderQuality.quality,
-  );
+  DPR = renderPixelRatio(vw, vh, window.devicePixelRatio, resolutionQuality());
   canvas.width = Math.floor(vw * DPR);
   canvas.height = Math.floor(vh * DPR);
   canvas.style.width = vw + "px";
   canvas.style.height = vh + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   // The exploration haze contains only soft washes and masks. Keep every
-  // compositing pass at half CSS resolution, including in clear daylight.
-  fogCanvas.width = Math.ceil(vw * 0.5);
-  fogCanvas.height = Math.ceil(vh * 0.5);
+  // compositing pass at a fraction of CSS resolution, bounded by the tier.
+  fogCanvas.width = Math.ceil(vw * graphics.maskScale);
+  fogCanvas.height = Math.ceil(vh * graphics.maskScale);
   fogCadence.reset();
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
@@ -3836,6 +3883,9 @@ function renderHarborPresentation() {
   document.getElementById("portCondition").textContent =
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
+  const harbor = document.getElementById("portHarborIllustration");
+  harbor.setAttribute("aria-label", `Your ship berthed at ${currentPort.name}`);
+  drawMenuPort(harbor, currentPort, performance.now());
   renderDepartureReadiness();
 }
 
@@ -4118,126 +4168,55 @@ function renderTownOverview(port) {
 
 // Menu artwork shares the chart's architecture and reflects actual regional
 // development. Unillustrated ports use a matching architectural archetype.
-function drawMenuPort(surface, port, time) {
-  const c = surface.getContext("2d");
-  const season = portSeason(port);
-  const width = surface.width,
-    height = surface.height;
-  c.clearRect(0, 0, width, height);
-  const wash = c.createLinearGradient(0, 0, width, height);
-  wash.addColorStop(0, mixSeasonColor("#e6d4ac", "#dbe5e4", season.snow));
-  wash.addColorStop(
-    0.45,
-    mixSeasonColor("#f0e3c0", "#e7e8d7", season.snow * 0.65),
-  );
-  wash.addColorStop(
-    1,
-    mixSeasonColor(
-      mixSeasonColor("#c3b789", "#c6a379", season.autumn),
-      "#adbfc1",
-      season.snow,
-    ),
-  );
-  c.fillStyle = wash;
-  c.fillRect(0, 0, width, height);
-  // Distant terrain and rooflines give the atlas illustration a coastal depth.
-  c.save();
-  for (let ridge = 0; ridge < 3; ridge++) {
-    c.fillStyle = mixSeasonColor(
-      mixSeasonColor(
-        ["#acb09b", "#a3a790", "#929d87"][ridge],
-        "#ad865b",
-        season.autumn * 0.7,
-      ),
-      "#b9cbcc",
-      season.snow * 0.8,
+const portScenePointers = new WeakMap();
+for (const id of [
+  "portCityIllustration",
+  "portHarborIllustration",
+  "townIllustration",
+]) {
+  const surface = document.getElementById(id);
+  const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
+  portScenePointers.set(surface, pointer);
+  surface.parentElement.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch" || reducedMotion.matches) return;
+    const rect = surface.getBoundingClientRect();
+    pointer.targetX = clamp(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -1,
+      1,
     );
-    c.globalAlpha = 0.12 + ridge * 0.035;
-    c.beginPath();
-    c.moveTo(0, height * 0.63);
-    for (let x = 0; x <= width; x += 24) {
-      const y =
-        height * (0.49 + ridge * 0.038) +
-        Math.sin(x / (145 + ridge * 50) + port.name.length) * height * 0.05 +
-        Math.sin(x / 67 + ridge) * height * 0.017;
-      c.lineTo(x, y);
-    }
-    c.lineTo(width, height * 0.72);
-    c.lineTo(0, height * 0.72);
-    c.fill();
-  }
-  c.globalAlpha = 0.22;
-  for (let building = 0; building < 18; building++) {
-    const x = width * (0.07 + building * 0.049);
-    const w = width * (0.022 + (building % 3) * 0.005);
-    const h = height * (0.04 + ((building * 7 + port.name.length) % 6) * 0.013);
-    const y = height * 0.63 - h;
-    c.fillStyle = building % 3 ? "#a99170" : "#8f8469";
-    c.fillRect(x, y, w, h);
-    c.beginPath();
-    c.moveTo(x - 3, y);
-    c.lineTo(x + w * 0.5, y - h * 0.24);
-    c.lineTo(x + w + 3, y);
-    c.fillStyle = mixSeasonColor(
-      building % 3 ? "#a99170" : "#8f8469",
-      "#e9f0e9",
-      season.snow * 0.8,
+    pointer.targetY = clamp(
+      ((event.clientY - rect.top) / rect.height) * 2 - 1,
+      -1,
+      1,
     );
-    c.fill();
-    c.fillStyle = "#f4e4bf";
-    for (let window = 0; window < 3; window++)
-      c.fillRect(
-        x + w * 0.2 + window * w * 0.25,
-        y + h * 0.32,
-        w * 0.1,
-        h * 0.2,
-      );
-  }
-  c.restore();
-  const water = c.createLinearGradient(0, height * 0.64, 0, height);
-  water.addColorStop(
-    0,
-    mixSeasonColor("#9aaa98", "#9cbdc2", season.snow * 0.7),
-  );
-  water.addColorStop(
-    1,
-    mixSeasonColor("#6f9285", "#718f9f", season.snow * 0.8),
-  );
-  c.fillStyle = water;
+  });
+  surface.parentElement.addEventListener("pointerleave", () => {
+    pointer.targetX = pointer.targetY = 0;
+  });
+}
 
-  c.beginPath();
-  c.moveTo(0, height * 0.7);
-  c.bezierCurveTo(
-    width * 0.3,
-    height * 0.68,
-    width * 0.4,
-    height * 0.95,
-    width,
-    height * 0.62,
-  );
-  c.lineTo(width, height);
-  c.lineTo(0, height);
-  c.fill();
-  c.strokeStyle = "rgba(245,235,199,.38)";
-  c.lineWidth = 1.4;
-  for (let row = 0; row < 7; row++) {
-    c.beginPath();
-    for (let x = 0; x <= width; x += 12) {
-      const y =
-        height * 0.8 + row * 12 + Math.sin(x / 50 + time / 1500 + row) * 3;
-      if (!x) c.moveTo(x, y);
-      else c.lineTo(x, y);
+let portArrival = null;
+const arrivalOverlay = document.getElementById("portArrival");
+const arrivalCanvas = document.getElementById("portArrivalScene");
+const arrivalSkip = document.getElementById("skipPortArrival");
+
+function drawMenuPort(surface, port, time, arrivalShip) {
+  if (surface.id === "portHarborIllustration") {
+    const rect = surface.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const height = Math.round((surface.width * rect.height) / rect.width);
+      if (surface.height !== height) surface.height = height;
     }
-    c.stroke();
   }
-  c.strokeStyle = "rgba(89,68,42,.15)";
-  c.beginPath();
-  c.arc(width * 0.5, height * 0.5, height * 0.43, 0, Math.PI * 2);
-  c.moveTo(24, height * 0.5);
-  c.lineTo(width - 24, height * 0.5);
-  c.stroke();
+  const pointer = portScenePointers.get(surface);
+  const lighting = sceneLighting(
+    sceneTimeOfDay(),
+    currentWeather().roughness,
+    game.day,
+  );
   const resources = port.resources.join(" ").toLowerCase();
-  const illustration = hasPortMiniature(port.name)
+  const name = hasPortMiniature(port.name)
     ? port.name
     : /iron|coal|ore|mine/.test(resources)
       ? PORT_NAMES.drazhOvek
@@ -4246,95 +4225,163 @@ function drawMenuPort(surface, port, time) {
         : /pearl|fish|glass/.test(resources)
           ? PORT_NAMES.mirravel
           : PORT_NAMES.heliovar;
-  c.save();
-  c.translate(width * 0.5, height * 0.76);
-  c.scale(height / 205, height / 205);
-  const evolution = portEvolution(game.regionalEconomy[port.name]);
-  menuPortArt.draw(c, illustration, evolution, undefined, portSeason(port));
-  drawPortActivity(
-    c,
-    illustration,
+  const options = {
+    width: surface.width,
+    height: surface.height,
+    name,
     time,
-    2,
-    game.windAngle,
-    undefined,
-    evolution,
-    portSeason(port),
+    lighting,
+    season: portSeason(port),
+    evolution: portEvolution(game.regionalEconomy[port.name]),
+    windAngle: game.windAngle,
+    pointer,
+    reducedMotion: reducedMotion.matches,
+    architecture: menuPortArt,
+    ship:
+      arrivalShip ??
+      (currentPort === port
+        ? portArrivalFrame(PORT_ARRIVAL_DURATION).ship
+        : undefined),
+    drawPlayerShip(c, pose, light, clock) {
+      c.save();
+      c.translate(pose.x, pose.y);
+      c.scale(pose.scale, pose.scale);
+      drawShip(
+        c,
+        0,
+        0,
+        pose.angle,
+        game.windAngle,
+        game.windStrength,
+        game.shipUpgrades.activeClass,
+        2,
+        {
+          time: clock / 1000,
+          roughness: currentWeather().roughness * 0.2,
+          speed: pose.speed,
+          anchored: pose.speed === 0,
+          reducedMotion: reducedMotion.matches,
+          lighting: light,
+        },
+      );
+      c.restore();
+    },
+  };
+  const atlas =
+    surface.id === "portCityIllustration" ||
+    surface.id === "townIllustration" ||
+    (surface === arrivalCanvas &&
+      document
+        .querySelector('#portPanel .port-panel[data-tab="city"]')
+        .classList.contains("active"));
+  if (atlas) drawHarborPlate(surface, port, { ...options, art: menuPortArt });
+  else drawPortScene(surface.getContext("2d"), options);
+}
+
+function finishPortArrival(restoreFocus = true) {
+  if (!portArrival) return;
+  portArrival = null;
+  arrivalOverlay.hidden = true;
+  const panel = document.getElementById("portPanel");
+  panel.inert = false;
+  panel.classList.remove("port-arriving");
+  panel.style.removeProperty("--port-reveal");
+  drawMenuPort(
+    document.getElementById("portHarborIllustration"),
+    currentPort,
+    performance.now(),
   );
-  c.restore();
-  c.save();
-  c.translate(width * 0.8, height * 0.82);
-  c.scale(2.4, 2.4);
-  drawHarborBoats(
-    c,
-    illustration,
-    time,
-    2,
-    game.windAngle,
-    0,
-    1,
-    undefined,
-    evolution,
-    portSeason(port),
-  );
-  c.restore();
-  c.save();
-  c.translate(width * 0.08, height * 0.84);
-  c.strokeStyle = "#eff0cd";
-  c.fillStyle = "#eff0cd";
-  c.globalAlpha = 0.3;
-  c.lineWidth = 1.2;
-  const radius = height * 0.045;
-  c.beginPath();
-  c.arc(0, 0, radius, 0, Math.PI * 2);
-  c.stroke();
-  for (let point = 0; point < 8; point++) {
-    const angle = (point * Math.PI) / 4;
-    const length = radius * (point % 2 ? 0.85 : 1.35);
-    c.beginPath();
-    c.moveTo(Math.cos(angle) * length, Math.sin(angle) * length);
-    c.lineTo(
-      Math.cos(angle + 0.5) * radius * 0.22,
-      Math.sin(angle + 0.5) * radius * 0.22,
-    );
-    c.lineTo(
-      Math.cos(angle - 0.5) * radius * 0.22,
-      Math.sin(angle - 0.5) * radius * 0.22,
-    );
-    c.closePath();
-    c.fill();
+  if (restoreFocus) panel.querySelector(".port-tab.active").focus();
+}
+
+function startPortArrival() {
+  const panel = document.getElementById("portPanel");
+  if (reducedMotion.matches) {
+    panel.querySelector(".port-tab.active").focus();
+    return;
   }
-  c.restore();
+  portArrival = { start: performance.now() };
+  panel.inert = true;
+  panel.classList.add("port-arriving");
+  panel.style.setProperty("--port-reveal", 0);
+  document.getElementById("portArrivalName").textContent = currentPort.name;
+  arrivalOverlay.hidden = false;
+  animatePortArrival(portArrival.start);
+  arrivalSkip.focus();
+}
+
+arrivalSkip.addEventListener("click", () => finishPortArrival());
+arrivalOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    finishPortArrival();
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    arrivalSkip.focus();
+  }
+});
+
+function animatePortArrival(now) {
+  if (!portArrival) return;
+  const frame = portArrivalFrame(
+    now - portArrival.start,
+    reducedMotion.matches,
+  );
+  if (frame.complete) {
+    finishPortArrival();
+    return;
+  }
+  const target = document.querySelector("#portPanel .port-panel.active canvas");
+  const destination = target.getBoundingClientRect();
+  const merge = frame.reveal;
+  Object.assign(arrivalCanvas.style, {
+    left: `${destination.left * merge}px`,
+    top: `${destination.top * merge}px`,
+    width: `${window.innerWidth * (1 - merge) + destination.width * merge}px`,
+    height: `${window.innerHeight * (1 - merge) + destination.height * merge}px`,
+    opacity: frame.opacity,
+  });
+  const bounds = arrivalCanvas.getBoundingClientRect();
+  const resolution = Math.min(
+    window.devicePixelRatio || 1,
+    1440 / bounds.width,
+    1100 / bounds.height,
+  );
+  const width = Math.round(bounds.width * resolution);
+  const height = Math.round(bounds.height * resolution);
+  if (arrivalCanvas.width !== width) arrivalCanvas.width = width;
+  if (arrivalCanvas.height !== height) arrivalCanvas.height = height;
+  drawMenuPort(arrivalCanvas, currentPort, now, frame.ship);
+  document
+    .getElementById("portPanel")
+    .style.setProperty("--port-reveal", merge);
+  arrivalOverlay.style.setProperty("--arrival-caption", 1 - merge);
 }
 
 let lastPortPanelFrame = 0;
 function animatePortPanels(now) {
-  if (reducedMotion.matches || now - lastPortPanelFrame < 100) return;
+  animatePortArrival(now);
+  if (now - lastPortPanelFrame < (reducedMotion.matches ? 250 : 33)) return;
+  const elapsed = Math.min(100, now - lastPortPanelFrame);
   lastPortPanelFrame = now;
-  if (
-    currentPort &&
-    document.getElementById("portPanel").style.display === "grid" &&
-    document
-      .querySelector('#portPanel .port-panel[data-tab="city"]')
-      .classList.contains("active")
-  )
-    drawMenuPort(
-      document.getElementById("portCityIllustration"),
-      currentPort,
-      now,
-    );
-  if (
-    selectedTown &&
-    document.getElementById("townPanel").style.display === "grid" &&
-    document
-      .querySelector('#townPanel .port-panel[data-tab="overview"]')
-      .classList.contains("active")
-  )
-    drawMenuPort(
-      document.getElementById("townIllustration"),
-      selectedTown,
-      now,
-    );
+  for (const [id, port] of [
+    ["portCityIllustration", currentPort],
+    ["portHarborIllustration", currentPort],
+    ["townIllustration", selectedTown],
+  ]) {
+    const surface = document.getElementById(id);
+    if (
+      !port ||
+      !surface.closest(".port-panel").classList.contains("active") ||
+      !surface.getClientRects().length
+    )
+      continue;
+    const pointer = portScenePointers.get(surface);
+    const mix = 1 - Math.exp(-elapsed / 110);
+    pointer.x += (pointer.targetX - pointer.x) * mix;
+    pointer.y += (pointer.targetY - pointer.y) * mix;
+    drawMenuPort(surface, port, now);
+  }
 }
 
 function openTownDetails(port, _fromChart = false) {
@@ -4593,7 +4640,7 @@ function renderFog(time, lighting) {
     return;
   }
   const f = fogCtx;
-  const scale = 0.5;
+  const scale = graphics.maskScale;
   const width = Math.ceil(vw * scale),
     height = Math.ceil(vh * scale);
   if (horizonMask.width !== width || horizonMask.height !== height) {
@@ -4634,10 +4681,14 @@ function renderFog(time, lighting) {
   );
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
-  f.globalAlpha = 0.28;
-  f.fillStyle = fogGrain;
-  f.fillRect(0, 0, vw, vh);
-  f.globalAlpha = 1;
+  // Engraved paper grain over the unexplored water; lower tiers lighten or
+  // skip the pass entirely.
+  if (graphics.grainAlpha > 0) {
+    f.globalAlpha = graphics.grainAlpha;
+    f.fillStyle = fogGrain;
+    f.fillRect(0, 0, vw, vh);
+    f.globalAlpha = 1;
+  }
 
   const z = camera.zoom;
   mistRendering.draw(f, {
@@ -4729,6 +4780,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
           seasonDay,
           seasonalWorldRendering.biomeAt(site.x, site.y),
         ),
+        lighting,
       );
       c.restore();
     }
@@ -4749,6 +4801,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         port.name,
         evolution,
         placement.heading,
+        lighting,
         portSeason(port),
       );
       drawPortActivity(
@@ -4759,6 +4812,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         game.windAngle,
         placement.heading,
         evolution,
+        lighting,
         portSeason(port),
       );
       c.restore();
@@ -4780,6 +4834,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       seaY / seaDistance,
       placement.heading,
       evolution,
+      lighting,
       portSeason(port),
     );
     c.restore();
@@ -4930,6 +4985,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        merchant,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
@@ -4969,6 +5030,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         windStrength: game.windStrength,
         reducedMotion: reducedMotion.matches,
         lighting,
+        bioluminescence: vesselBioluminescence(
+          raider,
+          bioluminescentSeas,
+          WORLD.w,
+          lighting,
+        ),
       },
     );
     c.fillStyle = "#8c261b";
@@ -5013,6 +5080,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        render,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     });
     c.fillStyle = "#ddf1d9";
     c.font = "bold " + 11 / z + "px Georgia";
@@ -5291,7 +5364,7 @@ function render() {
     bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
     deferLighting: true,
     cacheLightBands: true,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
     focus: { x: ship.x, y: ship.y, radius: 480 },
     camera,
     vw,
@@ -5306,7 +5379,7 @@ function render() {
       ? undefined
       : encounters.active?.index,
   });
-  drawAnimatedRoughSeas(ctx, visualTime, z);
+  drawAnimatedRoughSeas(ctx, visualTime, z, graphics.particleScale);
   drawNavigationalHazards(ctx, z);
   seaRendering.drawCaustics(ctx, {
     camera,
@@ -5316,9 +5389,13 @@ function render() {
     lighting,
     shoals: cachedShoals,
     reducedMotion: reducedMotion.matches,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
   });
-  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
+  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh, {
+    lighting,
+    bioluminescentSeas,
+    reducedMotion: reducedMotion.matches,
+  });
   const reflectedVessels = merchantShips.filter(
     (vessel) =>
       merchantVisible(vessel) && pointCurrentlyVisible(vessel.x, vessel.y),
@@ -5364,7 +5441,8 @@ function render() {
   const windCos = Math.cos(game.windAngle) * 30;
   const windSin = Math.sin(game.windAngle) * 30;
 
-  for (let i = 0; i < 14; i++) {
+  const windStreaks = Math.round(14 * graphics.particleScale);
+  for (let i = 0; i < windStreaks; i++) {
     const x = windLeft + ((i * 173 + visualTime * 0.025) % windSpan),
       y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
     ctx.beginPath();
@@ -5407,6 +5485,8 @@ function render() {
     lighthouses: activeLighthouses,
     time: visualTime,
     reducedMotion: reducedMotion.matches,
+    particleScale: graphics.particleScale,
+    maskScale: graphics.maskScale,
   });
 
   // The ship and immediate docking cue remain readable above the fog layer.
@@ -5429,7 +5509,7 @@ function render() {
     lighting,
     windAngle: game.windAngle,
     roughness: weather.roughness,
-    detail: renderQuality.quality,
+    detail: effectDetail(),
     reducedMotion: reducedMotion.matches,
   });
   ctx.restore();
@@ -5456,6 +5536,12 @@ function render() {
         windStrength: game.windStrength,
         reducedMotion: reducedMotion.matches,
         lighting,
+        bioluminescence: vesselBioluminescence(
+          raider,
+          bioluminescentSeas,
+          WORLD.w,
+          lighting,
+        ),
       },
     );
   }
@@ -5501,6 +5587,12 @@ function render() {
       anchored: ship.anchored,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        ship,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     },
   );
   if (nearPort) {
@@ -5529,7 +5621,9 @@ function render() {
   {
     drawWeatherEffects(ctx, {
       name: weather.name,
-      softLayerScale: 0.5,
+      softLayerScale: graphics.maskScale,
+      particleScale: graphics.particleScale,
+      lightning: graphics.lightning,
       front: weather.front,
       daylight: lighting.daylight,
       roughness: weather.roughness,
@@ -6155,6 +6249,20 @@ function update(dt) {
         3.8,
       );
     }
+    // The luminous seas announce themselves once the wake starts to glow.
+    const glow = vesselBioluminescence(
+      ship,
+      bioluminescentSeas,
+      WORLD.w,
+      sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
+    );
+    const litSea =
+      glow > 0.08 && ship.speed > 12
+        ? bioluminescentSeaAt(ship, bioluminescentSeas, WORLD.w)?.name
+        : null;
+    if (litSea && litSea !== glowingSeaName)
+      showMessage(`${litSea} glows in your wake.`, 3.4);
+    glowingSeaName = litSea;
   }
   if (!encounters.active || reducedMotion.matches) {
     camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
@@ -6257,9 +6365,16 @@ function loop(now) {
         vw,
         vh,
         window.devicePixelRatio,
-        renderQuality.quality,
+        resolutionQuality(),
       );
       if (Math.abs(ratio - DPR) > 0.01) resize();
+    }
+    if (
+      graphicsSetting === "auto" &&
+      autoGraphicsTier.sample(frameMs, renderQuality.quality)
+    ) {
+      detectedTier = autoGraphicsTier.tier;
+      applyGraphicsProfile();
     }
     const hadEncounter = !encounterOverlay.hidden;
     const frame = advanceEncounter(
@@ -6578,7 +6693,7 @@ function applyCrewVoyageEvent(event) {
 }
 
 function openPort() {
-  if (!nearPort) return;
+  if (!nearPort || currentPort) return;
   document.getElementById("townPanel").style.display = "none";
   selectedTown = null;
   minimapWrap.style.display = "none";
@@ -6731,7 +6846,7 @@ function openPort() {
   // current events, and customs standing — is seen before trading.
   activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
-  document.querySelector("#portPanel .port-tab.active").focus();
+  startPortArrival();
   updateHud();
 }
 
@@ -7776,6 +7891,7 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
   saveGameState();
 });
 document.getElementById("closePort").addEventListener("click", () => {
+  finishPortArrival(false);
   const leaving = currentPort;
   document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
@@ -7891,6 +8007,8 @@ const menuButton = document.getElementById("menuButton"),
   menuPanel = document.getElementById("menuPanel");
 menuButton.addEventListener("click", () => {
   menuPanel.style.display = "grid";
+  // Reduced motion can flip outside the session; read it fresh each open.
+  updateGraphicsStatus();
 });
 document
   .getElementById("closeMenu")
@@ -7919,6 +8037,30 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
     menuPanel.style.display = "none";
   }
 });
+
+const TIER_LABELS = { low: "Low", medium: "Medium", high: "High" };
+const graphicsQualitySelect = document.getElementById("graphicsQuality");
+const graphicsStatus = document.getElementById("graphicsStatus");
+function updateGraphicsStatus() {
+  if (!graphicsQualitySelect || !graphicsStatus) return;
+  updateElementProperty(graphicsQualitySelect, "value", graphicsSetting);
+  const tier = TIER_LABELS[graphics.tier] || "High";
+  const summary =
+    graphicsSetting === "auto"
+      ? `Auto — detected ${tier} from frame pacing.`
+      : `${tier} — particle counts, haze masks, grain, and storm flashes scale with this tier.`;
+  updateElementProperty(
+    graphicsStatus,
+    "textContent",
+    reducedMotion.matches
+      ? `${summary} Reduced motion keeps flashes and drifting weather still.`
+      : summary,
+  );
+}
+graphicsQualitySelect.addEventListener("change", () => {
+  setGraphicsSetting(graphicsQualitySelect.value);
+});
+updateGraphicsStatus();
 
 const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
