@@ -1,4 +1,11 @@
-import { drawHarborPlate } from "./harbor-plate.js?v=2";
+import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
+import {
+  seasonalAppearance,
+  seasonalFishingBoats,
+  seasonAtDay,
+} from "./core/seasons.js";
+import { terrainBiome } from "./core/terrain.js";
+import { drawHarborPlate } from "./harbor-plate.js?v=3";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -334,7 +341,7 @@ import {
   drawWeatherEffects,
   portAccentColor,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=7";
+} from "./rendering.js?v=8";
 import {
   advanceTimeOfDay,
   nightSightLimit,
@@ -345,10 +352,11 @@ import {
 import {
   drawHarborBoats,
   drawPortScene,
+  drawSeasonalFishingBoat,
   createPortMiniatureCache,
   drawPortActivity,
   hasPortMiniature,
-} from "./port-miniatures.js?v=4";
+} from "./port-miniatures.js?v=5";
 import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
@@ -361,7 +369,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=16";
+} from "./ui/panels.js?v=17";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js?v=10";
 import { createMapOpening } from "./map-opening.js";
@@ -535,6 +543,20 @@ let encounterDrums = [];
 let encounterSoundEnabled = true;
 let debugWeather = null;
 let debugTimeOfDay = null;
+let debugSeasonDay = null;
+let seasonalDay;
+const seasonalPortStyles = new Map();
+function portSeason(port) {
+  const day = debugSeasonDay ?? game.day;
+  if (seasonalDay !== day) {
+    seasonalDay = day;
+    seasonalPortStyles.clear();
+  }
+  const biome = terrainBiome(port.land);
+  if (!seasonalPortStyles.has(biome))
+    seasonalPortStyles.set(biome, seasonalAppearance(day, biome));
+  return seasonalPortStyles.get(biome);
+}
 let debugPaused = false;
 let debugPreviewPanels = [];
 let suppressSaving = false;
@@ -1344,6 +1366,15 @@ const portMiniaturePlacements = new Map(
 );
 const chartPortArt = createPortMiniatureCache();
 const menuPortArt = createPortMiniatureCache(4);
+const seasonalWorldRendering = createSeasonalWorldRendering({
+  world: WORLD,
+  lands,
+});
+const fishingGrounds = discoverySites.filter(
+  (site) => site.type === "Seasonal fishing ground",
+);
+const offshoreFleetPlans = new Map();
+let offshoreFleetDay;
 
 // The weathered-skin photograph that the opening scroll multiplies over the
 // chart, fetched out of band so module evaluation never awaits (top-level
@@ -1376,6 +1407,7 @@ const {
   minimapFog,
   minimapFogCtx,
   setParchmentTexture,
+  updateSeason,
 } = createMapRendering({
   WORLD,
   game,
@@ -3861,9 +3893,12 @@ function renderPortCity() {
   const port = currentPort;
   document.getElementById("portCityName").textContent = port.name;
   document.getElementById("portCityStatus").textContent =
-    `${port.prosperity} prosperity · ${port.security}`;
+    `${seasonAtDay(game.day).label} · ${port.prosperity} prosperity · ${port.security}`;
   const surface = document.getElementById("portCityIllustration");
-  surface.setAttribute("aria-label", `Illustrated guide to ${port.name}`);
+  surface.setAttribute(
+    "aria-label",
+    `${seasonAtDay(game.day).label} illustrated guide to ${port.name}`,
+  );
   drawMenuPort(surface, port, 0);
   const root = document.getElementById("portCityDetails");
   root.innerHTML = `<article class="detail-card"><div class="town-kicker">The local exchange</div><h3>Goods & industry</h3><p><b>Exports:</b> ${port.exports.join(", ")}</p><p><b>Imports:</b> ${port.imports.join(", ")}</p><div class="resource-list"></div><button type="button" class="parchment" data-service="market" data-target="productionChains">Visit the workshops →</button></article><article class="detail-card"><div class="town-kicker">The civic register</div><h3>People & power</h3><p>${formatPopulation(port.population)} people · ${port.government}</p><div class="city-factions"></div><button type="button" class="parchment" data-service="politics" data-target="localLaw">Visit council chambers →</button></article><article class="detail-card"><div class="town-kicker">Beyond this harbor</div><h3>Connected ports</h3><div class="city-connections"></div></article>`;
@@ -4121,10 +4156,13 @@ function renderTownOverview(port) {
     .slice(0, 2)
     .join("");
   document.getElementById("townSceneStatus").textContent =
-    `${port.prosperity} prosperity · ${port.security}`;
+    `${seasonAtDay(game.day).label} · ${port.prosperity} prosperity · ${port.security}`;
   document
     .getElementById("townIllustration")
-    .setAttribute("aria-label", `Illustration of ${port.name}`);
+    .setAttribute(
+      "aria-label",
+      `${seasonAtDay(game.day).label} illustration of ${port.name}`,
+    );
   drawMenuPort(document.getElementById("townIllustration"), port, 0);
 }
 
@@ -4193,6 +4231,7 @@ function drawMenuPort(surface, port, time, arrivalShip) {
     name,
     time,
     lighting,
+    season: portSeason(port),
     evolution: portEvolution(game.regionalEconomy[port.name]),
     windAngle: game.windAngle,
     pointer,
@@ -4582,6 +4621,10 @@ const mistRendering = createMistRendering(WORLD.w, mistStamp);
 
 function renderFog(time, lighting) {
   if (!gameStarted) return;
+  const season = seasonalAppearance(
+    debugSeasonDay ?? game.day,
+    seasonalWorldRendering.biomeAt(camera.x, camera.y),
+  );
   buildVisibilityPolygon();
   updateVisualVisibility(time);
   if (
@@ -4590,7 +4633,7 @@ function renderFog(time, lighting) {
       y: camera.y * camera.zoom * MAP_TILT_COS,
       width: vw,
       height: vh,
-      key: `${camera.zoom}:${visibility.revision}:${revealedVisibilityRevision}:${Math.round(lighting.daylight * 100)}`,
+      key: `${camera.zoom}:${visibility.revision}:${revealedVisibilityRevision}:${Math.round(lighting.daylight * 100)}:${season.key}`,
     })
   ) {
     ctx.drawImage(fogCanvas, 0, 0, vw, vh);
@@ -4626,15 +4669,15 @@ function renderFog(time, lighting) {
   const sun = lighting.daylight;
   wash.addColorStop(
     0,
-    `rgba(${104 + sun * 99},${111 + sun * 87},${99 + sun * 61},${0.86 - sun * 0.07})`,
+    `rgba(${104 + sun * 99 + season.autumn * 8 - season.snow * 8},${111 + sun * 87 + season.snow * 9},${99 + sun * 61 + season.snow * 43 - season.autumn * 12},${0.86 - sun * 0.07})`,
   );
   wash.addColorStop(
     0.55,
-    `rgba(${118 + sun * 95},${119 + sun * 81},${99 + sun * 62},${0.85 - sun * 0.07})`,
+    `rgba(${118 + sun * 95 + season.autumn * 8 - season.snow * 8},${119 + sun * 81 + season.snow * 9},${99 + sun * 62 + season.snow * 43 - season.autumn * 12},${0.85 - sun * 0.07})`,
   );
   wash.addColorStop(
     1,
-    `rgba(${95 + sun * 98},${103 + sun * 81},${88 + sun * 58},${0.86 - sun * 0.07})`,
+    `rgba(${95 + sun * 98 + season.autumn * 8 - season.snow * 8},${103 + sun * 81 + season.snow * 9},${88 + sun * 58 + season.snow * 43 - season.autumn * 12},${0.86 - sun * 0.07})`,
   );
   f.fillStyle = wash;
   f.fillRect(0, 0, vw, vh);
@@ -4702,6 +4745,46 @@ function renderFog(time, lighting) {
 
 function drawDynamicTradeWorld(c, z, time, lighting) {
   c.save();
+  const seasonDay = debugSeasonDay ?? game.day;
+  if (offshoreFleetDay !== seasonDay) {
+    offshoreFleetDay = seasonDay;
+    offshoreFleetPlans.clear();
+  }
+  for (const site of fishingGrounds) {
+    if (!isWorldCircleInViewport(site.x, site.y, site.radius + 25, z)) continue;
+    if (!pointCurrentlyVisible(site.x, site.y)) continue;
+    if (!offshoreFleetPlans.has(site.id))
+      offshoreFleetPlans.set(
+        site.id,
+        seasonalFishingBoats(
+          site,
+          seasonDay,
+          WORLD.w,
+          seasonalWorldRendering.biomeAt(site.x, site.y),
+        ).filter(
+          (boat) =>
+            segmentClear(seaField, boat.x - 10, boat.y, boat.x + 10, boat.y) &&
+            segmentClear(seaField, boat.x, boat.y - 10, boat.x, boat.y + 10),
+        ),
+      );
+    for (const boat of offshoreFleetPlans.get(site.id)) {
+      if (!pointCurrentlyVisible(boat.x, boat.y)) continue;
+      c.save();
+      c.translate(nearestWrappedX(boat.x, camera.x), boat.y);
+      drawSeasonalFishingBoat(
+        c,
+        reducedMotion.matches ? 0 : time,
+        game.windAngle,
+        boat.heading,
+        seasonalAppearance(
+          seasonDay,
+          seasonalWorldRendering.biomeAt(site.x, site.y),
+        ),
+        lighting,
+      );
+      c.restore();
+    }
+  }
   for (const port of ports) {
     const placement = portMiniaturePlacements.get(port.name);
     if (!placement) continue;
@@ -4713,7 +4796,14 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       c.save();
       c.translate(nearestWrappedX(placement.x, camera.x), placement.y);
       c.scale(placement.scale, placement.scale);
-      chartPortArt.draw(c, port.name, evolution, placement.heading);
+      chartPortArt.draw(
+        c,
+        port.name,
+        evolution,
+        placement.heading,
+        lighting,
+        portSeason(port),
+      );
       drawPortActivity(
         c,
         port.name,
@@ -4722,10 +4812,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         game.windAngle,
         placement.heading,
         evolution,
+        lighting,
+        portSeason(port),
       );
       c.restore();
     }
-    if (!isWorldCircleInViewport(port.x, port.y, 40, z)) continue;
+    if (!isWorldCircleInViewport(port.x, port.y, 100, z)) continue;
     if (!pointCurrentlyVisible(port.x, port.y)) continue;
     const seaX = port.x - placement.x;
     const seaY = port.y - placement.y;
@@ -4742,6 +4834,8 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       seaY / seaDistance,
       placement.heading,
       evolution,
+      lighting,
+      portSeason(port),
     );
     c.restore();
   }
@@ -5199,6 +5293,10 @@ const siteMarkerRendering = createSiteMarkerRendering();
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, vw, vh);
+  if (updateSeason(debugSeasonDay ?? game.day)) {
+    if (minimapWrap.style.display === "grid") renderChart();
+    else minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
+  }
   const z = camera.zoom;
   const time = performance.now();
   const visualTime = reducedMotion.matches ? 0 : time;
@@ -5323,6 +5421,15 @@ function render() {
     vessels: reflectedVessels,
   });
   drawDynamicTradeWorld(ctx, z, time, lighting);
+  seasonalWorldRendering.draw(ctx, {
+    camera,
+    vw,
+    vh,
+    day: debugSeasonDay ?? game.day,
+    time: visualTime,
+    reducedMotion: reducedMotion.matches,
+    windAngle: game.windAngle,
+  });
 
   // Batch trail and wind rendering
   ctx.save();
@@ -7959,6 +8066,7 @@ const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
 const debugWeatherSelect = document.getElementById("debugWeather");
 const debugTimeSelect = document.getElementById("debugTime");
+const debugSeasonSelect = document.getElementById("debugSeason");
 const debugPauseToggle = document.getElementById("debugPause");
 const debugWeatherPatterns = [
   ...new Map(
@@ -8025,6 +8133,8 @@ function refreshDebugScene() {
     sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
   );
   if (currentPort) renderHarborPresentation();
+  if (selectedTown)
+    drawMenuPort(document.getElementById("townIllustration"), selectedTown, 0);
   if (pendingCombat) {
     const labels = ["", "Light raider", "Armed corsair", "Heavy boarding ship"];
     renderCombatVisual(
@@ -8050,6 +8160,11 @@ debugTimeSelect.addEventListener("change", () => {
     debugTimeSelect.value === "auto" ? null : Number(debugTimeSelect.value);
   refreshDebugScene();
 });
+debugSeasonSelect.addEventListener("change", () => {
+  debugSeasonDay =
+    debugSeasonSelect.value === "auto" ? null : Number(debugSeasonSelect.value);
+  refreshDebugScene();
+});
 debugPauseToggle.addEventListener("change", () => {
   debugPaused = debugPauseToggle.checked;
   keys.clear();
@@ -8058,6 +8173,8 @@ debugPauseToggle.addEventListener("change", () => {
 document.getElementById("resetDebug").addEventListener("click", () => {
   debugWeather = null;
   debugTimeOfDay = null;
+  debugSeasonDay = null;
+  debugSeasonSelect.value = "auto";
   debugPaused = false;
   debugWeatherSelect.value = debugTimeSelect.value = "auto";
   debugPauseToggle.checked = false;

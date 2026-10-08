@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { drawHarborPlate } from "../src/harbor-plate.js";
 import { PORT_NAMES } from "../src/names.js";
+import { seasonalAppearance } from "../src/core/seasons.js";
 
 function recordingSurface(width, height) {
   const geometry = [];
@@ -104,6 +105,7 @@ test("merged atlas plates inherit scene light and parallax while preserving arri
   const options = {
     art: { draw: (...args) => plates.push(args) },
     lighting: light,
+    season: seasonalAppearance(73),
     pointer: { x: 1, y: -1 },
     ship: portArrivalFrame(1600).ship,
     drawPlayerShip: (...args) => ships.push(args),
@@ -111,6 +113,7 @@ test("merged atlas plates inherit scene light and parallax while preserving arri
   };
   drawHarborPlate(surface, { name: PORT_NAMES.orvessaQuay }, options);
   assert.equal(plates[0][4], light);
+  assert.equal(plates[0][5], options.season);
   assert.equal(ships[0][2], light);
   assert.equal(ships[0][3], 1600);
   assert.ok(shifts.some(([x, y]) => x === 24 && y === -14));

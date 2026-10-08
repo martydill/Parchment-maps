@@ -1,4 +1,5 @@
 import { LIGHT_DIRECTION } from "./core/lighting.js";
+import { mixSeasonColor } from "./core/seasons.js";
 
 const palettes = {
   temperate: {
@@ -45,8 +46,40 @@ const palettes = {
   },
 };
 
-export function terrainPalette(biome) {
-  return palettes[biome] || palettes.temperate;
+const hexFromRgb = (color) =>
+  "#" +
+  color
+    .split(",")
+    .map((value) => Number(value).toString(16).padStart(2, "0"))
+    .join("");
+const rgbFromHex = (color) =>
+  [1, 3, 5]
+    .map((offset) => parseInt(color.slice(offset, offset + 2), 16))
+    .join(",");
+
+export function seasonalLandColor(base, season) {
+  return mixSeasonColor(
+    mixSeasonColor(
+      mixSeasonColor(base, "#b1c991", season.growth * 0.45),
+      "#c4a16e",
+      season.dryness * 0.65,
+    ),
+    "#e3eae3",
+    season.snow * 0.92,
+  );
+}
+
+export function terrainPalette(biome, season) {
+  const base = palettes[biome] || palettes.temperate;
+  if (!season) return base;
+  return {
+    ...base,
+    paper: seasonalLandColor(base.paper, season),
+    ground: rgbFromHex(seasonalLandColor(hexFromRgb(base.ground), season)),
+    wash: rgbFromHex(seasonalLandColor(hexFromRgb(base.wash), season)),
+    leaf: mixSeasonColor(base.leaf, season.leaf, 0.8),
+    leafLight: mixSeasonColor(base.leafLight, season.leafLight, 0.8),
+  };
 }
 
 function drawRidge(c, { a, b, width }) {
@@ -96,9 +129,19 @@ function drawRidge(c, { a, b, width }) {
   }
 }
 
-function drawTree(c, tree, biome) {
+function drawTree(c, tree, biome, season) {
   const { x, y, size: s, variant } = tree;
-  const palette = terrainPalette(biome);
+  const palette = terrainPalette(biome, season);
+  if (season && season.autumn) {
+    palette.leaf =
+      biome === "alpine" || variant < 0.22
+        ? (palettes[biome] || palettes.temperate).leaf
+        : mixSeasonColor(
+            palette.leaf,
+            variant > 0.65 ? "#a04d39" : "#ce943d",
+            season.autumn * 0.55,
+          );
+  }
   c.save();
   c.translate(x, y);
   c.fillStyle = "rgba(26,38,25,.25)";
@@ -189,9 +232,54 @@ function drawTree(c, tree, biome) {
     c.strokeStyle = "rgba(40,49,29,.38)";
     c.stroke();
   }
+  if (
+    season &&
+    biome !== "tropical" &&
+    biome !== "arid" &&
+    biome !== "volcanic"
+  ) {
+    // Stable tree variants keep flowering crowns in the same grove each year.
+    if (season.blossoms > 0 && variant > 0.35 && biome !== "alpine") {
+      c.save();
+      c.globalAlpha *= season.blossoms;
+      for (let flower = 0; flower < 7; flower++) {
+        const angle = flower * 2.4 + variant * 5;
+        c.fillStyle = flower % 2 ? "#f2d0ce" : "#fff0df";
+        c.beginPath();
+        c.arc(
+          Math.cos(angle) * s * 0.43,
+          -s * 0.72 + Math.sin(angle) * s * 0.4,
+          s * 0.16,
+          0,
+          Math.PI * 2,
+        );
+        c.fill();
+      }
+      c.restore();
+    }
+    if (season.snow > 0) {
+      c.save();
+      c.globalAlpha *= season.snow;
+      c.strokeStyle = "#edf3ef";
+      c.lineWidth = s * 0.18;
+      c.beginPath();
+      if (biome === "alpine" || variant < 0.22) {
+        for (let tier = 0; tier < 3; tier++) {
+          const yy = -s + tier * s * 0.29;
+          c.moveTo(-s * (0.23 + tier * 0.08), yy + s * 0.22);
+          c.lineTo(0, yy - s * 0.19);
+        }
+      } else {
+        c.moveTo(-s * 0.6, -s * 0.7);
+        c.quadraticCurveTo(-s * 0.3, -s * 1.2, s * 0.35, -s * 1.03);
+      }
+      c.stroke();
+      c.restore();
+    }
+  }
   c.restore();
 }
-function drawMountain(c, x, y, s, biome) {
+function drawMountain(c, x, y, s, biome, season) {
   c.save();
   c.translate(x, y);
   const summit = -s * 0.08;
@@ -263,7 +351,9 @@ function drawMountain(c, x, y, s, biome) {
     c.lineTo(s * (0.45 + i * 0.12), s * (0.16 + i * 0.12));
     c.stroke();
   }
-  if (biome === "alpine") {
+  if (biome === "alpine" || season?.snow > 0) {
+    c.save();
+    c.globalAlpha *= biome === "alpine" ? 1 : season.snow;
     c.beginPath();
     c.moveTo(summit, -s);
     c.lineTo(s * 0.3, -s * 0.42);
@@ -272,8 +362,9 @@ function drawMountain(c, x, y, s, biome) {
     c.lineTo(-s * 0.16, -s * 0.56);
     c.lineTo(-s * 0.32, -s * 0.42);
     c.closePath();
-    c.fillStyle = "rgba(240,232,202,.85)";
+    c.fillStyle = "rgba(240,242,230,.9)";
     c.fill();
+    c.restore();
   } else if (biome === "volcanic") {
     c.beginPath();
     c.ellipse(summit, -s * 0.86, s * 0.18, s * 0.07, 0, 0, Math.PI * 2);
@@ -318,10 +409,10 @@ function terrainWash(c, x, y, rx, ry, angle, color, opacity) {
   c.fillRect(-1, -1, 2, 2);
   c.restore();
 }
-export function drawTerrainIllustration(c, terrain) {
+export function drawTerrainIllustration(c, terrain, season) {
   c.save();
   c.lineJoin = "round";
-  const palette = terrainPalette(terrain.biome);
+  const palette = terrainPalette(terrain.biome, season);
   for (const ridge of terrain.ridges) drawRidge(c, ridge);
   for (const plain of terrain.plains) {
     terrainWash(c, plain.x, plain.y, 60, 35, plain.angle, palette.wash, 0.22);
@@ -352,6 +443,23 @@ export function drawTerrainIllustration(c, terrain) {
       }
       c.stroke();
     }
+    if (season && season.blossoms > 0) {
+      c.save();
+      c.globalAlpha *= season.blossoms * 0.8;
+      for (let flower = 0; flower < 11; flower++) {
+        c.fillStyle = flower % 3 ? "#f2d0ce" : "#fff0cf";
+        c.beginPath();
+        c.arc(
+          Math.sin(flower * 2.4) * 22,
+          Math.cos(flower * 1.7) * 13,
+          1.4,
+          0,
+          Math.PI * 2,
+        );
+        c.fill();
+      }
+      c.restore();
+    }
     c.restore();
   }
   for (const hill of terrain.hills) {
@@ -372,7 +480,7 @@ export function drawTerrainIllustration(c, terrain) {
       hill.size,
       hill.size * 0.6,
       -0.2,
-      "235,215,159",
+      season ? palette.wash : "235,215,159",
       0.34,
     );
     c.strokeStyle = "rgba(63,50,31,.27)";
@@ -411,7 +519,7 @@ export function drawTerrainIllustration(c, terrain) {
         peak.size * 1.7,
         peak.size * 1.4,
         range.angle,
-        "218,196,139",
+        season ? palette.wash : "218,196,139",
         0.16,
       );
     }
@@ -427,7 +535,7 @@ export function drawTerrainIllustration(c, terrain) {
         Math.hypot(b.x - a.x, b.y - a.y) + 24,
         30,
         Math.atan2(b.y - a.y, b.x - a.x),
-        "216,211,146",
+        season ? palette.ground : "216,211,146",
         0.19,
       );
     }
@@ -446,9 +554,20 @@ export function drawTerrainIllustration(c, terrain) {
     c.lineWidth = 3.8;
     c.stroke();
     terrainPath(c, river);
-    c.strokeStyle = "rgba(154,180,163,.7)";
+    c.strokeStyle = season
+      ? mixSeasonColor("#9ab4a3", "#e1f0f2", season.snow)
+      : "rgba(154,180,163,.7)";
     c.lineWidth = 1.8;
     c.stroke();
+    if (season?.snow > 0) {
+      c.save();
+      c.globalAlpha *= season.snow * 0.55;
+      terrainPath(c, river);
+      c.strokeStyle = "#f3f7f5";
+      c.lineWidth = 2.6;
+      c.stroke();
+      c.restore();
+    }
   }
   for (const grove of terrain.groves) {
     terrainWash(
@@ -472,8 +591,8 @@ export function drawTerrainIllustration(c, terrain) {
   ].sort((a, b) => a.y - b.y);
   for (const mark of silhouettes) {
     if (mark.kind === "peak")
-      drawMountain(c, mark.x, mark.y, mark.size, terrain.biome);
-    else drawTree(c, mark, terrain.biome);
+      drawMountain(c, mark.x, mark.y, mark.size, terrain.biome, season);
+    else drawTree(c, mark, terrain.biome, season);
   }
   c.restore();
 }

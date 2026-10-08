@@ -72,6 +72,7 @@ export function drawHarborPlate(
     time = 0,
     windAngle = 0,
     lighting = sceneLighting(),
+    season,
     pointer = {},
     reducedMotion = false,
     ship,
@@ -86,7 +87,7 @@ export function drawHarborPlate(
     0,
   );
   const profile = harborProfile(port.name);
-  const palette = portScenePalette(lighting);
+  const palette = portScenePalette(lighting, season);
   const clock = reducedMotion ? 0 : time;
   const layer = (depth, draw) => {
     const offset = portLayerOffset(pointer, depth, reducedMotion);
@@ -194,7 +195,7 @@ export function drawHarborPlate(
     c.save();
     c.translate(width * 0.5, height * 0.57);
     c.scale(scale, scale);
-    art.draw(c, port.name, evolution, undefined, lighting);
+    art.draw(c, port.name, evolution, undefined, lighting, season);
     drawPortActivity(
       c,
       port.name,
@@ -204,6 +205,7 @@ export function drawHarborPlate(
       undefined,
       evolution,
       lighting,
+      season,
     );
     c.restore();
   });
@@ -226,6 +228,7 @@ export function drawHarborPlate(
         undefined,
         evolution,
         lighting,
+        season,
       );
       c.restore();
     }

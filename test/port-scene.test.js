@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sceneLighting } from "../src/core/lighting.js";
+import { seasonalAppearance } from "../src/core/seasons.js";
 import {
   PORT_ARRIVAL_DURATION,
   portArrivalFrame,
@@ -43,6 +44,25 @@ test("lighting cache buckets are stable, bounded, and change across the cycle", 
       night: 0,
     },
   );
+});
+
+test("seasonal harbor pigments retain night and storm lighting through every season", () => {
+  const daylight = [1, 25, 49, 73].map((day) =>
+    portScenePalette(sceneLighting(0.5), seasonalAppearance(day)),
+  );
+  assert.equal(new Set(daylight.map((palette) => palette.sky)).size, 4);
+  for (const day of [1, 25, 49, 73]) {
+    const season = seasonalAppearance(day);
+    assert.deepEqual(
+      portScenePalette(sceneLighting(0), season),
+      portScenePalette(sceneLighting(0)),
+      "seasonal daytime washes preserve the night palette",
+    );
+    const storm = portScenePalette(sceneLighting(0.5, 0.8), season);
+    assert.notDeepEqual(storm, portScenePalette(sceneLighting(0.5), season));
+    for (const color of Object.values(storm))
+      assert.match(color, /^#[0-9a-f]{6}$/);
+  }
 });
 
 test("parallax separates depths, clamps input, and respects reduced motion", () => {

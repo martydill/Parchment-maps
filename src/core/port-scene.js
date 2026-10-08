@@ -1,4 +1,5 @@
 import { sceneLighting } from "./lighting.js";
+import { mixSeasonColor } from "./seasons.js";
 
 export const PORT_ARRIVAL_DURATION = 3200;
 
@@ -27,10 +28,26 @@ export function portPlateLighting(lighting = sceneLighting()) {
   );
 }
 
-export function portScenePalette(lighting = sceneLighting()) {
+export function portScenePalette(lighting = sceneLighting(), season) {
+  const seasonal = (day) =>
+    season
+      ? mixSeasonColor(
+          mixSeasonColor(
+            mixSeasonColor(day, "#b1c991", season.growth * 0.12),
+            "#c4a16e",
+            season.dryness * 0.16,
+          ),
+          "#dbe6e6",
+          season.snow * 0.4,
+        )
+      : day;
   const tint = (day, dusk, night) =>
     blend(
-      blend(blend(day, night, lighting.night), dusk, lighting.dusk * 0.72),
+      blend(
+        blend(seasonal(day), night, lighting.night),
+        dusk,
+        lighting.dusk * 0.72,
+      ),
       "#52616d",
       lighting.storm * 0.55,
     );
