@@ -108,3 +108,44 @@ test("panel changes coalesce and refresh only the affected bounds", () => {
   assert.equal(course.reads, 2);
   assert.equal(plotted.reads, 4);
 });
+
+test("panel context wiring absorbs the app context without assignment errors", async () => {
+  // The panel modules touch browser globals at import time; stub the ones
+  // Node lacks so the wiring itself is what the test exercises.
+  const previous = {
+    ResizeObserver: globalThis.ResizeObserver,
+    addEventListener: globalThis.addEventListener,
+    removeEventListener: globalThis.removeEventListener,
+    document: globalThis.document,
+  };
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
+  globalThis.document = {
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  let panels;
+  try {
+    panels = await import("../src/ui/panels.js");
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[name];
+      else globalThis[name] = value;
+    }
+  }
+  // A universal stand-in: every property reads as a callable that returns
+  // itself, so a missing or undeclared context member is the only way this
+  // can fail — exactly the class of wiring bug syncPanelContext risks.
+  const anything = new Proxy(function () {}, {
+    get: (target, property) =>
+      property === Symbol.toPrimitive ? () => 0 : anything,
+    apply: () => anything,
+  });
+  panels.configureUiPanels(anything);
+  assert.equal(panels.updateHud, panels.updateHud);
+});

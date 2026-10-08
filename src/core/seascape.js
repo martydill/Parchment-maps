@@ -130,24 +130,52 @@ export function sampleShipMotion({
   speed = 0,
   anchored = false,
   reducedMotion = false,
+  swell = 0,
 } = {}) {
   const t = reducedMotion ? 0 : time;
   const sea = clamp(roughness, 0, 1);
   const wind = clamp(windStrength / 0.22, 0, 1);
   const underway = anchored ? 0 : clamp(speed / 150, 0, 1);
+  // A building storm arc sends long swells ahead of the front, so the hull
+  // starts working before the local sea state actually roughens.
+  const arcSwell = clamp(Number.isFinite(swell) ? swell : 0, 0, 1);
   const amplitude = reducedMotion
     ? 0
-    : (0.25 + sea * 0.75) * (anchored ? 0.35 : 1);
+    : (0.25 + sea * 0.75) * (1 + arcSwell * 0.9) * (anchored ? 0.35 : 1);
   const phase = seed * 2.399963;
-  const swell = Math.sin(t * 1.65 + phase);
+  const swellWave = Math.sin(t * 1.65 + phase);
   return {
-    heave: amplitude * (swell * 1.6 + Math.sin(t * 2.7 + phase) * 0.35),
+    heave:
+      amplitude *
+      (swellWave * 1.6 +
+        Math.sin(t * 2.7 + phase) * 0.35 +
+        Math.sin(t * 0.55 + phase) * arcSwell * 0.8),
     roll: amplitude * Math.sin(t * 1.4 + phase + 0.7) * 0.075,
     pitch: amplitude * Math.cos(t * 1.65 + phase) * (0.035 + underway * 0.025),
     billow:
       (0.45 + wind * 1.55) * (1 + Math.sin(t * 2.1 + phase) * amplitude * 0.18),
     flutter: Math.sin(t * 8 + phase) * amplitude * (0.3 + wind * 0.7),
     wake: underway,
+  };
+}
+
+// Scrambling deck crew. Figures hurry between the rail and the mast as a
+// squall builds, each appearing one by one and keeping a stable patrol so the
+// scramble reads as work rather than jitter. Presentation only: deterministic
+// in (time, index, intensity), no simulation state.
+export function sampleDeckCrew(time, index, intensity = 0) {
+  const t = Number.isFinite(time) ? time : 0;
+  const level = clamp(Number.isFinite(intensity) ? intensity : 0, 0, 1);
+  const id = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;
+  if (level <= 0.05) return { along: 0, side: 1, step: 0, alpha: 0 };
+  const station = -0.3 + (id % 4) * 0.13;
+  const patrol = 0.07 + (id % 3) * 0.03;
+  const cycle = Math.sin(t * (1.4 + level * 1.6) + id * 1.79);
+  return {
+    along: station + cycle * patrol,
+    side: id % 2 ? 1 : -1,
+    step: Math.sin(t * (7 + level * 5) + id * 2.3),
+    alpha: clamp((level - 0.12 - id * 0.14) * 1.6, 0, 1),
   };
 }
 

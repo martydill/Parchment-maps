@@ -201,7 +201,16 @@ function clamp255(v) {
   return (v < 0 ? 0 : v > 255 ? 255 : v) | 0;
 }
 
-const lightningState = { nextStrike: 0, flashUntil: 0, boltX: 0, boltSeed: 0 };
+const lightningState = {
+  nextStrike: 0,
+  flashUntil: 0,
+  boltX: 0,
+  boltSeed: 0,
+  nextFlicker: 0,
+  flickerUntil: 0,
+};
+let sheetLightGradient = null;
+let sheetLightSize = "";
 
 // Deterministic, allocation-free pseudo-random in [0, 1) keyed by (index, salt)
 // so cloud, fog, and rain particles keep stable shapes across frames.
@@ -618,24 +627,54 @@ function drawWeatherRain(
 
 // `bolt` comes from a graphics profile: intervalScale spaces strikes further
 // apart, segments simplify the jag, and glow drops the expensive shadow pass.
-function drawWeatherLightning(c, lightning, vw, vh, time, bolt) {
-  if (lightning <= 0.01) {
+function drawWeatherLightning(c, lightning, vw, vh, time, bolt, arc) {
+  const cadenceMs = arc?.cadence ? arc.cadence * 1000 : 0;
+  const flicker = arc?.flicker || 0;
+  if (lightning <= 0.01 && flicker <= 0.01) {
     lightningState.flashUntil = 0;
+    lightningState.flickerUntil = 0;
     return;
   }
   const pace = bolt || GRAPHICS_PROFILES.high.lightning;
   const s = lightningState;
-  if (time >= s.nextStrike) {
+  if (time >= s.nextStrike && lightning > 0.01) {
     s.flashUntil = time + 150 + lightning * 90;
     s.boltX = vw * (0.12 + weatherRand(time | 0, 31) * 0.76);
     s.boltSeed = (time | 0) & 0xffff;
-    // Heavier storms throw strikes more often.
-    s.nextStrike =
+    // The storm arc tightens the cadence as it builds, while the graphics
+    // profile spaces strikes out on lower tiers. Without an arc, heavier
+    // storms still throw strikes more often.
+    const beat =
+      (cadenceMs ||
+        2400 + weatherRand(time | 0, 32) * (5600 - lightning * 3000)) *
+      pace.intervalScale;
+    s.nextStrike = time + beat * (0.7 + weatherRand(time | 0, 32) * 0.6);
+  }
+  if (flicker > 0.01 && time >= s.nextFlicker) {
+    // Sheet lightning flickers inside the cloud while the cell is still
+    // brewing — the promise of strikes before any bolt reaches the water.
+    s.flickerUntil = time + 110 + flicker * 100;
+    s.nextFlicker =
       time +
-      2400 * pace.intervalScale +
-      weatherRand(time | 0, 32) *
-        (5600 - lightning * 3000) *
-        pace.intervalScale;
+      (cadenceMs || 4200) *
+        pace.intervalScale *
+        (0.5 + weatherRand(time | 0, 33) * 0.9);
+  }
+  if (time < s.flickerUntil) {
+    const glow = ((s.flickerUntil - time) / 180) * flicker;
+    const size = `${vw}:${vh}`;
+    if (!sheetLightGradient || sheetLightSize !== size) {
+      // A top-biased wash reads as light trapped inside the cloud deck.
+      sheetLightGradient = c.createLinearGradient(0, 0, 0, vh * 0.85);
+      sheetLightGradient.addColorStop(0, "rgba(205,218,246,1)");
+      sheetLightGradient.addColorStop(1, "rgba(205,218,246,0)");
+      sheetLightSize = size;
+    }
+    c.save();
+    c.fillStyle = sheetLightGradient;
+    c.globalAlpha = Math.max(0, glow) * 0.17;
+    c.fillRect(0, 0, vw, vh);
+    c.restore();
   }
   if (time >= s.flashUntil) return;
   const remain = (s.flashUntil - time) / 240;
@@ -661,6 +700,52 @@ function drawWeatherLightning(c, lightning, vw, vh, time, bolt) {
     }
     c.stroke();
   }
+  c.restore();
+}
+
+// The watercolor rainbow that follows a broken squall: a broad spectral band
+// on a radial gradient, clipped to a wedge whose center sits far below the
+// frame so only a shallow arch crosses the view. A pigment pass reads on the
+// light chart, and a screen pass keeps the band luminous over lingering
+// storm cloud; their slight offset bleeds like pigment on wet paper.
+function drawRainbow(c, strength, vw, vh, time) {
+  if (strength <= 0.02) return;
+  const drift = Math.sin(time * 0.00005) * vh * 0.024;
+  const cx = vw * 0.5 + drift;
+  const cy = vh * 2.04;
+  const radius = vh * 2.1;
+  c.save();
+  c.beginPath();
+  c.moveTo(cx, cy);
+  c.arc(cx, cy, radius * 1.03, -Math.PI * 0.87, -Math.PI * 0.13);
+  c.closePath();
+  c.clip();
+  const band = (offset, alpha, operation) => {
+    const wash = c.createRadialGradient(
+      cx + offset,
+      cy,
+      radius * 0.86,
+      cx + offset,
+      cy,
+      radius,
+    );
+    const stop = (position, color, share) =>
+      wash.addColorStop(position, `rgba(${color},${alpha * share})`);
+    stop(0, "146,120,196", 0);
+    stop(0.18, "146,120,196", 0.34); // violet, innermost
+    stop(0.34, "112,150,214", 0.42);
+    stop(0.5, "116,186,150", 0.44);
+    stop(0.66, "226,208,130", 0.44);
+    stop(0.82, "224,140,90", 0.4);
+    stop(1, "214,92,74", 0.3); // red, outermost
+    c.save();
+    c.globalCompositeOperation = operation;
+    c.fillStyle = wash;
+    c.fillRect(0, 0, vw, vh);
+    c.restore();
+  };
+  band(-vh * 0.008, strength * 0.55, "source-over");
+  band(vh * 0.009, strength * 0.45, "screen");
   c.restore();
 }
 
@@ -744,12 +829,30 @@ export function drawWeatherEffects(c, opts) {
       weather[channel] = Math.max(weather[channel], local[channel]);
   }
   const { storm, fog, cloud, rain, lightning } = weather;
+  const arc = opts.arc;
+  const ink = arc?.ink || 0;
 
-  if (storm <= 0.01 && fog <= 0.01 && cloud <= 0.01 && rain <= 0.01) return;
+  if (
+    storm <= 0.01 &&
+    fog <= 0.01 &&
+    cloud <= 0.01 &&
+    rain <= 0.01 &&
+    ink <= 0.005 &&
+    !(arc?.rainbow > 0.02)
+  )
+    return;
 
   // Cloud banks, washes, and fog are soft images. Composite them at a lower
   // resolution once; rain, lightning, and clearing rays retain sharp geometry.
   const soft = weatherSoftContext(opts, c);
+  // The storm arc darkens the sky in distinct grades, so each step reads as
+  // a decision rather than a smear. It sits under everything else.
+  if (ink > 0.005) {
+    soft.save();
+    soft.fillStyle = `rgba(26,35,52,${ink})`;
+    soft.fillRect(0, 0, vw, vh);
+    soft.restore();
+  }
   // A cool wash unifies the weather while leaving chart ink legible.
   if (storm > 0.01) {
     soft.save();
@@ -793,7 +896,24 @@ export function drawWeatherEffects(c, opts) {
     particleScale,
   );
   drawRainImpacts(c, rain, vw, vh, time, particleScale);
-  drawSunbreak(c, weather.sunbreak || 0, opts.daylight ?? 1, vw, vh, time);
+  const sunbreak = weather.sunbreak || 0;
+  drawSunbreak(
+    c,
+    sunbreak * (1 + (arc?.gold || 0) * 0.9),
+    opts.daylight ?? 1,
+    vw,
+    vh,
+    time,
+  );
+  // The break floods gold across the deck a beat before the rainbow arches.
+  if (arc?.gold > 0.02) {
+    c.save();
+    c.globalCompositeOperation = "screen";
+    c.fillStyle = `rgba(255,198,112,${arc.gold * 0.12})`;
+    c.fillRect(0, 0, vw, vh);
+    c.restore();
+  }
+  drawRainbow(c, arc?.rainbow || 0, vw, vh, time);
   // A frozen animation clock must not leave a lightning flash stuck on screen.
   drawWeatherLightning(
     c,
@@ -802,6 +922,7 @@ export function drawWeatherEffects(c, opts) {
     vh,
     time,
     opts.lightning,
+    arc,
   );
 }
 
