@@ -1,6 +1,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { drawWeatherEffects } from "../src/rendering.js";
+import { GRAPHICS_PROFILES } from "../src/core/graphics-quality.js";
 import { sampleWeatherFront } from "../src/core/weather.js";
 
 function recordingContext() {
@@ -12,6 +13,8 @@ function recordingContext() {
   const rects = [];
   const transforms = [];
   const clears = [];
+  const path = [];
+  const shadows = [];
   const context = new Proxy(
     {
       globalAlpha: 1,
@@ -44,6 +47,12 @@ function recordingContext() {
       drawImage(stamp, ...geometry) {
         draws.push({ stamp, geometry, alpha: this.globalAlpha });
       },
+      moveTo(...args) {
+        path.push(["moveTo", ...args]);
+      },
+      lineTo(...args) {
+        path.push(["lineTo", ...args]);
+      },
       createRadialGradient(...geometry) {
         const stops = [];
         gradients.push({ geometry, stops });
@@ -53,7 +62,15 @@ function recordingContext() {
         return { addColorStop() {} };
       },
     },
-    { get: (target, property) => target[property] ?? (() => {}) },
+    {
+      get: (target, property) => target[property] ?? (() => {}),
+      set(target, property, value) {
+        if (property === "shadowBlur" || property === "shadowColor")
+          shadows.push([property, value]);
+        target[property] = value;
+        return true;
+      },
+    },
   );
   return {
     context,
@@ -64,6 +81,8 @@ function recordingContext() {
     rects,
     transforms,
     clears,
+    path,
+    shadows,
   };
 }
 
@@ -493,6 +512,101 @@ test("sheet lightning flickers inside the cloud while the squall brews", () => {
     later.rects.filter(
       ({ color, operation }) =>
         typeof color === "object" && operation === "source-over",
+    ).length,
+    0,
+  );
+});
+
+test("graphics tiers thin clouds, rain, and fog banks while stamps stay cached", () => {
+  const overcast = { name: "Overcast", roughness: 0.5, visibilityKm: 12 };
+  const full = render(overcast);
+  const before = stampCanvases.length;
+  assert.equal(puffs(full).length, 93);
+  // 28 clouds at full scale become 14 at half: ten 3-puff banks plus four
+  // 4-puff near banks.
+  const half = render({ ...overcast, particleScale: 0.5 });
+  assert.equal(puffs(half).length, 46);
+  assert.equal(stampCanvases.length, before, "scaled counts reuse the stamps");
+
+  const downpour = { storm: 1, cloud: 1, rain: 1, fog: 0, lightning: 0 };
+  const wet = render({ front: downpour, reducedMotion: false });
+  const drops = (recording) =>
+    recording.path.filter(([operation]) => operation === "moveTo").length;
+  assert.equal(drops(wet), 330);
+  assert.equal(
+    drops(
+      render({ front: downpour, reducedMotion: false, particleScale: 0.5 }),
+    ),
+    165,
+  );
+
+  const haar = { storm: 0, cloud: 0, rain: 0, fog: 1, lightning: 0 };
+  const fogBanks = (recording) =>
+    recording.draws.filter(({ stamp }) =>
+      stamp.gradients
+        .at(-1)
+        .stops.some(([, color]) => color.startsWith("rgba(224,228,232,")),
+    );
+  assert.equal(fogBanks(render({ front: haar })).length, 9);
+  assert.equal(fogBanks(render({ front: haar, particleScale: 0.5 })).length, 5);
+});
+
+test("lightning profiles simplify the jag and drop the glow", () => {
+  const storm = { storm: 1, cloud: 1, rain: 0, fog: 0, lightning: 1 };
+  const jag = (recording) =>
+    recording.path.filter(([operation]) => operation === "lineTo").length;
+  const glowing = render({
+    front: storm,
+    reducedMotion: false,
+    time: 11_000_000,
+  });
+  assert.equal(jag(glowing), 9);
+  assert.ok(
+    glowing.shadows.some(
+      ([property, value]) => property === "shadowBlur" && value === 22,
+    ),
+  );
+  const dimmed = render({
+    front: storm,
+    reducedMotion: false,
+    time: 22_000_000,
+    lightning: GRAPHICS_PROFILES.low.lightning,
+  });
+  assert.equal(jag(dimmed), 4);
+  assert.ok(!dimmed.shadows.some(([property]) => property === "shadowBlur"));
+});
+
+test("tier pacing spaces strikes apart while reduced motion always wins", () => {
+  const storm = { storm: 1, cloud: 1, rain: 0, fog: 0, lightning: 1 };
+  const flashFills = (recording) =>
+    recording.rects.filter(({ color }) =>
+      String(color).startsWith("rgba(222,230,255,"),
+    );
+  // High tier strikes land within 8000ms, so a second flash is guaranteed.
+  render({ front: storm, reducedMotion: false, time: 31_000_000 });
+  assert.ok(
+    flashFills(render({ front: storm, reducedMotion: false, time: 31_008_000 }))
+      .length > 0,
+  );
+  // Low tier strikes wait at least 2400 * 2.6 = 6240ms, so 6239ms later the
+  // sky is still dark.
+  const low = { lightning: GRAPHICS_PROFILES.low.lightning };
+  render({ front: storm, reducedMotion: false, time: 32_000_000, ...low });
+  assert.equal(
+    flashFills(
+      render({ front: storm, reducedMotion: false, time: 32_006_239, ...low }),
+    ).length,
+    0,
+  );
+  // Reduced motion keeps every tier's lightning off, including high.
+  assert.equal(
+    flashFills(
+      render({
+        front: storm,
+        reducedMotion: true,
+        time: 33_000_000,
+        lightning: GRAPHICS_PROFILES.high.lightning,
+      }),
     ).length,
     0,
   );
