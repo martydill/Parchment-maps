@@ -285,6 +285,7 @@ import {
   localWeatherAtBearing,
   sampleWeatherFront,
 } from "./core/weather.js";
+import { stormArc, stormArcForStage } from "./core/storm-arc.js";
 import {
   discoverySites,
   explorationSites,
@@ -485,6 +486,7 @@ let encounterDrums = [];
 let encounterSoundEnabled = true;
 let debugWeather = null;
 let debugTimeOfDay = null;
+let debugStormArc = null;
 let debugPaused = false;
 let debugPreviewPanels = [];
 let suppressSaving = false;
@@ -594,6 +596,53 @@ function currentWeather(angle = ship.angle) {
     voyageDistance: game.voyageDistance,
     horizonKm: visibility.horizonKm,
   });
+}
+
+// The storm narrative arc: sky grades, swell, birds, crew, lightning cadence,
+// and the golden break with its rainbow. Derived purely from the weather
+// front, so it needs no state of its own.
+function currentStormArc() {
+  if (debugStormArc) return debugStormArc;
+  const weather = getInterpolatedWeather();
+  return stormArc({ front: weather.front, roughness: weather.roughness });
+}
+
+const ARC_STAGE_MESSAGES = {
+  gathering: "A dark line settles along the horizon — the wind is rising.",
+  brewing: "The gulls have gone quiet. Cloud stacks over the outer sea.",
+  tempest: "ALL HANDS ON DECK — the squall is upon you!",
+  breaking: "The sky tears open — gold light across the water.",
+  afterglow: "A watercolor rainbow arches over the wake.",
+};
+
+let announcedArcStage = null;
+let arcAnnounceCooldown = 0;
+function announceStormArc(dt) {
+  const arc = currentStormArc();
+  if (announcedArcStage === null || debugStormArc) {
+    // Baseline the tracker silently so a load mid-storm never spams news.
+    announcedArcStage = arc.stage;
+    return;
+  }
+  arcAnnounceCooldown = Math.max(0, arcAnnounceCooldown - dt);
+  if (arc.stage === announcedArcStage) return;
+  announcedArcStage = arc.stage;
+  if (arcAnnounceCooldown > 0) return;
+  const line = ARC_STAGE_MESSAGES[arc.stage];
+  if (!line) return;
+  showMessage(line, arc.stage === "tempest" ? 3 : 3.4);
+  arcAnnounceCooldown = 7;
+}
+
+const ARC_STAGE_PHRASES = {
+  gathering: " · sky darkening",
+  brewing: " · swell building · gulls gone quiet",
+  tempest: " · all hands scrambling",
+  breaking: " · breaking gold",
+  afterglow: " · rainbow over the wake",
+};
+function stormArcPhrase() {
+  return ARC_STAGE_PHRASES[currentStormArc().stage] || "";
 }
 
 function seamanshipBonus() {
@@ -3509,6 +3558,7 @@ const panelContext = {
   continueLegacySandbox,
   currentObjective,
   currentVisibilityKm,
+  stormArcPhrase,
   DISCOVERY_DISPOSITIONS,
   discoverySites,
   document,
@@ -5103,6 +5153,7 @@ function render() {
   const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
   const lighting = sceneLighting(sceneTimeOfDay(), weather.roughness, game.day);
+  const arc = currentStormArc();
   const moving =
     !ship.anchored &&
     !currentPort &&
@@ -5176,6 +5227,7 @@ function render() {
     reducedMotion: reducedMotion.matches,
     lighting,
     front: weather.front,
+    arc,
     encounterCreature: encounters.active?.preview
       ? undefined
       : encounters.active?.index,
@@ -5362,6 +5414,8 @@ function render() {
     {
       time: visualTime / 1000,
       roughness: weather.roughness,
+      swell: arc.swell,
+      crew: arc.crew,
       speed: moving ? ship.speed : 0,
       anchored: ship.anchored,
       reducedMotion: reducedMotion.matches,
@@ -5396,6 +5450,7 @@ function render() {
       name: weather.name,
       softLayerScale: 0.5,
       front: weather.front,
+      arc,
       daylight: lighting.daylight,
       roughness: weather.roughness,
       visibilityKm: weather.visibilityKm,
@@ -5770,6 +5825,18 @@ function updateSeaWarning() {
   const warning = document.getElementById("seaWarning");
   const lines = [];
   const waterline = operationalShipStats().waterlineLengthFt;
+  // The storm arc keeps its own line in the warning rail so the build-up is
+  // readable even before any squall zone is actually ahead of the bow.
+  const arc = currentStormArc();
+  const arcWarnings = {
+    gathering: "WEATHER BUILDING · sky darkening to the windward",
+    brewing: "STORM TELEGRAPH · swell rising, seabirds gone silent",
+    tempest: "SQUALL OVERHEAD · all hands, shorten sail",
+    breaking: "STORM BREAKING · gold light through the front",
+    afterglow: "AFTERGLOW · rainbow over the wake",
+  };
+  const arcWarning = arcWarnings[arc.stage];
+  if (arcWarning && arc.grade >= 1) lines.push(arcWarning);
   const ahead = hazardAhead({
     position: ship,
     heading: ship.angle,
@@ -6094,6 +6161,7 @@ function update(dt) {
     messageTimer -= dt;
     if (messageTimer <= 0) ui.message.classList.remove("show");
   }
+  announceStormArc(dt);
   updateSeaWarning();
   updateHud();
 }
@@ -7788,6 +7856,7 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
 const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
 const debugWeatherSelect = document.getElementById("debugWeather");
+const debugArcSelect = document.getElementById("debugArc");
 const debugTimeSelect = document.getElementById("debugTime");
 const debugPauseToggle = document.getElementById("debugPause");
 const debugWeatherPatterns = [
@@ -7875,6 +7944,13 @@ debugWeatherSelect.addEventListener("change", () => {
         };
   refreshDebugScene();
 });
+debugArcSelect.addEventListener("change", () => {
+  debugStormArc =
+    debugArcSelect.value === "auto"
+      ? null
+      : stormArcForStage(debugArcSelect.value);
+  refreshDebugScene();
+});
 debugTimeSelect.addEventListener("change", () => {
   debugTimeOfDay =
     debugTimeSelect.value === "auto" ? null : Number(debugTimeSelect.value);
@@ -7888,8 +7964,12 @@ debugPauseToggle.addEventListener("change", () => {
 document.getElementById("resetDebug").addEventListener("click", () => {
   debugWeather = null;
   debugTimeOfDay = null;
+  debugStormArc = null;
   debugPaused = false;
-  debugWeatherSelect.value = debugTimeSelect.value = "auto";
+  debugWeatherSelect.value =
+    debugArcSelect.value =
+    debugTimeSelect.value =
+      "auto";
   debugPauseToggle.checked = false;
   refreshDebugScene();
 });

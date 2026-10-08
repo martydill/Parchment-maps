@@ -94,6 +94,7 @@ let acceptContract,
   SHIP_UPGRADES,
   shipSpeedKnots,
   showMessage,
+  stormArcPhrase,
   tradeQuote,
   ui,
   worldEvents,
@@ -185,6 +186,7 @@ function syncPanelContext() {
     SHIP_UPGRADES,
     shipSpeedKnots,
     showMessage,
+    stormArcPhrase,
     tradeQuote,
     ui,
     worldEvents,
@@ -234,7 +236,9 @@ export function updateHud() {
     game.weatherName +
       " · " +
       (km < 10 ? km.toFixed(1) : Math.round(km)) +
-      " km sight · " +
+      " km sight" +
+      (stormArcPhrase ? stormArcPhrase() : "") +
+      " · " +
       Math.round((wrapX(ship.x) / WORLD.w) * 360) +
       "° longitude",
   );

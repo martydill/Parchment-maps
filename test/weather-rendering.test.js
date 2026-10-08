@@ -15,6 +15,7 @@ function recordingContext() {
   const context = new Proxy(
     {
       globalAlpha: 1,
+      globalCompositeOperation: "source-over",
       setTransform(...args) {
         transforms.push(args);
       },
@@ -302,5 +303,197 @@ test("changing storm colours retints cloud masks without new gradients or textur
   });
   assert.ok(
     first.some(({ stamp }, index) => stamp.rects.length > paints[index]),
+  );
+});
+
+test("the storm arc inks the sky in quantized grades", () => {
+  const brewing = render({
+    arc: {
+      stage: "brewing",
+      grade: 2,
+      ink: 0.15,
+      swell: 0.6,
+      birds: 0.3,
+      crew: 0.4,
+      flicker: 0.5,
+      cadence: 8,
+      gold: 0,
+      rainbow: 0,
+      build: 0.5,
+    },
+  });
+  const washes = brewing.rects.filter(({ color }) =>
+    String(color).startsWith("rgba(26,35,52,"),
+  );
+  assert.equal(washes.length, 1);
+  assert.equal(washes[0].color, "rgba(26,35,52,0.15)");
+  const fair = render({
+    arc: {
+      stage: "fair",
+      grade: 0,
+      ink: 0,
+      swell: 0,
+      birds: 1,
+      crew: 0,
+      flicker: 0,
+      cadence: 8.7,
+      gold: 0,
+      rainbow: 0,
+      build: 0,
+    },
+  });
+  assert.ok(
+    !fair.rects.some(({ color }) => String(color).startsWith("rgba(26,35,52,")),
+  );
+});
+
+test("the rainbow paints a spectral radial wedge only after the break", () => {
+  const arc = {
+    stage: "afterglow",
+    grade: 1,
+    ink: 0.075,
+    swell: 0.2,
+    birds: 0.9,
+    crew: 0,
+    flicker: 0,
+    cadence: 8.7,
+    gold: 0.4,
+    rainbow: 0.8,
+    build: 0.2,
+  };
+  const afterglow = render({
+    front: {
+      storm: 0.1,
+      cloud: 0.4,
+      rain: 0,
+      lightning: 0,
+      fog: 0,
+      sunbreak: 0.9,
+    },
+    arc,
+  });
+  const wedges = afterglow.gradients.filter(
+    ({ geometry }) => geometry.length === 6,
+  );
+  // Two offset watercolor passes bleed the band like pigment on wet paper.
+  assert.equal(wedges.length, 2);
+  const stops = wedges[0].stops;
+  assert.deepEqual(
+    stops.map(([position]) => position),
+    [0, 0.18, 0.34, 0.5, 0.66, 0.82, 1],
+  );
+  assert.ok(stops.some(([, color]) => color.includes("116,186,150")));
+  assert.ok(stops.at(-1)[1].includes("214,92,74"));
+  // Both watercolor passes composite as light over the clearing cloud.
+  const screenFills = afterglow.rects.filter(
+    ({ operation }) => operation === "screen",
+  );
+  assert.ok(screenFills.length >= 2, `screen fills: ${screenFills.length}`);
+  const dry = render({
+    front: {
+      storm: 0.5,
+      cloud: 0.7,
+      rain: 0.3,
+      lightning: 0.2,
+      fog: 0,
+      sunbreak: 0,
+    },
+    arc: { ...arc, rainbow: 0, gold: 0 },
+  });
+  assert.equal(
+    dry.gradients.filter(({ geometry }) => geometry.length === 6).length,
+    0,
+  );
+});
+
+test("storm arc cadence lands the next strike sooner than the legacy interval", () => {
+  const front = {
+    storm: 1,
+    cloud: 1,
+    rain: 0.8,
+    lightning: 1,
+    fog: 0,
+    sunbreak: 0,
+  };
+  const flash = (recording) =>
+    recording.rects.some(({ color }) =>
+      String(color).startsWith("rgba(222,230,255,"),
+    );
+  // Legacy cadence: the next strike waits at least ~1.7s.
+  const legacyStart = render({ front, time: 8_000_000, reducedMotion: false });
+  assert.ok(flash(legacyStart), "the first strike should flash immediately");
+  assert.ok(!flash(render({ front, time: 8_001_500, reducedMotion: false })));
+  // Arc cadence of one second lands the follow-up strike within 1.5s.
+  const arc = {
+    stage: "tempest",
+    grade: 4,
+    ink: 0.34,
+    swell: 1,
+    birds: 0,
+    crew: 1,
+    flicker: 0,
+    cadence: 1,
+    gold: 0,
+    rainbow: 0,
+    build: 1,
+  };
+  const start = render({
+    front,
+    time: 9_000_000,
+    reducedMotion: false,
+    arc,
+  });
+  assert.ok(flash(start));
+  assert.ok(
+    flash(render({ front, time: 9_001_500, reducedMotion: false, arc })),
+  );
+});
+
+test("sheet lightning flickers inside the cloud while the squall brews", () => {
+  const arc = {
+    stage: "brewing",
+    grade: 3,
+    ink: 0.24,
+    swell: 0.7,
+    birds: 0.1,
+    crew: 0.2,
+    flicker: 0.8,
+    cadence: 8.7,
+    gold: 0,
+    rainbow: 0,
+    build: 0.6,
+  };
+  const front = {
+    storm: 0.2,
+    cloud: 0.8,
+    rain: 0.05,
+    lightning: 0,
+    fog: 0,
+    sunbreak: 0,
+  };
+  const brewing = render({
+    front,
+    time: 12_000_000,
+    reducedMotion: false,
+    arc,
+  });
+  const washes = brewing.rects.filter(
+    ({ color, operation }) =>
+      typeof color === "object" && operation === "source-over",
+  );
+  assert.ok(washes.length > 0, "no sheet-lightning wash was drawn");
+  // A beat later the flicker has faded, and the next one is seconds away.
+  const later = render({
+    front,
+    time: 12_000_400,
+    reducedMotion: false,
+    arc,
+  });
+  assert.equal(
+    later.rects.filter(
+      ({ color, operation }) =>
+        typeof color === "object" && operation === "source-over",
+    ).length,
+    0,
   );
 });

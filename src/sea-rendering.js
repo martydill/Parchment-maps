@@ -1,4 +1,4 @@
-import { nearestWrapped } from "./core/math.js";
+import { clamp, nearestWrapped } from "./core/math.js";
 import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import { createAlphaPalette } from "./style-palette.js";
@@ -493,23 +493,32 @@ export function createSeaRendering({
     c.restore();
   }
 
-  function drawCoastalBirds(c, visible, time, zoom, view) {
+  function drawCoastalBirds(c, visible, time, zoom, view, presence = 1) {
+    // Seabirds shelter ahead of a rising front: flocks thin out first, then
+    // the stragglers fade, and the sky reads as abandoned before the squall.
+    if (presence <= 0.02) return;
+    const fade = Math.min(1, presence * 1.45);
     c.save();
     c.lineCap = "round";
     c.lineJoin = "round";
     for (const { flocks, offset } of visible) {
       for (const flock of flocks) {
         if (!inView(flock.x + offset, flock.y, 160, view)) continue;
-        for (let bird = 0; bird < coastalFlockSize(flock.index); bird++) {
+        const full = coastalFlockSize(flock.index);
+        const count =
+          presence >= 0.99
+            ? full
+            : Math.max(presence > 0.3 ? 1 : 0, Math.floor(full * presence));
+        for (let bird = 0; bird < count; bird++) {
           const pose = sampleCoastalBird(time, flock.index, bird);
           const x = flock.x + offset + pose.x;
           const y = flock.y + pose.y;
           const wingHeight = pose.size * (0.55 + pose.wing * 0.4);
-          c.fillStyle = "rgba(34,58,51,.12)";
+          c.fillStyle = `rgba(34,58,51,${0.12 * fade})`;
           c.beginPath();
           c.ellipse(x + 7, y + 15, pose.size * 0.75, 1.9, 0, 0, Math.PI * 2);
           c.fill();
-          c.strokeStyle = "rgba(35,42,34,.72)";
+          c.strokeStyle = `rgba(35,42,34,${0.72 * fade})`;
           c.lineWidth = 1.45 / zoom;
           c.beginPath();
           c.moveTo(x - pose.size, y);
@@ -521,7 +530,7 @@ export function createSeaRendering({
             y,
           );
           c.stroke();
-          c.strokeStyle = "rgba(248,239,198,.43)";
+          c.strokeStyle = `rgba(248,239,198,${0.43 * fade})`;
           c.lineWidth = 0.55 / zoom;
           c.beginPath();
           c.moveTo(x - pose.size * 0.75, y - 0.6);
@@ -816,6 +825,7 @@ export function createSeaRendering({
       reducedMotion,
       lighting,
       front,
+      arc,
       detail = 1,
       focus,
       encounterCreature,
@@ -829,6 +839,7 @@ export function createSeaRendering({
     // Do not constrain longitude: the atlas wraps indefinitely.
     clipWater(c, visible);
     const t = reducedMotion ? 0 : time / 1000;
+    const swell = clamp(arc?.swell || 0, 0, 1);
     const z = camera.zoom;
     const halfW = vw / (2 * z) + 100;
     const halfH = vh / (2 * z * MAP_TILT_COS) + 60;
@@ -901,7 +912,7 @@ export function createSeaRendering({
             top: Math.max(view.top, focusY - focusRadius - 80),
             bottom: Math.min(view.bottom, focusY + focusRadius + 80),
           };
-    const pulseTime = t * (0.6 + roughness * 0.4);
+    const pulseTime = t * (0.6 + roughness * 0.4 + swell * 0.45);
     const pulseSin = Math.sin(pulseTime),
       pulseCos = Math.cos(pulseTime);
     const driftCos = Math.cos(t * 0.28),
@@ -921,7 +932,9 @@ export function createSeaRendering({
         }
         const mark = surfaceMark(row, canonical, columns, spacing, rowOffset);
         if (mark.hidden && z >= 0.7) continue;
-        const { length, sin, cos } = mark;
+        const { sin, cos } = mark;
+        // A building arc stretches the wave marks into long rolling swells.
+        const length = mark.length * (1 + swell * 0.3);
         const pulse = (pulseSin * cos + pulseCos * sin + 1) / 2;
         const x =
           column * spacing + rowOffset + (driftCos * cos - driftSin * sin) * 5;
@@ -949,14 +962,16 @@ export function createSeaRendering({
           centerY,
           length,
         );
-        if (pulse > 0.65) {
+        // Broken crests appear on the swells before the roughness arrives.
+        const crestThreshold = 0.65 - swell * 0.12;
+        if (pulse > crestThreshold) {
           const quantizedGlint =
             (Math.max(0, Math.min(127, Math.round((glintAlpha / 0.48) * 127))) /
               127) *
             0.48;
           appendWaveMark(
             waveCrests,
-            crestStyle(quantizedGlint * (pulse - 0.65) * 1.8),
+            crestStyle(quantizedGlint * (pulse - crestThreshold) * 1.8),
             crestLine,
             centerX,
             centerY,
@@ -1043,7 +1058,14 @@ export function createSeaRendering({
     }
     c.restore();
     drawRiverFlow(c, visible, t, z, detailView);
-    drawCoastalBirds(c, visible, t, z, detailView);
+    drawCoastalBirds(
+      c,
+      visible,
+      t,
+      z,
+      detailView,
+      clamp(arc?.birds ?? 1, 0, 1),
+    );
     drawShoreAnimals(c, visible, t, detailView);
   }
 
