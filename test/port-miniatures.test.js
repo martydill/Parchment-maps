@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   createPortMiniatureCache,
   drawPortActivity,
+  drawHarborBoats,
   drawPortMiniature,
   hasPortMiniature,
 } from "../src/port-miniatures.js";
+import { seasonalAppearance } from "../src/core/seasons.js";
 import { PORT_NAMES } from "../src/names.js";
 
 function canvasContext() {
@@ -126,8 +128,105 @@ test("harbor architecture plates reuse artwork and refresh when development or h
     );
     cache.draw(context, PORT_NAMES.mirelune);
     assert.equal(canvases.length, 2);
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 3 },
+      Math.PI,
+      seasonalAppearance(1),
+    );
+    const spring = canvases[0].fills.length;
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 3 },
+      Math.PI,
+      seasonalAppearance(2),
+    );
+    assert.equal(
+      canvases[0].fills.length,
+      spring,
+      "reuse artwork within a season",
+    );
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 3 },
+      Math.PI,
+      seasonalAppearance(73),
+    );
+    assert.ok(
+      canvases[0].fills.length > spring,
+      "winter refreshes the same plate",
+    );
+    assert.equal(canvases.length, 2);
   } finally {
     if (oldDocument === undefined) delete globalThis.document;
     else globalThis.document = oldDocument;
   }
+});
+
+test("seasonal harbor skylines and drifting foliage render in every climate and orientation", () => {
+  for (const name of Object.values(PORT_NAMES)) {
+    for (const [day, biome] of [
+      [1, "temperate"],
+      [25, "tropical"],
+      [49, "temperate"],
+      [73, "alpine"],
+    ]) {
+      const { context, fills, coordinates } = canvasContext();
+      const season = seasonalAppearance(day, biome);
+      assert.equal(drawPortMiniature(context, name, {}, Math.PI, season), true);
+      drawPortActivity(context, name, 14000, 2, 0.3, Math.PI, {}, season);
+      assert.ok(fills.length > 40);
+      assert.ok(coordinates.flat().every(Number.isFinite), name);
+    }
+  }
+  const spring = canvasContext();
+  const winter = canvasContext();
+  drawPortMiniature(
+    spring.context,
+    PORT_NAMES.orvessaQuay,
+    {},
+    -0.34,
+    seasonalAppearance(1),
+  );
+  drawPortMiniature(
+    winter.context,
+    PORT_NAMES.orvessaQuay,
+    {},
+    -0.34,
+    seasonalAppearance(73),
+  );
+  assert.notDeepEqual(spring.fills, winter.fills);
+  assert.ok(
+    winter.coordinates.length > spring.coordinates.length,
+    "snow ridges follow the roof geometry",
+  );
+});
+
+test("fishing fleets grow for the autumn run and shelter in winter without moving their harbor anchors", () => {
+  const counts = [];
+  for (const day of [73, 25, 49]) {
+    const { context, coordinates } = canvasContext();
+    drawHarborBoats(
+      context,
+      PORT_NAMES.eoswatch,
+      14000,
+      2,
+      0.3,
+      0,
+      1,
+      Math.PI,
+      {},
+      seasonalAppearance(day),
+    );
+    assert.ok(coordinates.flat().every(Number.isFinite));
+    counts.push(coordinates.length);
+  }
+  assert.ok(counts[0] < counts[1] && counts[1] < counts[2]);
+  const { context, fills } = canvasContext();
+  drawHarborBoats(context, "Unknown", 0, 2, 0, 0, 1);
+  drawHarborBoats(context, PORT_NAMES.eoswatch, 0, 1, 0, 0, 1);
+  assert.deepEqual(fills, []);
 });

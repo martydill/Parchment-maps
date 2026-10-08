@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=28" />
+    <link rel="stylesheet" href="./styles.css?v=29" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -199,6 +199,15 @@
               <option value="0">Night</option>
             </select></label
           >
+          <label class="debug-season-control"
+            >Season<select id="debugSeason">
+              <option value="auto">Automatic (voyage calendar)</option>
+              <option value="1">Spring</option>
+              <option value="25">Summer</option>
+              <option value="49">Autumn</option>
+              <option value="73">Winter</option>
+            </select></label
+          >
         </div>
         <label class="debug-pause"
           ><input id="debugPause" type="checkbox" /> Pause simulation</label
@@ -261,7 +270,7 @@
         <div class="badge trade-instruments">
           <div class="instrument-heading">
             <b id="coinText">120 crowns</b>
-            <span id="dayText">Day 1</span>
+            <span id="dayText">Spring · Day 1</span>
           </div>
           <div class="instrument-readouts">
             <span id="timeText">Daylight</span>
@@ -1339,6 +1348,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=65"></script>
+    <script type="module" src="./src/app.js?v=66"></script>
   </body>
 </html>

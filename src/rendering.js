@@ -1,3 +1,8 @@
+import {
+  seasonAtDay,
+  seasonalAppearance,
+  seasonalSeaPalette,
+} from "./core/seasons.js";
 import { PORT_NAMES, LAND_NAMES } from "./names.js";
 import {
   expandPolygon,
@@ -33,7 +38,8 @@ import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
   terrainPalette,
-} from "./terrain-rendering.js?v=3";
+  seasonalLandColor,
+} from "./terrain-rendering.js?v=4";
 export {
   drawMerchantShip,
   drawShip,
@@ -800,6 +806,9 @@ export function createMapRendering({
   mapLayer.height = WORLD.h;
   const m = mapLayer.getContext("2d");
   const riverPaths = [];
+  const terrainPlans = new Map();
+  let seasonDay = game.day;
+  let seasonKey = seasonAtDay(seasonDay).key;
 
   // A lower-resolution persistent exploration mask keeps fog rendering fast on
   // mobile while retaining a soft, hand-painted edge on the parchment chart.
@@ -1337,9 +1346,10 @@ export function createMapRendering({
     const base = c.createLinearGradient(0, 0, 0, WORLD.h);
     // Desaturated verdigris pigment, with the same paper grain and engraved
     // marks as the land. The sea reads as a watercolor wash on the atlas.
-    base.addColorStop(0, "#a6bfad");
-    base.addColorStop(0.5, "#729f98");
-    base.addColorStop(1, "#527f7d");
+    const sea = seasonalSeaPalette(seasonDay);
+    base.addColorStop(0, sea[0]);
+    base.addColorStop(0.5, sea[1]);
+    base.addColorStop(1, sea[2]);
     c.fillStyle = base;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
     const rnd = seeded(9917);
@@ -1882,8 +1892,20 @@ export function createMapRendering({
         const top = Math.min(...poly.map(([, y]) => y));
         const bottom = Math.max(...poly.map(([, y]) => y));
         const pigment = m.createLinearGradient(0, top, 0, bottom);
-        pigment.addColorStop(0, terrainPalette(terrainBiome(l.name)).paper);
-        pigment.addColorStop(1, l.color);
+        pigment.addColorStop(
+          0,
+          terrainPalette(
+            terrainBiome(l.name),
+            seasonalAppearance(seasonDay, terrainBiome(l.name)),
+          ).paper,
+        );
+        pigment.addColorStop(
+          1,
+          seasonalLandColor(
+            l.color,
+            seasonalAppearance(seasonDay, terrainBiome(l.name)),
+          ),
+        );
         m.fillStyle = pigment;
         m.fill();
         m.strokeStyle = "#3b2b1a";
@@ -1970,11 +1992,14 @@ export function createMapRendering({
           rx: Math.max(45, l.name.length * 7),
           ry: 23,
         });
-      const terrain = planTerrainIllustration(l.poly, 1349 + li * 97, {
-        mountainous: mountainLands.has(l.name),
-        biome: terrainBiome(l.name),
-        clearings,
-      });
+      const terrain =
+        terrainPlans.get(li) ??
+        planTerrainIllustration(l.poly, 1349 + li * 97, {
+          mountainous: mountainLands.has(l.name),
+          biome: terrainBiome(l.name),
+          clearings,
+        });
+      terrainPlans.set(li, terrain);
       riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
       m.save();
       wrappedClipPath(m, l.poly);
@@ -1982,7 +2007,11 @@ export function createMapRendering({
       for (const offset of polygonWorldOffsets(l.poly)) {
         m.save();
         m.translate(offset, 0);
-        drawTerrainIllustration(m, terrain);
+        drawTerrainIllustration(
+          m,
+          terrain,
+          seasonalAppearance(seasonDay, terrain.biome),
+        );
         m.restore();
       }
       m.restore();
@@ -2261,6 +2290,16 @@ export function createMapRendering({
     riverPaths,
     minimapFog,
     minimapFogCtx,
+    // Seasonal pigment steps reuse the canvas and deterministic terrain plans.
+    updateSeason(day = game.day) {
+      if (seasonDay === day) return false;
+      seasonDay = day;
+      const key = seasonAtDay(day).key;
+      if (seasonKey === key) return false;
+      seasonKey = key;
+      buildMapLayer();
+      return true;
+    },
     // Re-bakes the sheet with the weathered-skin photograph applied. Passing
     // the same or a missing texture is a no-op, so late or failed fetches
     // leave the procedural parchment untouched.

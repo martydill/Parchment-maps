@@ -1,3 +1,4 @@
+import { mixSeasonColor } from "./core/seasons.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
@@ -122,9 +123,13 @@ export function hasPortMiniature(name) {
 export function createPortMiniatureCache() {
   const plates = new Map();
   return {
-    draw(c, name, evolution = {}, heading = DEFAULT_HEADING) {
+    draw(c, name, evolution = {}, heading = DEFAULT_HEADING, season) {
       if (!SCENES.has(name)) return false;
-      const key = JSON.stringify([heading, harborDevelopment(evolution)]);
+      const key = JSON.stringify([
+        heading,
+        harborDevelopment(evolution),
+        season?.key,
+      ]);
       let plate = plates.get(name);
       if (!plate || plate.key !== key) {
         const canvas = plate?.canvas ?? document.createElement("canvas");
@@ -133,7 +138,7 @@ export function createPortMiniatureCache() {
         const art = canvas.getContext("2d");
         art.scale(2, 2);
         art.translate(112, 136);
-        drawPortMiniature(art, name, evolution, heading);
+        drawPortMiniature(art, name, evolution, heading, season);
         plate = { key, canvas };
         plates.set(name, plate);
       }
@@ -412,6 +417,12 @@ function building(c, scene, spec) {
       scene.roof,
     );
     line(c, [a, front, top + 2], [b, front, top + 2], "#514135", 1.3);
+    if (scene.snow) {
+      c.save();
+      c.globalAlpha *= scene.snow;
+      line(c, [a, front, top + 2.5], [b, front, top + 2.5], "#f4f7f1", 2.4);
+      c.restore();
+    }
   } else {
     const ridge = top + Math.min(10, w * 0.34);
     face(
@@ -443,6 +454,13 @@ function building(c, scene, spec) {
       ],
       scene.roof,
     );
+    if (scene.snow) {
+      c.save();
+      c.globalAlpha *= scene.snow;
+      line(c, [u, back, ridge + 0.8], [u, front, ridge + 0.8], "#f4f7f1", 2.2);
+      line(c, [a, front, top + 0.8], [u, front, ridge + 0.8], "#eef4ef", 1.8);
+      c.restore();
+    }
     for (let stripe = back + 3; stripe < front; stripe += 5)
       line(
         c,
@@ -1244,13 +1262,29 @@ export function drawPortMiniature(
   name,
   evolution = {},
   heading = DEFAULT_HEADING,
+  season,
 ) {
-  const scene = SCENES.get(name);
+  const base = SCENES.get(name);
+  const scene =
+    base && season
+      ? {
+          ...base,
+          roof: mixSeasonColor(base.roof, "#eff3ed", season.snow * 0.95),
+          roofShade: mixSeasonColor(
+            base.roofShade,
+            "#b8cdd0",
+            season.snow * 0.92,
+          ),
+          ground: mixSeasonColor(base.ground, season.ground, 0.45),
+          snow: season.snow,
+        }
+      : base;
   if (!scene) return false;
   setGridHeading(heading);
   c.save();
   c.lineJoin = "round";
   halo(c);
+  if (season) drawSeasonalGardens(c, season);
   switch (scene.kind) {
     case "quays":
       drawQuays(c, scene);
@@ -1302,7 +1336,44 @@ export function drawPortMiniature(
   return true;
 }
 
-function harborBoat(c, u, v, seconds, phase, windAngle) {
+function drawSeasonalGardens(c, season) {
+  for (const [u, v] of [
+    [-65, -9],
+    [58, -23],
+    [69, 3],
+  ]) {
+    line(c, [u, v, 5], [u, v, 24], "#62533b", 1.6);
+    const [x, y] = point(u, v, 23);
+    c.fillStyle = season.leaf;
+    c.beginPath();
+    c.ellipse(x, y, 7, 9, -0.2, 0, Math.PI * 2);
+    c.fill();
+    if (Math.max(season.blossoms, season.snow) > 0) {
+      c.save();
+      c.globalAlpha *= Math.max(season.blossoms, season.snow);
+      for (let petal = 0; petal < 8; petal++) {
+        const angle = petal * 2.4;
+        c.fillStyle = season.snow
+          ? "#edf4ef"
+          : petal % 2
+            ? "#f0b9bb"
+            : "#fff0df";
+        c.beginPath();
+        c.arc(
+          x + Math.cos(angle) * 5,
+          y + Math.sin(angle) * 6 - 2,
+          2.5,
+          0,
+          Math.PI * 2,
+        );
+        c.fill();
+      }
+      c.restore();
+    }
+  }
+}
+
+function harborBoat(c, u, v, seconds, phase, windAngle, season) {
   const sway = Math.sin(seconds * 0.7 + phase) * 2.3;
   const bob = Math.sin(seconds * 1.2 + phase) * 0.45;
   u += sway;
@@ -1335,11 +1406,30 @@ function harborBoat(c, u, v, seconds, phase, windAngle) {
       [u + 6 + belly * Math.cos(windAngle), v + 0.5, bob + 4],
       [u, v, bob + 4],
     ],
-    "#eee0b8",
+    season?.sail ?? "#eee0b8",
     "#8a744e",
     0.6,
   );
   line(c, [u - 11, v + 5, 0], [u - 7, v + 5, 0], "rgba(224,219,183,.56)", 0.7);
+  if (season) {
+    // A trailing mesh distinguishes the seasonal fishing craft from traders.
+    for (let strand = 0; strand < 4; strand++) {
+      line(
+        c,
+        [u - 5 + strand * 3, v + 4, bob],
+        [u - 7 + strand * 3, v + 10, -1],
+        "rgba(202,213,185,.65)",
+        0.5,
+      );
+      line(
+        c,
+        [u - 7, v + 5 + strand * 1.5, -1],
+        [u + 2, v + 5 + strand * 1.5, -1],
+        "rgba(202,213,185,.55)",
+        0.5,
+      );
+    }
+  }
 }
 
 export function drawPortActivity(
@@ -1350,6 +1440,7 @@ export function drawPortActivity(
   windAngle = 0,
   heading = DEFAULT_HEADING,
   evolution = {},
+  season,
 ) {
   const scene = SCENES.get(name);
   if (!scene || zoom < 1.08) return;
@@ -1512,6 +1603,36 @@ export function drawPortActivity(
       c.fill();
     }
   }
+  if (season && Math.max(season.snow, season.blossoms, season.autumn) > 0) {
+    const density = Math.max(season.snow, season.blossoms, season.autumn);
+    c.save();
+    const baseAlpha = c.globalAlpha;
+    for (let particle = 0; particle < 14; particle++) {
+      const phase = (seconds * 0.07 + particle * 0.618) % 1;
+      c.globalAlpha = baseAlpha * density * Math.sin(phase * Math.PI) * 0.65;
+      c.fillStyle =
+        season.snow > 0.5
+          ? "#eff5ef"
+          : season.autumn > 0.5
+            ? "#d0934e"
+            : "#f6dad0";
+      const x =
+        -70 + ((particle * 37 + Math.cos(windAngle) * phase * 30) % 140);
+      const y = -100 + phase * 115;
+      c.beginPath();
+      c.ellipse(
+        x + Math.sin(seconds * 0.7 + particle) * 3,
+        y,
+        1.5,
+        season.snow > 0.5 ? 1.5 : 0.75,
+        seconds * 0.3 + particle,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+    }
+    c.restore();
+  }
   c.restore();
 }
 
@@ -1525,6 +1646,7 @@ export function drawHarborBoats(
   outwardY,
   heading = DEFAULT_HEADING,
   evolution = {},
+  season,
 ) {
   if (!SCENES.has(name) || zoom < 1.08) return;
   setGridHeading(heading);
@@ -1532,7 +1654,20 @@ export function drawHarborBoats(
   c.save();
   c.scale(0.75, 0.75);
   const development = harborDevelopment(evolution);
-  for (let index = 0; index < development.boats; index++) {
+  const boats = season
+    ? Math.min(
+        7,
+        Math.max(
+          1,
+          Math.round(
+            development.boats *
+              season.fishing *
+              (SCENES.get(name).kind === "fishing" ? 1.3 : 1),
+          ),
+        ),
+      )
+    : development.boats;
+  for (let index = 0; index < boats; index++) {
     const side = index % 2 ? 1 : -1;
     const x =
       outwardX * (9 + Math.floor(index / 2) * 18) - outwardY * side * 19;
@@ -1540,7 +1675,15 @@ export function drawHarborBoats(
       outwardY * (9 + Math.floor(index / 2) * 18) + outwardX * side * 19;
     const u = x * gridCos + y * gridSin;
     const v = -x * gridSin + y * gridCos;
-    harborBoat(c, u, v, seconds, side * 1.2, windAngle);
+    harborBoat(c, u, v, seconds, side * 1.2 + index, windAngle, season);
   }
+  c.restore();
+}
+
+export function drawSeasonalFishingBoat(c, time, windAngle, heading, season) {
+  setGridHeading(heading);
+  c.save();
+  c.scale(0.9, 0.9);
+  harborBoat(c, 0, 0, time / 1000, heading, windAngle, season);
   c.restore();
 }
