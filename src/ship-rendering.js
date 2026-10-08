@@ -12,6 +12,10 @@ import {
   updateSmokeTrail,
 } from "./core/ship-damage.js";
 import { clamp, wrappedDelta } from "./core/math.js";
+import {
+  BIOLUMINESCENT_RGB,
+  bioluminescentTwinkle,
+} from "./core/bioluminescence.js";
 import { createAlphaPalette } from "./style-palette.js";
 import { createRadialStamp } from "./radial-stamp.js";
 
@@ -25,6 +29,8 @@ const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
 const reflectionInkStyle = createAlphaPalette("45,57,45", 0, 0.34, 128);
 const splinterPitchStyle = createAlphaPalette("46,30,17", 0.1, 0.62, 64);
 const splinterWoodStyle = createAlphaPalette("171,124,66", 0.1, 0.66, 64);
+const eddyGlowStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.3, 48);
+const eddySpeckStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.85, 96);
 const CONTACT_SHADOWS = [
   [1.45, "rgba(21,47,43,0.045)"],
   [1.2, "rgba(21,47,43,0.085)"],
@@ -614,7 +620,7 @@ function drawHullDetails(c, profile, heading, z, motion, lighting) {
   }
 }
 
-function drawHullWater(c, profile, motion, heading, z) {
+function drawHullWater(c, profile, motion, heading, z, bioluminescence) {
   const strength = motion.wake;
   if (strength < 0.02) return;
   const beam = profile.beam;
@@ -716,6 +722,60 @@ function drawHullWater(c, profile, motion, heading, z) {
       c.quadraticCurveTo(x, y - 2.3, x + 2.9, y + 0.7);
       c.stroke();
     }
+  }
+  if (bioluminescence && bioluminescence.strength > 0.01)
+    drawHullBioluminescence(c, profile, bioluminescence, strength);
+  c.restore();
+}
+
+// In the luminous seas the hull's own churn wakes the plankton: specks cling
+// to both bow-wave shoulders and scatter through the stern eddy around one
+// soft pool astern. Screen composite keeps the teal out of the hull ink, and
+// each speck keeps its own slow twinkle, flaring as it brightens.
+function drawHullBioluminescence(c, profile, bioluminescence, strength) {
+  const glow = bioluminescence.strength;
+  const t = bioluminescence.time;
+  const phase = bioluminescence.phase || 0;
+  const beam = profile.beam;
+  const length = profile.length;
+  c.save();
+  c.globalCompositeOperation = "screen";
+  const speck = (x, y, radius, alpha) => {
+    c.fillStyle = eddySpeckStyle(alpha);
+    c.beginPath();
+    c.ellipse(x, y, radius, radius * 0.72, 0, 0, Math.PI * 2);
+    c.fill();
+  };
+  for (const side of [-1, 1]) {
+    for (let fleck = 0; fleck < 3; fleck++) {
+      const spread = (fleck + Math.sin(fleck * 3.3 + side) * 0.3) / 3;
+      const twinkle = bioluminescentTwinkle(
+        t,
+        phase + fleck * 1.9 + side * 3.1,
+      );
+      if (twinkle < 0.3) continue;
+      speck(
+        side * (beam * (0.52 + spread * 0.55) + strength * 1.5),
+        -length * (0.47 - spread * 0.3),
+        0.4 + twinkle * 0.85,
+        glow * twinkle * 0.85,
+      );
+    }
+  }
+  c.fillStyle = eddyGlowStyle(glow * 0.2);
+  c.beginPath();
+  c.ellipse(0, length * 0.62, beam * 1.35, length * 0.34, 0, 0, Math.PI * 2);
+  c.fill();
+  for (let fleck = 0; fleck < 5; fleck++) {
+    const spread = (fleck + Math.sin(fleck * 2.7 + phase) * 0.25) / 5;
+    const twinkle = bioluminescentTwinkle(t, phase + fleck * 2.63 + 0.7);
+    if (twinkle < 0.3) continue;
+    speck(
+      Math.sin(fleck * 7.31 + phase) * beam * (0.35 + spread * 0.5),
+      length * (0.5 + spread * 0.62),
+      0.45 + twinkle * 0.95,
+      glow * twinkle * 0.78,
+    );
   }
   c.restore();
 }
@@ -909,6 +969,7 @@ function drawShipModel(
   damage = null,
   damageKey = null,
   time = 0,
+  bioluminescence = null,
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
   // A holed hull lists to one side and settles lower into the water.
@@ -920,7 +981,7 @@ function drawShipModel(
     };
   c.save();
   c.translate(x, y);
-  drawHullWater(c, profile, motion, heading, z);
+  drawHullWater(c, profile, motion, heading, z, bioluminescence);
   // Soft contact shadow stays on the water as the hull rises and falls.
   // The contact shadow falls southeast of the shared northwest light.
   for (const [spread, style] of CONTACT_SHADOWS) {
@@ -1207,6 +1268,19 @@ function drawShipModel(
   c.restore();
 }
 
+// The hull eddy glow is presentation-only state: strength 0..1 from the
+// caller's region lookup, a shimmer clock already zeroed for reduced motion,
+// and the vessel's seed so each hull scatters its colonies differently.
+function hullBioluminescence(environment) {
+  const strength = environment.bioluminescence;
+  if (!(strength > 0.01)) return null;
+  return {
+    strength,
+    time: environment.time ?? 0,
+    phase: (environment.seed ?? 0) * 2.399963,
+  };
+}
+
 export function drawMerchantShip(
   c,
   merchant,
@@ -1242,6 +1316,7 @@ export function drawMerchantShip(
     damage,
     damageKey,
     environment.time ?? 0,
+    hullBioluminescence({ ...environment, seed: merchant.idNum || 0 }),
   );
   // Smoke climbs from the deck and drifts astern, so it renders above the
   // hull while the oldest puffs fall away behind it.
@@ -1298,6 +1373,7 @@ export function drawShip(
     damage,
     damageKey,
     environment.time ?? 0,
+    hullBioluminescence(environment),
   );
   c.restore();
   // Smoke climbs from the deck and drifts astern, drawn in the caller's

@@ -9,11 +9,19 @@ const darknessContext = darknessCanvas.getContext("2d");
 const DARKNESS_SCALE = 0.5;
 let darknessState = null;
 
-function darknessUnchanged(lighting, width, height, ship, lighthouses) {
+function darknessUnchanged(
+  lighting,
+  width,
+  height,
+  ship,
+  lighthouses,
+  maskScale,
+) {
   return (
     darknessState &&
     darknessState.width === width &&
     darknessState.height === height &&
+    darknessState.maskScale === maskScale &&
     darknessState.night === lighting.night &&
     darknessState.moon === lighting.moon &&
     darknessState.storm === lighting.storm &&
@@ -151,7 +159,15 @@ const stars = Array.from({ length: 95 }, (_, index) => {
   };
 });
 
-function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
+function drawCelestialLight(
+  c,
+  lighting,
+  width,
+  height,
+  time,
+  reducedMotion,
+  starCount,
+) {
   const twilight = Math.max(lighting.sunrise, lighting.sunset);
   if (twilight > 0.01) {
     const sun = celestialPosition("sun", lighting);
@@ -200,7 +216,7 @@ function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
   c.beginPath();
   c.arc(moonX, moonY, 10 + lighting.moon * 5, 0, Math.PI * 2);
   c.fill();
-  for (let index = 0; index < 95; index++) {
+  for (let index = 0; index < starCount; index++) {
     const x = stars[index].x * width;
     const y = stars[index].y * height * 0.68;
     const twinkle = reducedMotion
@@ -217,16 +233,39 @@ function drawCelestialLight(c, lighting, width, height, time, reducedMotion) {
 
 // A separate surface lets destination-out remove only the darkness, preserving
 // the terrain below each lamp. All coordinates here are screen pixels.
+// `particleScale` thins the star field and `maskScale` sets the darkness
+// mask's resolution; both come from the active graphics tier.
 export function drawNightAtmosphere(
   c,
-  { lighting, width, height, ship, lighthouses, time, reducedMotion },
+  {
+    lighting,
+    width,
+    height,
+    ship,
+    lighthouses,
+    time,
+    reducedMotion,
+    particleScale = 1,
+    maskScale = DARKNESS_SCALE,
+  },
 ) {
+  const starCount = Number.isFinite(particleScale)
+    ? Math.max(0, Math.min(1, particleScale)) * stars.length
+    : stars.length;
   if (lighting.night < 0.015) {
-    drawCelestialLight(c, lighting, width, height, time, reducedMotion);
+    drawCelestialLight(
+      c,
+      lighting,
+      width,
+      height,
+      time,
+      reducedMotion,
+      Math.round(starCount),
+    );
     return;
   }
-  const maskWidth = Math.ceil(width * DARKNESS_SCALE);
-  const maskHeight = Math.ceil(height * DARKNESS_SCALE);
+  const maskWidth = Math.ceil(width * maskScale);
+  const maskHeight = Math.ceil(height * maskScale);
   if (
     darknessCanvas.width !== maskWidth ||
     darknessCanvas.height !== maskHeight
@@ -237,11 +276,14 @@ export function drawNightAtmosphere(
   }
   // Beam rotation and star twinkle do not change this painted mask. Reusing
   // its exact pixels avoids repainting every lamp while the view is steady.
-  if (!darknessUnchanged(lighting, width, height, ship, lighthouses)) {
-    paintDarkness(lighting, width, height, ship, lighthouses);
+  if (
+    !darknessUnchanged(lighting, width, height, ship, lighthouses, maskScale)
+  ) {
+    paintDarkness(lighting, width, height, ship, lighthouses, maskScale);
     darknessState = {
       width,
       height,
+      maskScale,
       night: lighting.night,
       moon: lighting.moon,
       storm: lighting.storm,
@@ -251,7 +293,15 @@ export function drawNightAtmosphere(
     };
   }
   c.drawImage(darknessCanvas, 0, 0, width, height);
-  drawCelestialLight(c, lighting, width, height, time, reducedMotion);
+  drawCelestialLight(
+    c,
+    lighting,
+    width,
+    height,
+    time,
+    reducedMotion,
+    Math.round(starCount),
+  );
   c.save();
   c.globalCompositeOperation = "screen";
   glow(c, ship.x, ship.y, 110, `rgba(255,180,76,${lighting.night * 0.26})`);
@@ -320,9 +370,9 @@ export function drawNightAtmosphere(
   c.restore();
 }
 
-function paintDarkness(lighting, width, height, ship, lighthouses) {
+function paintDarkness(lighting, width, height, ship, lighthouses, maskScale) {
   const d = darknessContext;
-  d.setTransform(DARKNESS_SCALE, 0, 0, DARKNESS_SCALE, 0, 0);
+  d.setTransform(maskScale, 0, 0, maskScale, 0, 0);
   d.clearRect(0, 0, width, height);
   const density =
     lighting.night * (0.8 - lighting.moon * 0.13 + lighting.storm * 0.1);

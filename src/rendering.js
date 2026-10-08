@@ -1,3 +1,8 @@
+import {
+  seasonAtDay,
+  seasonalAppearance,
+  seasonalSeaPalette,
+} from "./core/seasons.js";
 import { PORT_NAMES, LAND_NAMES } from "./names.js";
 import {
   expandPolygon,
@@ -28,12 +33,14 @@ import {
   waxDrops,
 } from "./core/chart-decor.js";
 import { createRadialStamp } from "./radial-stamp.js";
+import { GRAPHICS_PROFILES } from "./core/graphics-quality.js";
 import { weatherAppearance } from "./core/weather.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
 import {
   drawTerrainIllustration,
   terrainPalette,
-} from "./terrain-rendering.js?v=3";
+  seasonalLandColor,
+} from "./terrain-rendering.js?v=4";
 export {
   drawMerchantShip,
   drawShip,
@@ -297,9 +304,10 @@ function drawWeatherClouds(
   vh,
   time,
   cullOffscreen = false,
+  particleScale = 1,
 ) {
   if (cloud <= 0.01) return;
-  const count = Math.round(8 + cloud * 9 + storm * 11);
+  const count = Math.round((8 + cloud * 9 + storm * 11) * particleScale);
   // Clouds roll across the whole screen with the wind — fast enough to read
   // as motion even when the wind blows mostly north/south, and over the
   // player's circle of visibility rather than only at the horizon.
@@ -424,12 +432,12 @@ function drawCloudShadows(c, cloud, storm, windAngle, vw, vh, time) {
   c.restore();
 }
 
-function drawRainImpacts(c, rain, vw, vh, time) {
+function drawRainImpacts(c, rain, vw, vh, time, particleScale = 1) {
   if (rain < 0.15) return;
   c.save();
   c.strokeStyle = `rgba(225,237,228,${rain * 0.2})`;
   c.lineWidth = 0.9;
-  const count = Math.round(12 + rain * 35);
+  const count = Math.round((12 + rain * 35) * particleScale);
   for (let index = 0; index < count; index++) {
     const phase = (time * 0.0017 + weatherRand(index, 40)) % 1;
     const x = weatherRand(index, 41) * vw;
@@ -442,7 +450,7 @@ function drawRainImpacts(c, rain, vw, vh, time) {
   c.restore();
 }
 
-function drawWeatherFog(c, fog, vw, vh, time) {
+function drawWeatherFog(c, fog, vw, vh, time, particleScale = 1) {
   if (fog <= 0.01) return;
   c.save();
   // Flat wash mutes the whole scene into murk.
@@ -464,7 +472,7 @@ function drawWeatherFog(c, fog, vw, vh, time) {
   c.fillStyle = edge;
   c.fillRect(0, 0, vw, vh);
   // Drifting low fog banks rolling across the water.
-  const count = 4 + Math.round(fog * 5);
+  const count = Math.round((4 + Math.round(fog * 5)) * particleScale);
   const baseAlpha = fog;
   const span = vw + 500;
   const inheritedAlpha = c.globalAlpha;
@@ -577,9 +585,18 @@ function drawDirectionalFog(
   c.restore();
 }
 
-function drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time) {
+function drawWeatherRain(
+  c,
+  rain,
+  windAngle,
+  windStrength,
+  vw,
+  vh,
+  time,
+  particleScale = 1,
+) {
   if (rain <= 0.01) return;
-  const count = Math.round(rain * 330);
+  const count = Math.round(rain * 330 * particleScale);
   const slant = Math.cos(windAngle) * (6 + windStrength * 7 + rain * 6);
   const len = 11 + rain * 16;
   const fall = 0.55 + rain * 1.1;
@@ -599,11 +616,14 @@ function drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time) {
   c.restore();
 }
 
-function drawWeatherLightning(c, lightning, vw, vh, time) {
+// `bolt` comes from a graphics profile: intervalScale spaces strikes further
+// apart, segments simplify the jag, and glow drops the expensive shadow pass.
+function drawWeatherLightning(c, lightning, vw, vh, time, bolt) {
   if (lightning <= 0.01) {
     lightningState.flashUntil = 0;
     return;
   }
+  const pace = bolt || GRAPHICS_PROFILES.high.lightning;
   const s = lightningState;
   if (time >= s.nextStrike) {
     s.flashUntil = time + 150 + lightning * 90;
@@ -611,7 +631,11 @@ function drawWeatherLightning(c, lightning, vw, vh, time) {
     s.boltSeed = (time | 0) & 0xffff;
     // Heavier storms throw strikes more often.
     s.nextStrike =
-      time + 2400 + weatherRand(time | 0, 32) * (5600 - lightning * 3000);
+      time +
+      2400 * pace.intervalScale +
+      weatherRand(time | 0, 32) *
+        (5600 - lightning * 3000) *
+        pace.intervalScale;
   }
   if (time >= s.flashUntil) return;
   const remain = (s.flashUntil - time) / 240;
@@ -623,12 +647,14 @@ function drawWeatherLightning(c, lightning, vw, vh, time) {
   if (boltA > 0.05) {
     c.strokeStyle = `rgba(236,242,255,${boltA})`;
     c.lineWidth = 2.2;
-    c.shadowColor = "rgba(214,226,255,0.95)";
-    c.shadowBlur = 22;
+    if (pace.glow) {
+      c.shadowColor = "rgba(214,226,255,0.95)";
+      c.shadowBlur = 22;
+    }
     c.beginPath();
     let bx = s.boltX;
     c.moveTo(bx, 0);
-    const segs = 9;
+    const segs = pace.segments;
     for (let i = 1; i <= segs; i++) {
       bx += (weatherRand(i + s.boltSeed, 41) - 0.5) * 90;
       c.lineTo(bx, (vh / segs) * i);
@@ -704,6 +730,9 @@ export function drawWeatherEffects(c, opts) {
   const aheadVisibilityKm = opts.aheadVisibilityKm;
   const asternVisibilityKm = opts.asternVisibilityKm;
   const headingAngle = opts.headingAngle || 0;
+  const particleScale = Number.isFinite(opts.particleScale)
+    ? Math.max(0, Math.min(1, opts.particleScale))
+    : 1;
 
   let weather =
     opts.front ?? weatherCache.calculate(opts.name, roughness, visibilityKm);
@@ -741,8 +770,9 @@ export function drawWeatherEffects(c, opts) {
     vh,
     time,
     Boolean(opts.softLayerScale),
+    particleScale,
   );
-  drawWeatherFog(soft, fog, vw, vh, time);
+  drawWeatherFog(soft, fog, vw, vh, time, particleScale);
   drawDirectionalFog(
     soft,
     aheadVisibilityKm,
@@ -752,11 +782,27 @@ export function drawWeatherEffects(c, opts) {
     vh,
   );
   if (soft !== c) c.drawImage(softWeatherCanvas, 0, 0, vw, vh);
-  drawWeatherRain(c, rain, windAngle, windStrength, vw, vh, time);
-  drawRainImpacts(c, rain, vw, vh, time);
+  drawWeatherRain(
+    c,
+    rain,
+    windAngle,
+    windStrength,
+    vw,
+    vh,
+    time,
+    particleScale,
+  );
+  drawRainImpacts(c, rain, vw, vh, time, particleScale);
   drawSunbreak(c, weather.sunbreak || 0, opts.daylight ?? 1, vw, vh, time);
   // A frozen animation clock must not leave a lightning flash stuck on screen.
-  drawWeatherLightning(c, opts.reducedMotion ? 0 : lightning, vw, vh, time);
+  drawWeatherLightning(
+    c,
+    opts.reducedMotion ? 0 : lightning,
+    vw,
+    vh,
+    time,
+    opts.lightning,
+  );
 }
 
 export function drawSceneLightWash(c, lighting, width, height) {
@@ -800,6 +846,9 @@ export function createMapRendering({
   mapLayer.height = WORLD.h;
   const m = mapLayer.getContext("2d");
   const riverPaths = [];
+  const terrainPlans = new Map();
+  let seasonDay = game.day;
+  let seasonKey = seasonAtDay(seasonDay).key;
 
   // A lower-resolution persistent exploration mask keeps fog rendering fast on
   // mobile while retaining a soft, hand-painted edge on the parchment chart.
@@ -1337,9 +1386,10 @@ export function createMapRendering({
     const base = c.createLinearGradient(0, 0, 0, WORLD.h);
     // Desaturated verdigris pigment, with the same paper grain and engraved
     // marks as the land. The sea reads as a watercolor wash on the atlas.
-    base.addColorStop(0, "#a6bfad");
-    base.addColorStop(0.5, "#729f98");
-    base.addColorStop(1, "#527f7d");
+    const sea = seasonalSeaPalette(seasonDay);
+    base.addColorStop(0, sea[0]);
+    base.addColorStop(0.5, sea[1]);
+    base.addColorStop(1, sea[2]);
     c.fillStyle = base;
     c.fillRect(0, 0, WORLD.w, WORLD.h);
     const rnd = seeded(9917);
@@ -1882,8 +1932,20 @@ export function createMapRendering({
         const top = Math.min(...poly.map(([, y]) => y));
         const bottom = Math.max(...poly.map(([, y]) => y));
         const pigment = m.createLinearGradient(0, top, 0, bottom);
-        pigment.addColorStop(0, terrainPalette(terrainBiome(l.name)).paper);
-        pigment.addColorStop(1, l.color);
+        pigment.addColorStop(
+          0,
+          terrainPalette(
+            terrainBiome(l.name),
+            seasonalAppearance(seasonDay, terrainBiome(l.name)),
+          ).paper,
+        );
+        pigment.addColorStop(
+          1,
+          seasonalLandColor(
+            l.color,
+            seasonalAppearance(seasonDay, terrainBiome(l.name)),
+          ),
+        );
         m.fillStyle = pigment;
         m.fill();
         m.strokeStyle = "#3b2b1a";
@@ -1970,11 +2032,14 @@ export function createMapRendering({
           rx: Math.max(45, l.name.length * 7),
           ry: 23,
         });
-      const terrain = planTerrainIllustration(l.poly, 1349 + li * 97, {
-        mountainous: mountainLands.has(l.name),
-        biome: terrainBiome(l.name),
-        clearings,
-      });
+      const terrain =
+        terrainPlans.get(li) ??
+        planTerrainIllustration(l.poly, 1349 + li * 97, {
+          mountainous: mountainLands.has(l.name),
+          biome: terrainBiome(l.name),
+          clearings,
+        });
+      terrainPlans.set(li, terrain);
       riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
       m.save();
       wrappedClipPath(m, l.poly);
@@ -1982,7 +2047,11 @@ export function createMapRendering({
       for (const offset of polygonWorldOffsets(l.poly)) {
         m.save();
         m.translate(offset, 0);
-        drawTerrainIllustration(m, terrain);
+        drawTerrainIllustration(
+          m,
+          terrain,
+          seasonalAppearance(seasonDay, terrain.biome),
+        );
         m.restore();
       }
       m.restore();
@@ -2261,6 +2330,16 @@ export function createMapRendering({
     riverPaths,
     minimapFog,
     minimapFogCtx,
+    // Seasonal pigment steps reuse the canvas and deterministic terrain plans.
+    updateSeason(day = game.day) {
+      if (seasonDay === day) return false;
+      seasonDay = day;
+      const key = seasonAtDay(day).key;
+      if (seasonKey === key) return false;
+      seasonKey = key;
+      buildMapLayer();
+      return true;
+    },
     // Re-bakes the sheet with the weathered-skin photograph applied. Passing
     // the same or a missing texture is a no-op, so late or failed fetches
     // leave the procedural parchment untouched.

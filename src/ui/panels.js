@@ -1,3 +1,4 @@
+import { seasonAtDay, SEASON_LENGTH } from "../core/seasons.js";
 import { goodsIllustration } from "./port-art.js?v=4";
 import { paginateMarket } from "./port-workspace.js?v=5";
 import { planMarketOrder } from "../core/market-order.js";
@@ -249,7 +250,17 @@ export function updateHud() {
     hullCondition < 25 ? "critical" : hullCondition < 60 ? "worn" : "",
   );
   updateElementProperty(ui.coins, "textContent", game.coins + " crowns");
-  updateElementProperty(ui.day, "textContent", "Day " + game.day);
+  const calendar = seasonAtDay(game.day);
+  updateElementProperty(
+    ui.day,
+    "textContent",
+    `${calendar.label} · Day ${game.day}`,
+  );
+  updateElementProperty(
+    ui.day,
+    "title",
+    `Year ${calendar.year} · ${calendar.label}, day ${calendar.dayOfSeason} of ${SEASON_LENGTH}. Seasons change as voyage days pass.`,
+  );
   updateElementProperty(
     ui.hold,
     "textContent",
