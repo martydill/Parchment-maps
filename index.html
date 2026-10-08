@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=28" />
+    <link rel="stylesheet" href="./styles.css?v=29" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -386,6 +386,30 @@
     </div>
 
     <div
+      id="portArrival"
+      class="port-arrival"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portArrivalName"
+      hidden
+    >
+      <canvas
+        id="portArrivalScene"
+        width="1440"
+        height="760"
+        aria-hidden="true"
+      ></canvas>
+      <div class="port-arrival-caption">
+        <span>Making harbor</span>
+        <h2 id="portArrivalName"></h2>
+        <p>Your crew brings the ship alongside.</p>
+      </div>
+      <button id="skipPortArrival" type="button" class="parchment">
+        Skip arrival
+      </button>
+    </div>
+
+    <div
       id="portPanel"
       role="dialog"
       aria-modal="true"
@@ -532,6 +556,15 @@
             </div>
           </section>
           <section class="port-panel" data-tab="harbor" role="tabpanel">
+            <div class="harbor-scene dock-harbor-scene">
+              <canvas
+                id="portHarborIllustration"
+                width="1440"
+                height="760"
+                aria-label="Your ship in the harbor"
+              ></canvas>
+              <span class="dock-harbor-caption">Alongside the quay</span>
+            </div>
             <div class="port-section-heading">
               <h3>The waterfront</h3>
               <nav
@@ -1352,6 +1385,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=65"></script>
+    <script type="module" src="./src/app.js?v=67"></script>
   </body>
 </html>

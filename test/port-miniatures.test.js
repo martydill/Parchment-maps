@@ -4,8 +4,11 @@ import {
   createPortMiniatureCache,
   drawPortActivity,
   drawPortMiniature,
+  drawPortScene,
   hasPortMiniature,
 } from "../src/port-miniatures.js";
+import { sceneLighting } from "../src/core/lighting.js";
+import { portArrivalFrame } from "../src/core/port-scene.js";
 import { PORT_NAMES } from "../src/names.js";
 
 function canvasContext() {
@@ -13,6 +16,9 @@ function canvasContext() {
   const coordinates = [];
   const context = new Proxy(
     {
+      createLinearGradient() {
+        return { addColorStop() {} };
+      },
       globalAlpha: 1,
       quadraticCurveTo(...values) {
         coordinates.push(values);
@@ -129,6 +135,25 @@ test("harbor architecture plates reuse artwork and refresh when development or h
     assert.ok(developed - first > first);
     cache.draw(context, PORT_NAMES.velquorin, { level: 3 }, Math.PI);
     assert.ok(canvases[0].fills.length > developed);
+    const beforeNight = canvases[0].fills.length;
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 3 },
+      Math.PI,
+      sceneLighting(0),
+    );
+    assert.ok(canvases[0].fills.length > beforeNight);
+    assert.ok(canvases[0].fills.includes("rgba(12,24,48,0.48)"));
+    const nightFills = canvases[0].fills.length;
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 3 },
+      Math.PI,
+      sceneLighting(0.001),
+    );
+    assert.equal(canvases[0].fills.length, nightFills);
     assert.equal(
       canvases.length,
       1,
@@ -140,6 +165,76 @@ test("harbor architecture plates reuse artwork and refresh when development or h
     if (oldDocument === undefined) delete globalThis.document;
     else globalThis.document = oldDocument;
   }
+});
+
+test("port scenes pass inherited lighting to architecture and ship with finite depth transforms", () => {
+  const light = sceneLighting(0);
+  const translations = [];
+  const { context, coordinates, fills } = canvasContext();
+  context.translate = (...values) => translations.push(values);
+  const plates = [];
+  const ships = [];
+  const options = {
+    width: 1440,
+    height: 760,
+    name: PORT_NAMES.orvessaQuay,
+    time: 1500,
+    lighting: light,
+    pointer: { x: 1, y: -1 },
+    architecture: {
+      draw(...args) {
+        plates.push(args);
+      },
+    },
+    ship: portArrivalFrame(1500).ship,
+    drawPlayerShip(...args) {
+      ships.push(args);
+    },
+  };
+  assert.equal(drawPortScene(context, options), true);
+  assert.equal(plates[0][4], light);
+  assert.equal(ships[0][2], light);
+  assert.equal(ships[0][3], 1500);
+  assert.ok(ships[0][1].x > 0);
+  assert.ok(
+    translations.some(
+      ([x, y]) => Math.abs(x - 7.2) < 1e-9 && Math.abs(y + 4.2) < 1e-9,
+    ),
+  );
+  assert.ok(translations.some(([x, y]) => x === 24 && y === -14));
+  assert.ok(coordinates.flat().every(Number.isFinite));
+  assert.ok(fills.includes("#ffd08b"));
+  translations.length = 0;
+  drawPortScene(context, { ...options, reducedMotion: true });
+  assert.equal(ships[1][3], 0);
+  assert.ok(translations[0].every((value) => value === 0));
+  assert.equal(drawPortScene(context, { ...options, name: "Unknown" }), false);
+  drawPortScene(context, {
+    ...options,
+    ship: undefined,
+    lighting: sceneLighting(0.5),
+  });
+  assert.equal(ships.length, 2);
+});
+
+test("miniature light resets between menu and default chart rendering", () => {
+  const day = canvasContext();
+  const night = canvasContext();
+  const restored = canvasContext();
+  drawPortMiniature(day.context, PORT_NAMES.orvessaQuay);
+  drawPortMiniature(
+    night.context,
+    PORT_NAMES.orvessaQuay,
+    {},
+    undefined,
+    sceneLighting(0),
+  );
+  drawPortMiniature(restored.context, PORT_NAMES.orvessaQuay);
+  assert.notDeepEqual(day.fills, night.fills);
+  assert.deepEqual(
+    day.fills.filter((fill) => typeof fill === "string"),
+    restored.fills.filter((fill) => typeof fill === "string"),
+  );
 });
 
 test("each named harbor keeps deterministic, distinct architectural geometry", () => {

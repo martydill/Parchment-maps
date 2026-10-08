@@ -1,3 +1,5 @@
+import { sceneLighting } from "./core/lighting.js";
+import { portLayerOffset, portScenePalette } from "./core/port-scene.js";
 import { harborProfile } from "./core/harbors.js";
 import { drawHarborBoats, drawPortActivity } from "./port-miniatures.js";
 
@@ -64,7 +66,17 @@ function compass(c, x, y, radius) {
 export function drawHarborPlate(
   surface,
   port,
-  { art, evolution = {}, time = 0, windAngle = 0 },
+  {
+    art,
+    evolution = {},
+    time = 0,
+    windAngle = 0,
+    lighting = sceneLighting(),
+    pointer = {},
+    reducedMotion = false,
+    ship,
+    drawPlayerShip,
+  },
 ) {
   const c = surface.getContext("2d");
   const width = surface.width,
@@ -74,12 +86,21 @@ export function drawHarborPlate(
     0,
   );
   const profile = harborProfile(port.name);
+  const palette = portScenePalette(lighting);
+  const clock = reducedMotion ? 0 : time;
+  const layer = (depth, draw) => {
+    const offset = portLayerOffset(pointer, depth, reducedMotion);
+    c.save();
+    c.translate((offset.x * width) / 720, (offset.y * height) / 380);
+    draw();
+    c.restore();
+  };
   c.clearRect(0, 0, width, height);
   c.save();
   const paper = c.createLinearGradient(0, 0, width, height);
-  paper.addColorStop(0, "#f3e7c9");
-  paper.addColorStop(0.5, "#eaddbb");
-  paper.addColorStop(1, "#e5d5b0");
+  paper.addColorStop(0, palette.paperSky);
+  paper.addColorStop(0.5, palette.paperHorizon);
+  paper.addColorStop(1, palette.paperSea);
   c.fillStyle = paper;
   c.fillRect(0, 0, width, height);
   // Paper flecks remain fixed to the page while flags and workers animate.
@@ -89,101 +110,142 @@ export function drawHarborPlate(
     c.fillStyle = mark % 3 ? "rgba(94,70,38,.035)" : "rgba(255,249,222,.25)";
     c.fillRect(x, y, 0.5 + noise(mark, 5) * 2, 0.5 + noise(mark, 9));
   }
-  for (let ridge = 0; ridge < 3; ridge++) {
-    c.beginPath();
-    c.moveTo(0, height * 0.63);
-    for (let x = 0; x <= width + 16; x += 16) {
-      const y =
-        height * (0.51 + ridge * 0.042) +
-        Math.sin((x / width) * 9 + seed + ridge * 0.6) * height * 0.045 +
-        Math.sin((x / width) * 23 + ridge) * height * 0.012;
-      c.lineTo(x, y);
-    }
-    c.lineTo(width, height * 0.75);
-    c.lineTo(0, height * 0.75);
-    c.closePath();
-    c.fillStyle = [
-      "rgba(143,153,119,.10)",
-      "rgba(143,153,119,.13)",
-      "rgba(143,153,119,.17)",
-    ][ridge];
-    c.fill();
-    c.strokeStyle = "rgba(114,112,80,.18)";
-    c.lineWidth = 0.8;
-    c.stroke();
-  }
-  const coastY = height * 0.69;
-  const sea = c.createLinearGradient(0, coastY - 24, 0, height);
-  sea.addColorStop(0, "rgba(113,152,143,0)");
-  sea.addColorStop(0.18, "rgba(113,152,143,.24)");
-  sea.addColorStop(1, "rgba(113,152,143,.08)");
-  c.fillStyle = sea;
-  c.beginPath();
-  c.moveTo(0, coastY);
-  c.bezierCurveTo(
-    width * 0.25,
-    coastY - height * 0.03,
-    width * 0.3,
-    height * 0.84,
-    width * 0.5,
-    coastY + height * 0.06,
-  );
-  c.bezierCurveTo(
-    width * 0.75,
-    coastY,
-    width * 0.8,
-    coastY - height * 0.06,
-    width,
-    coastY - height * 0.015,
-  );
-  c.lineTo(width, height);
-  c.lineTo(0, height);
-  c.closePath();
-  c.fill();
-  c.save();
-  c.clip();
-  for (let row = 0; row < 20; row++) {
-    for (let col = 0; col < 18; col++) {
-      const random = noise(row * 20 + col, seed);
-      const x = ((col + random * 0.5) * width) / 18;
-      const y = coastY + row * height * 0.015 + random * 5;
-      c.strokeStyle =
-        row % 3 ? "rgba(78,112,105,.22)" : "rgba(255,248,216,.65)";
-      c.lineWidth = row % 3 ? 0.65 : 1.1;
+  layer(0.3, () => {
+    for (let ridge = 0; ridge < 3; ridge++) {
       c.beginPath();
-      c.moveTo(x, y);
-      c.bezierCurveTo(x + 8, y - 1.5, x + 14, y + 1.5, x + 22 + random * 16, y);
+      c.moveTo(0, height * 0.63);
+      for (let x = 0; x <= width + 16; x += 16) {
+        const y =
+          height * (0.51 + ridge * 0.042) +
+          Math.sin((x / width) * 9 + seed + ridge * 0.6) * height * 0.045 +
+          Math.sin((x / width) * 23 + ridge) * height * 0.012;
+        c.lineTo(x, y);
+      }
+      c.lineTo(width, height * 0.75);
+      c.lineTo(0, height * 0.75);
+      c.closePath();
+      c.fillStyle = [
+        "rgba(143,153,119,.10)",
+        "rgba(143,153,119,.13)",
+        "rgba(143,153,119,.17)",
+      ][ridge];
+      c.fill();
+      c.strokeStyle = "rgba(114,112,80,.18)";
+      c.lineWidth = 0.8;
       c.stroke();
     }
-  }
-  c.restore();
-  const scale = Math.min(width / 205, height / 175);
-  c.save();
-  c.translate(width * 0.5, height * 0.57);
-  c.scale(scale, scale);
-  art.draw(c, port.name, evolution);
-  drawPortActivity(c, port.name, time, 2, windAngle, undefined, evolution);
-  c.restore();
-  for (const [x, y, outward, boatScale] of [
-    [0.19, 0.78, 1, 1],
-    [0.77, 0.76, -1, 0.8],
-  ]) {
+  });
+  layer(0.7, () => {
+    const coastY = height * 0.69;
+    const sea = c.createLinearGradient(0, coastY - 24, 0, height);
+    sea.addColorStop(0, "rgba(113,152,143,0)");
+    sea.addColorStop(0.18, "rgba(113,152,143,.24)");
+    sea.addColorStop(1, "rgba(113,152,143,.08)");
+    c.fillStyle = sea;
+    c.beginPath();
+    c.moveTo(0, coastY);
+    c.bezierCurveTo(
+      width * 0.25,
+      coastY - height * 0.03,
+      width * 0.3,
+      height * 0.84,
+      width * 0.5,
+      coastY + height * 0.06,
+    );
+    c.bezierCurveTo(
+      width * 0.75,
+      coastY,
+      width * 0.8,
+      coastY - height * 0.06,
+      width,
+      coastY - height * 0.015,
+    );
+    c.lineTo(width, height);
+    c.lineTo(0, height);
+    c.closePath();
+    c.fill();
     c.save();
-    c.translate(width * x, height * y);
-    c.scale(scale * boatScale * 0.65, scale * boatScale * 0.65);
-    drawHarborBoats(
+    c.clip();
+    for (let row = 0; row < 20; row++) {
+      for (let col = 0; col < 18; col++) {
+        const random = noise(row * 20 + col, seed);
+        const x = ((col + random * 0.5) * width) / 18;
+        const y = coastY + row * height * 0.015 + random * 5;
+        c.strokeStyle =
+          row % 3 ? "rgba(78,112,105,.22)" : "rgba(255,248,216,.65)";
+        c.lineWidth = row % 3 ? 0.65 : 1.1;
+        c.beginPath();
+        c.moveTo(x, y);
+        c.bezierCurveTo(
+          x + 8,
+          y - 1.5,
+          x + 14,
+          y + 1.5,
+          x + 22 + random * 16,
+          y,
+        );
+        c.stroke();
+      }
+    }
+    c.restore();
+  });
+  const scale = Math.min(width / 205, height / 175);
+  layer(1, () => {
+    c.save();
+    c.translate(width * 0.5, height * 0.57);
+    c.scale(scale, scale);
+    art.draw(c, port.name, evolution, undefined, lighting);
+    drawPortActivity(
       c,
       port.name,
-      time,
+      clock,
       2,
       windAngle,
-      outward,
-      0,
       undefined,
       evolution,
+      lighting,
     );
     c.restore();
-  }
+  });
+  layer(1.7, () => {
+    for (const [x, y, outward, boatScale] of [
+      [0.19, 0.78, 1, 1],
+      [0.77, 0.76, -1, 0.8],
+    ]) {
+      c.save();
+      c.translate(width * x, height * y);
+      c.scale(scale * boatScale * 0.65, scale * boatScale * 0.65);
+      drawHarborBoats(
+        c,
+        port.name,
+        clock,
+        2,
+        windAngle,
+        outward,
+        0,
+        undefined,
+        evolution,
+        lighting,
+      );
+      c.restore();
+    }
+  });
+  if (ship && drawPlayerShip)
+    layer(1.4, () => {
+      drawPlayerShip(
+        c,
+        {
+          ...ship,
+          x:
+            ship.x * width +
+            ((ship.x + 0.12) / 0.81) * (height * 0.28 - width * 0.19),
+          y: (ship.y - 0.18) * height,
+          scale: (ship.scale * height) / 380,
+        },
+        lighting,
+        clock,
+      );
+    });
   compass(c, width * 0.1, height * 0.26, height * 0.057);
   c.strokeStyle = "rgba(116,91,53,.32)";
   c.lineWidth = 0.8;

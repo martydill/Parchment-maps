@@ -90,3 +90,39 @@ test("atlas plates accept older saves without evolution and unknown harbor names
   assert.equal(surface.depth(), 0);
   assert.ok(surface.geometry.every(Number.isFinite));
 });
+
+test("merged atlas plates inherit scene light and parallax while preserving arrival and reduced motion", async () => {
+  const { sceneLighting } = await import("../src/core/lighting.js");
+  const { portArrivalFrame } = await import("../src/core/port-scene.js");
+  const light = sceneLighting(0.73);
+  const surface = recordingSurface(1440, 760);
+  const context = surface.getContext();
+  const shifts = [];
+  context.translate = (...values) => shifts.push(values);
+  const plates = [];
+  const ships = [];
+  const options = {
+    art: { draw: (...args) => plates.push(args) },
+    lighting: light,
+    pointer: { x: 1, y: -1 },
+    ship: portArrivalFrame(1600).ship,
+    drawPlayerShip: (...args) => ships.push(args),
+    time: 1600,
+  };
+  drawHarborPlate(surface, { name: PORT_NAMES.orvessaQuay }, options);
+  assert.equal(plates[0][4], light);
+  assert.equal(ships[0][2], light);
+  assert.equal(ships[0][3], 1600);
+  assert.ok(shifts.some(([x, y]) => x === 24 && y === -14));
+  assert.ok(surface.geometry.every(Number.isFinite));
+  assert.equal(surface.depth(), 0);
+  shifts.length = 0;
+  drawHarborPlate(
+    surface,
+    { name: PORT_NAMES.orvessaQuay },
+    { ...options, reducedMotion: true },
+  );
+  assert.equal(ships[1][3], 0);
+  assert.ok(shifts[0].every((value) => value === 0));
+  assert.equal(surface.depth(), 0);
+});

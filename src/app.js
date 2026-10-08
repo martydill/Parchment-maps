@@ -1,4 +1,4 @@
-import { drawHarborPlate } from "./harbor-plate.js";
+import { drawHarborPlate } from "./harbor-plate.js?v=2";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -344,10 +344,12 @@ import {
 } from "./core/lighting.js";
 import {
   drawHarborBoats,
+  drawPortScene,
   createPortMiniatureCache,
   drawPortActivity,
   hasPortMiniature,
-} from "./port-miniatures.js?v=2";
+} from "./port-miniatures.js?v=4";
+import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
 import {
@@ -3849,6 +3851,9 @@ function renderHarborPresentation() {
   document.getElementById("portCondition").textContent =
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
+  const harbor = document.getElementById("portHarborIllustration");
+  harbor.setAttribute("aria-label", `Your ship berthed at ${currentPort.name}`);
+  drawMenuPort(harbor, currentPort, performance.now());
   renderDepartureReadiness();
 }
 
@@ -4123,44 +4128,221 @@ function renderTownOverview(port) {
   drawMenuPort(document.getElementById("townIllustration"), port, 0);
 }
 
-// City and atlas panels share the chart's architecture and regional development.
-function drawMenuPort(surface, port, time) {
-  drawHarborPlate(surface, port, {
-    art: menuPortArt,
-    evolution: portEvolution(game.regionalEconomy[port.name]),
-    time: reducedMotion.matches ? 0 : time,
-    windAngle: game.windAngle,
+// Menu artwork shares the chart's architecture and reflects actual regional
+// development. Unillustrated ports use a matching architectural archetype.
+const portScenePointers = new WeakMap();
+for (const id of [
+  "portCityIllustration",
+  "portHarborIllustration",
+  "townIllustration",
+]) {
+  const surface = document.getElementById(id);
+  const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
+  portScenePointers.set(surface, pointer);
+  surface.parentElement.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch" || reducedMotion.matches) return;
+    const rect = surface.getBoundingClientRect();
+    pointer.targetX = clamp(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -1,
+      1,
+    );
+    pointer.targetY = clamp(
+      ((event.clientY - rect.top) / rect.height) * 2 - 1,
+      -1,
+      1,
+    );
   });
+  surface.parentElement.addEventListener("pointerleave", () => {
+    pointer.targetX = pointer.targetY = 0;
+  });
+}
+
+let portArrival = null;
+const arrivalOverlay = document.getElementById("portArrival");
+const arrivalCanvas = document.getElementById("portArrivalScene");
+const arrivalSkip = document.getElementById("skipPortArrival");
+
+function drawMenuPort(surface, port, time, arrivalShip) {
+  if (surface.id === "portHarborIllustration") {
+    const rect = surface.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const height = Math.round((surface.width * rect.height) / rect.width);
+      if (surface.height !== height) surface.height = height;
+    }
+  }
+  const pointer = portScenePointers.get(surface);
+  const lighting = sceneLighting(
+    sceneTimeOfDay(),
+    currentWeather().roughness,
+    game.day,
+  );
+  const resources = port.resources.join(" ").toLowerCase();
+  const name = hasPortMiniature(port.name)
+    ? port.name
+    : /iron|coal|ore|mine/.test(resources)
+      ? PORT_NAMES.drazhOvek
+      : /timber|grain|field/.test(resources)
+        ? PORT_NAMES.vesperport
+        : /pearl|fish|glass/.test(resources)
+          ? PORT_NAMES.mirravel
+          : PORT_NAMES.heliovar;
+  const options = {
+    width: surface.width,
+    height: surface.height,
+    name,
+    time,
+    lighting,
+    evolution: portEvolution(game.regionalEconomy[port.name]),
+    windAngle: game.windAngle,
+    pointer,
+    reducedMotion: reducedMotion.matches,
+    architecture: menuPortArt,
+    ship:
+      arrivalShip ??
+      (currentPort === port
+        ? portArrivalFrame(PORT_ARRIVAL_DURATION).ship
+        : undefined),
+    drawPlayerShip(c, pose, light, clock) {
+      c.save();
+      c.translate(pose.x, pose.y);
+      c.scale(pose.scale, pose.scale);
+      drawShip(
+        c,
+        0,
+        0,
+        pose.angle,
+        game.windAngle,
+        game.windStrength,
+        game.shipUpgrades.activeClass,
+        2,
+        {
+          time: clock / 1000,
+          roughness: currentWeather().roughness * 0.2,
+          speed: pose.speed,
+          anchored: pose.speed === 0,
+          reducedMotion: reducedMotion.matches,
+          lighting: light,
+        },
+      );
+      c.restore();
+    },
+  };
+  const atlas =
+    surface.id === "portCityIllustration" ||
+    surface.id === "townIllustration" ||
+    (surface === arrivalCanvas &&
+      document
+        .querySelector('#portPanel .port-panel[data-tab="city"]')
+        .classList.contains("active"));
+  if (atlas) drawHarborPlate(surface, port, { ...options, art: menuPortArt });
+  else drawPortScene(surface.getContext("2d"), options);
+}
+
+function finishPortArrival(restoreFocus = true) {
+  if (!portArrival) return;
+  portArrival = null;
+  arrivalOverlay.hidden = true;
+  const panel = document.getElementById("portPanel");
+  panel.inert = false;
+  panel.classList.remove("port-arriving");
+  panel.style.removeProperty("--port-reveal");
+  drawMenuPort(
+    document.getElementById("portHarborIllustration"),
+    currentPort,
+    performance.now(),
+  );
+  if (restoreFocus) panel.querySelector(".port-tab.active").focus();
+}
+
+function startPortArrival() {
+  const panel = document.getElementById("portPanel");
+  if (reducedMotion.matches) {
+    panel.querySelector(".port-tab.active").focus();
+    return;
+  }
+  portArrival = { start: performance.now() };
+  panel.inert = true;
+  panel.classList.add("port-arriving");
+  panel.style.setProperty("--port-reveal", 0);
+  document.getElementById("portArrivalName").textContent = currentPort.name;
+  arrivalOverlay.hidden = false;
+  animatePortArrival(portArrival.start);
+  arrivalSkip.focus();
+}
+
+arrivalSkip.addEventListener("click", () => finishPortArrival());
+arrivalOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    finishPortArrival();
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    arrivalSkip.focus();
+  }
+});
+
+function animatePortArrival(now) {
+  if (!portArrival) return;
+  const frame = portArrivalFrame(
+    now - portArrival.start,
+    reducedMotion.matches,
+  );
+  if (frame.complete) {
+    finishPortArrival();
+    return;
+  }
+  const target = document.querySelector("#portPanel .port-panel.active canvas");
+  const destination = target.getBoundingClientRect();
+  const merge = frame.reveal;
+  Object.assign(arrivalCanvas.style, {
+    left: `${destination.left * merge}px`,
+    top: `${destination.top * merge}px`,
+    width: `${window.innerWidth * (1 - merge) + destination.width * merge}px`,
+    height: `${window.innerHeight * (1 - merge) + destination.height * merge}px`,
+    opacity: frame.opacity,
+  });
+  const bounds = arrivalCanvas.getBoundingClientRect();
+  const resolution = Math.min(
+    window.devicePixelRatio || 1,
+    1440 / bounds.width,
+    1100 / bounds.height,
+  );
+  const width = Math.round(bounds.width * resolution);
+  const height = Math.round(bounds.height * resolution);
+  if (arrivalCanvas.width !== width) arrivalCanvas.width = width;
+  if (arrivalCanvas.height !== height) arrivalCanvas.height = height;
+  drawMenuPort(arrivalCanvas, currentPort, now, frame.ship);
+  document
+    .getElementById("portPanel")
+    .style.setProperty("--port-reveal", merge);
+  arrivalOverlay.style.setProperty("--arrival-caption", 1 - merge);
 }
 
 let lastPortPanelFrame = 0;
 function animatePortPanels(now) {
-  if (reducedMotion.matches || now - lastPortPanelFrame < 100) return;
+  animatePortArrival(now);
+  if (now - lastPortPanelFrame < (reducedMotion.matches ? 250 : 33)) return;
+  const elapsed = Math.min(100, now - lastPortPanelFrame);
   lastPortPanelFrame = now;
-  if (
-    currentPort &&
-    document.getElementById("portPanel").style.display === "grid" &&
-    document
-      .querySelector('#portPanel .port-panel[data-tab="city"]')
-      .classList.contains("active")
-  )
-    drawMenuPort(
-      document.getElementById("portCityIllustration"),
-      currentPort,
-      now,
-    );
-  if (
-    selectedTown &&
-    document.getElementById("townPanel").style.display === "grid" &&
-    document
-      .querySelector('#townPanel .port-panel[data-tab="overview"]')
-      .classList.contains("active")
-  )
-    drawMenuPort(
-      document.getElementById("townIllustration"),
-      selectedTown,
-      now,
-    );
+  for (const [id, port] of [
+    ["portCityIllustration", currentPort],
+    ["portHarborIllustration", currentPort],
+    ["townIllustration", selectedTown],
+  ]) {
+    const surface = document.getElementById(id);
+    if (
+      !port ||
+      !surface.closest(".port-panel").classList.contains("active") ||
+      !surface.getClientRects().length
+    )
+      continue;
+    const pointer = portScenePointers.get(surface);
+    const mix = 1 - Math.exp(-elapsed / 110);
+    pointer.x += (pointer.targetX - pointer.x) * mix;
+    pointer.y += (pointer.targetY - pointer.y) * mix;
+    drawMenuPort(surface, port, now);
+  }
 }
 
 function openTownDetails(port, _fromChart = false) {
@@ -6404,7 +6586,7 @@ function applyCrewVoyageEvent(event) {
 }
 
 function openPort() {
-  if (!nearPort) return;
+  if (!nearPort || currentPort) return;
   document.getElementById("townPanel").style.display = "none";
   selectedTown = null;
   minimapWrap.style.display = "none";
@@ -6557,7 +6739,7 @@ function openPort() {
   // current events, and customs standing — is seen before trading.
   activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
-  document.querySelector("#portPanel .port-tab.active").focus();
+  startPortArrival();
   updateHud();
 }
 
@@ -7602,6 +7784,7 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
   saveGameState();
 });
 document.getElementById("closePort").addEventListener("click", () => {
+  finishPortArrival(false);
   const leaving = currentPort;
   document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
