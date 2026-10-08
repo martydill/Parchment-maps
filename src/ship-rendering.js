@@ -27,8 +27,8 @@ const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
 const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
 const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
 const reflectionInkStyle = createAlphaPalette("45,57,45", 0, 0.34, 128);
-const splinterPitchStyle = createAlphaPalette("46,30,17", 0.1, 0.62, 64);
-const splinterWoodStyle = createAlphaPalette("171,124,66", 0.1, 0.66, 64);
+const splinterPitchStyle = createAlphaPalette("46,30,17", 0.14, 0.72, 64);
+const splinterWoodStyle = createAlphaPalette("171,124,66", 0.14, 0.76, 64);
 const eddyGlowStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.3, 48);
 const eddySpeckStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.85, 96);
 const CONTACT_SHADOWS = [
@@ -812,8 +812,8 @@ function drawSplinterFlecks(
     c.ellipse(
       x,
       y,
-      fleck.size * 1.35,
-      fleck.size * 0.5,
+      fleck.size * 1.5,
+      fleck.size * 0.55,
       fleck.spin + wobble * 0.6,
       0,
       Math.PI * 2,

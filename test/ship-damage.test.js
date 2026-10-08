@@ -222,12 +222,12 @@ test("splinter flecks scale with hull damage and stay deterministic", () => {
   const few = splinterFlecks(9, 0.2);
   const many = splinterFlecks(9, 1);
   assert.ok(few.length > 0 && few.length < many.length);
-  assert.ok(many.length <= 14);
+  assert.ok(many.length <= 18);
   for (const fleck of many) {
     assert.ok([-1, 1].includes(fleck.side));
     assert.ok(fleck.along >= -0.5 && fleck.along <= 0.5);
     assert.ok(fleck.athwart >= 0.55 && fleck.athwart <= 1.3);
-    assert.ok(fleck.size >= 0.35 && fleck.size <= 1.1);
+    assert.ok(fleck.size >= 0.45 && fleck.size <= 1.3);
     assert.ok(fleck.phase >= 0 && fleck.phase < 1);
     assert.equal(typeof fleck.fresh, "boolean");
   }
@@ -248,7 +248,7 @@ test("smoke trails spawn puffs over time and prune expired ones", () => {
   const later = updateSmokeTrail(trail, { x: 12, y: 21, smoke: 1, time: 5.3 });
   assert.equal(later.length, 2);
   assert.equal(later[0].born, 5);
-  assert.equal(later[1].born, 5.2);
+  assert.equal(later[1].born, 5.16);
   assert.ok(later[1].strength > 0.55 && later[1].strength <= 1);
 });
 

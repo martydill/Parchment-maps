@@ -12,16 +12,16 @@ export const DAMAGE_SPLINTER_THRESHOLD = 0.18;
 export const DAMAGE_SPLINTER_RANGE = 0.5;
 export const DAMAGE_SMOKE_THRESHOLD = 0.72;
 export const DAMAGE_SMOKE_RANGE = 0.23;
-export const DAMAGE_MAX_HEEL = 0.15;
-export const DAMAGE_MAX_SETTLE = 1.8;
+export const DAMAGE_MAX_HEEL = 0.18;
+export const DAMAGE_MAX_SETTLE = 2.2;
 
 // Fresh canvas patches fade out over this many days after a repair.
 export const REPAIR_PATCH_DAYS = 8;
 
 // Thin critical smoke. Times are seconds of rendered animation time.
 export const SMOKE_PUFF_LIFE = 3.4;
-export const SMOKE_SPAWN_INTERVAL = 0.2;
-export const SMOKE_MAX_PUFFS = 16;
+export const SMOKE_SPAWN_INTERVAL = 0.16;
+export const SMOKE_MAX_PUFFS = 18;
 export const SMOKE_RISE = 6.5;
 export const SMOKE_DRIFT = 26;
 
@@ -204,7 +204,7 @@ export function sailTearLayout(seed, tear, grid = SAIL_TEAR_GRID) {
 
 // Wood chips floating in the water around a holed hull. Positions are
 // deterministic; the renderer streams them slowly aft with animation time.
-export function splinterFlecks(seed, splinters, count = 14) {
+export function splinterFlecks(seed, splinters, count = 18) {
   const total = Math.round(count * clamp(splinters, 0, 1));
   const flecks = [];
   for (let index = 0; index < total; index++) {
@@ -214,7 +214,7 @@ export function splinterFlecks(seed, splinters, count = 14) {
       athwart: 0.55 + damageNoise(seed, 140 + index) * 0.75,
       phase: damageNoise(seed, 160 + index),
       spin: damageNoise(seed, 180 + index) * Math.PI * 2,
-      size: 0.35 + damageNoise(seed, 200 + index) * 0.75,
+      size: 0.45 + damageNoise(seed, 200 + index) * 0.85,
       fresh: damageNoise(seed, 220 + index) < 0.4,
     });
   }
@@ -278,7 +278,7 @@ export function smokePuffRender(
     x: puff.x + Math.cos(windAngle) * drift,
     y: puff.y + Math.sin(windAngle) * drift,
     z: age * SMOKE_RISE,
-    radius: 1.5 + age * 3.7,
-    alpha: 0.46 * clamp(fade, 0, 1) * puff.strength,
+    radius: 1.5 + age * 4.3,
+    alpha: 0.55 * clamp(fade, 0, 1) * puff.strength,
   };
 }
