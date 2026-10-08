@@ -1,8 +1,16 @@
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
-import { LIGHT_DIRECTION, litPigment } from "./core/lighting.js";
+import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
 import { harborDevelopment, harborProfile } from "./core/harbors.js";
+
+import {
+  portLayerOffset,
+  portPlateLighting,
+  portScenePalette,
+} from "./core/port-scene.js";
+
+let miniatureLighting = sceneLighting();
 
 const foundryGlowStyle = createAlphaPalette("249,148,68", 0.26, 0.38, 128);
 const foundrySparkStyle = createAlphaPalette("255,183,86", 0, 0.7, 128);
@@ -119,21 +127,37 @@ export function hasPortMiniature(name) {
 
 // Architecture is costly to trace, but changes only when the harbor develops.
 // Keep one transparent plate per port; live workers, flags and boats stay separate.
-export function createPortMiniatureCache() {
+export function createPortMiniatureCache({ resolution = 2 } = {}) {
   const plates = new Map();
   return {
-    draw(c, name, evolution = {}, heading = DEFAULT_HEADING) {
+    draw(
+      c,
+      name,
+      evolution = {},
+      heading = DEFAULT_HEADING,
+      lighting = sceneLighting(),
+    ) {
       if (!SCENES.has(name)) return false;
-      const key = JSON.stringify([heading, harborDevelopment(evolution)]);
+      const plateLighting = portPlateLighting(lighting);
+      const key = JSON.stringify([
+        heading,
+        harborDevelopment(evolution),
+        plateLighting,
+      ]);
       let plate = plates.get(name);
       if (!plate || plate.key !== key) {
         const canvas = plate?.canvas ?? document.createElement("canvas");
-        canvas.width = 448;
-        canvas.height = 384;
+        canvas.width = 224 * resolution;
+        canvas.height = 192 * resolution;
         const art = canvas.getContext("2d");
-        art.scale(2, 2);
+        art.scale(resolution, resolution);
         art.translate(112, 136);
-        drawPortMiniature(art, name, evolution, heading);
+        drawPortMiniature(art, name, evolution, heading, plateLighting);
+        art.save();
+        art.globalCompositeOperation = "source-atop";
+        art.fillStyle = `rgba(12,24,48,${plateLighting.night * 0.48})`;
+        art.fillRect(-112, -136, 224, 192);
+        art.restore();
         plate = { key, canvas };
         plates.set(name, plate);
       }
@@ -167,11 +191,15 @@ function face(c, vertices, fill, stroke = INK, width = 0.8) {
   // The miniature faces use both winding orders. Orient roofs upward and
   // walls toward the camera before rotating their normals into map space.
   const sign = nz ? Math.sign(nz) : Math.sign(nx * gridSin + ny * gridCos) || 1;
-  c.fillStyle = litPigment(fill, [
-    (nx * gridCos - ny * gridSin) * sign,
-    (nx * gridSin + ny * gridCos) * sign,
-    nz * sign,
-  ]);
+  c.fillStyle = litPigment(
+    fill,
+    [
+      (nx * gridCos - ny * gridSin) * sign,
+      (nx * gridSin + ny * gridCos) * sign,
+      nz * sign,
+    ],
+    miniatureLighting,
+  );
   c.fill();
   if (stroke) {
     c.strokeStyle = stroke;
@@ -292,7 +320,7 @@ function windowFront(c, u, v, z, size = 2.6, lit = false) {
       [u + size / 2, v, z + size * 1.45],
       [u - size / 2, v, z + size * 1.45],
     ],
-    lit ? "#d8a75d" : "#3d3831",
+    lit || miniatureLighting.night > 0.4 ? "rgba(255,199,108,.95)" : "#3d3831",
     "#e9d1a3",
     0.48,
   );
@@ -1244,10 +1272,12 @@ export function drawPortMiniature(
   name,
   evolution = {},
   heading = DEFAULT_HEADING,
+  lighting = sceneLighting(),
 ) {
   const scene = SCENES.get(name);
   if (!scene) return false;
   setGridHeading(heading);
+  miniatureLighting = lighting;
   c.save();
   c.lineJoin = "round";
   halo(c);
@@ -1350,10 +1380,12 @@ export function drawPortActivity(
   windAngle = 0,
   heading = DEFAULT_HEADING,
   evolution = {},
+  lighting = sceneLighting(),
 ) {
   const scene = SCENES.get(name);
   if (!scene || zoom < 1.08) return;
   setGridHeading(heading);
+  miniatureLighting = lighting;
   const seconds = time / 1000;
   const development = harborDevelopment(evolution);
   c.save();
@@ -1525,9 +1557,11 @@ export function drawHarborBoats(
   outwardY,
   heading = DEFAULT_HEADING,
   evolution = {},
+  lighting = sceneLighting(),
 ) {
   if (!SCENES.has(name) || zoom < 1.08) return;
   setGridHeading(heading);
+  miniatureLighting = lighting;
   const seconds = time / 1000;
   c.save();
   c.scale(0.75, 0.75);
@@ -1543,4 +1577,234 @@ export function drawHarborBoats(
     harborBoat(c, u, v, seconds, side * 1.2, windAngle);
   }
   c.restore();
+}
+
+// Painted layers share the chart's architecture, but move at different depths
+// in an inspected harbor. Each transform is scoped so activity stays attached
+// to its town and foreground craft move independently of the distant coast.
+export function drawPortScene(
+  c,
+  {
+    width,
+    height,
+    name,
+    time = 0,
+    lighting = sceneLighting(),
+    evolution = {},
+    windAngle = 0,
+    pointer = {},
+    reducedMotion = false,
+    architecture,
+    ship,
+    drawPlayerShip,
+  },
+) {
+  if (!SCENES.has(name)) return false;
+  const palette = portScenePalette(lighting);
+  const clock = reducedMotion ? 0 : time;
+  const layer = (depth, draw) => {
+    const offset = portLayerOffset(pointer, depth, reducedMotion);
+    c.save();
+    c.translate((offset.x * width) / 720, (offset.y * height) / 380);
+    draw();
+    c.restore();
+  };
+  c.save();
+  c.clearRect(0, 0, width, height);
+  const sky = c.createLinearGradient(0, 0, 0, height * 0.78);
+  sky.addColorStop(0, palette.sky);
+  sky.addColorStop(0.67, palette.horizon);
+  sky.addColorStop(1, palette.sea);
+  c.fillStyle = sky;
+  c.fillRect(0, 0, width, height);
+  layer(0.15, () => {
+    if (lighting.stars > 0.01) {
+      c.fillStyle = "#f3e6cc";
+      c.globalAlpha = lighting.stars * 0.75;
+      for (let star = 0; star < 48; star++) {
+        const x = (((star * 137 + name.length * 17) % 997) / 997) * width;
+        const y = (((star * 71) % 389) / 389) * height * 0.43;
+        c.fillRect(x, y, height / 450, height / 450);
+      }
+    }
+    c.globalAlpha =
+      (1 - lighting.storm) *
+      Math.max(lighting.daylight, lighting.dusk, lighting.night * 0.7);
+    c.fillStyle =
+      lighting.daylight > 0.5 || lighting.dusk > 0.5 ? "#ffe4a5" : "#dce3da";
+    c.beginPath();
+    c.arc(
+      width * 0.77,
+      height * (0.21 + lighting.dusk * 0.25),
+      height * 0.025,
+      0,
+      Math.PI * 2,
+    );
+    c.fill();
+    c.globalAlpha = 0.09 + lighting.storm * 0.15;
+    c.fillStyle = palette.ridge;
+    for (let cloud = 0; cloud < 5; cloud++) {
+      c.beginPath();
+      c.ellipse(
+        width * (cloud * 0.26 - 0.04),
+        height * (0.18 + (cloud % 2) * 0.085),
+        width * 0.18,
+        height * (0.023 + lighting.storm * 0.04),
+        -0.025,
+        0,
+        Math.PI * 2,
+      );
+      c.fill();
+    }
+  });
+  layer(0.3, () => {
+    for (let ridge = 0; ridge < 3; ridge++) {
+      c.fillStyle = palette.ridge;
+      c.globalAlpha = 0.25 + ridge * 0.12;
+      c.beginPath();
+      c.moveTo(-width * 0.05, height * 0.73);
+      for (let x = -width * 0.05; x <= width * 1.05; x += width / 50) {
+        const y =
+          height * (0.49 + ridge * 0.038) +
+          Math.sin((x / width) * (5 + ridge) + name.length) * height * 0.05 +
+          Math.sin((x / width) * 21 + ridge) * height * 0.017;
+        c.lineTo(x, y);
+      }
+      c.lineTo(width * 1.05, height * 0.73);
+      c.closePath();
+      c.fill();
+    }
+  });
+  layer(0.5, () => {
+    for (let building = 0; building < 18; building++) {
+      const x = width * (0.07 + building * 0.049);
+      const w = width * (0.022 + (building % 3) * 0.005);
+      const h = height * (0.04 + ((building * 7 + name.length) % 6) * 0.013);
+      const y = height * 0.63 - h;
+      c.globalAlpha = 0.38;
+      c.fillStyle = palette.ridge;
+      c.fillRect(x, y, w, h);
+      c.beginPath();
+      c.moveTo(x - 3, y);
+      c.lineTo(x + w * 0.5, y - h * 0.24);
+      c.lineTo(x + w + 3, y);
+      c.fill();
+      c.fillStyle = "#ffd08b";
+      c.globalAlpha = lighting.night * 0.65;
+      for (let window = 0; window < 3; window++)
+        c.fillRect(
+          x + w * (0.2 + window * 0.25),
+          y + h * 0.32,
+          w * 0.1,
+          h * 0.2,
+        );
+    }
+  });
+  const water = c.createLinearGradient(0, height * 0.64, 0, height);
+  water.addColorStop(0, palette.horizon);
+  water.addColorStop(1, palette.sea);
+  c.fillStyle = water;
+  c.beginPath();
+  c.moveTo(0, height * 0.7);
+  c.bezierCurveTo(
+    width * 0.3,
+    height * 0.68,
+    width * 0.4,
+    height * 0.95,
+    width,
+    height * 0.62,
+  );
+  c.lineTo(width, height);
+  c.lineTo(0, height);
+  c.fill();
+  layer(0.7, () => {
+    c.strokeStyle = palette.reflection;
+    c.globalAlpha = 0.28;
+    c.lineWidth = height / 380;
+    for (let row = 0; row < 11; row++) {
+      c.beginPath();
+      for (let x = -width * 0.05; x <= width * 1.05; x += width / 60) {
+        const y =
+          height * (0.76 + row * 0.024) +
+          Math.sin((x / width) * 15 + clock / 1500 + row) * height * 0.004;
+        if (x === -width * 0.05) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+  });
+  layer(1, () => {
+    c.translate(width * 0.5, height * 0.74);
+    c.scale(height / 205, height / 205);
+    architecture.draw(c, name, evolution, DEFAULT_HEADING, lighting);
+    drawPortActivity(
+      c,
+      name,
+      clock,
+      2,
+      windAngle,
+      DEFAULT_HEADING,
+      evolution,
+      lighting,
+    );
+  });
+  layer(1.7, () => {
+    c.translate(width * 0.84, height * 0.89);
+    c.scale(height / 240, height / 240);
+    drawHarborBoats(
+      c,
+      name,
+      clock,
+      2,
+      windAngle,
+      0,
+      1,
+      DEFAULT_HEADING,
+      evolution,
+      lighting,
+    );
+  });
+  if (ship && drawPlayerShip)
+    layer(1.4, () => {
+      const x =
+        ship.x * width +
+        ((ship.x + 0.12) / 0.81) * (height * 0.36 - width * 0.19);
+      const y = ship.y * height;
+      if (ship.speed > 0 && !reducedMotion) {
+        c.save();
+        c.translate(x, y);
+        c.rotate(ship.angle);
+        c.strokeStyle = palette.reflection;
+        c.globalAlpha = (ship.speed / 65) * 0.45;
+        c.lineWidth = height / 500;
+        const wake = height * 0.16 * (ship.speed / 65);
+        for (const side of [-1, 1]) {
+          c.beginPath();
+          c.moveTo(-height * 0.02, side * height * 0.008);
+          c.quadraticCurveTo(
+            -wake * 0.6,
+            side * height * 0.014,
+            -wake,
+            side * height * 0.026,
+          );
+          c.stroke();
+        }
+        c.restore();
+      }
+      drawPlayerShip(
+        c,
+        {
+          ...ship,
+          // Keep the berth beside the miniature's right pier even when the
+          // full-screen painting contracts into a wide waterfront banner.
+          x,
+          y,
+          scale: (ship.scale * height) / 380,
+        },
+        lighting,
+        clock,
+      );
+    });
+  c.restore();
+  return true;
 }

@@ -5930,3 +5930,88 @@ body.port-open {
     font-size: 9px;
   }
 }
+
+/* The arriving ship's painted harbor settles into the Dock illustration. */
+.port-arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  pointer-events: auto;
+}
+.port-arrival[hidden] {
+  display: none;
+}
+#portArrivalScene {
+  position: absolute;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+}
+.port-arrival-caption {
+  position: absolute;
+  left: 7vw;
+  top: 9vh;
+  color: #fff0ce;
+  text-shadow: 0 2px 12px #152536;
+  opacity: var(--arrival-caption, 1);
+}
+.port-arrival-caption > span {
+  font: 12px var(--font-ui);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.port-arrival-caption h2 {
+  margin: 12px 0 6px;
+  font-size: clamp(32px, 5vw, 64px);
+}
+.port-arrival-caption p {
+  font: 14px var(--font-ui);
+}
+#skipPortArrival {
+  position: absolute;
+  right: 5vw;
+  bottom: 6vh;
+  padding: 12px 20px;
+}
+#portPanel.port-arriving {
+  opacity: var(--port-reveal, 0);
+}
+.dock-harbor-scene {
+  margin: 0 0 18px;
+}
+.dock-harbor-scene canvas {
+  height: clamp(160px, 25vh, 240px);
+  object-fit: cover;
+}
+.dock-harbor-caption {
+  position: absolute;
+  bottom: 10px;
+  left: 14px;
+  padding: 5px 10px;
+  color: #f9ebc9;
+  background: #253341a6;
+  font: 11px var(--font-ui);
+  pointer-events: none;
+}
+#portPanel .port-panel[data-tab="harbor"].active {
+  grid-template-rows: clamp(150px, 22vh, 210px) 34px minmax(0, 1fr);
+}
+#portPanel .dock-harbor-scene {
+  min-height: 0;
+  margin: 0;
+}
+#portPanel .dock-harbor-scene canvas {
+  height: 100%;
+  width: 100%;
+}
+@media (max-width: 1000px) {
+  #portPanel .port-panel[data-tab="harbor"].active {
+    grid-template-rows: 180px auto auto;
+  }
+}
+@media (min-width: 801px) and (min-height: 560px) {
+  #portPanel .port-panel[data-tab="harbor"] .port-activity,
+  #portPanel .port-panel[data-tab="harbor"] .inspection-detail {
+    overflow: auto;
+  }
+}
