@@ -1,3 +1,4 @@
+import { drawHarborPlate } from "./harbor-plate.js";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -1293,7 +1294,7 @@ const portMiniaturePlacements = new Map(
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
 );
 const chartPortArt = createPortMiniatureCache();
-const menuPortArt = createPortMiniatureCache();
+const menuPortArt = createPortMiniatureCache(4);
 
 // The weathered-skin photograph that the opening scroll multiplies over the
 // chart, fetched out of band so module evaluation never awaits (top-level
@@ -4077,163 +4078,14 @@ function renderTownOverview(port) {
   drawMenuPort(document.getElementById("townIllustration"), port, 0);
 }
 
-// Menu artwork shares the chart's architecture and reflects actual regional
-// development. Unillustrated ports use a matching architectural archetype.
+// City and atlas panels share the chart's architecture and regional development.
 function drawMenuPort(surface, port, time) {
-  const c = surface.getContext("2d");
-  const width = surface.width,
-    height = surface.height;
-  c.clearRect(0, 0, width, height);
-  const wash = c.createLinearGradient(0, 0, width, height);
-  wash.addColorStop(0, "#e6d4ac");
-  wash.addColorStop(0.45, "#f0e3c0");
-  wash.addColorStop(1, "#c3b789");
-  c.fillStyle = wash;
-  c.fillRect(0, 0, width, height);
-  // Distant terrain and rooflines give the atlas illustration a coastal depth.
-  c.save();
-  for (let ridge = 0; ridge < 3; ridge++) {
-    c.fillStyle = ["#acb09b", "#a3a790", "#929d87"][ridge];
-    c.globalAlpha = 0.12 + ridge * 0.035;
-    c.beginPath();
-    c.moveTo(0, height * 0.63);
-    for (let x = 0; x <= width; x += 24) {
-      const y =
-        height * (0.49 + ridge * 0.038) +
-        Math.sin(x / (145 + ridge * 50) + port.name.length) * height * 0.05 +
-        Math.sin(x / 67 + ridge) * height * 0.017;
-      c.lineTo(x, y);
-    }
-    c.lineTo(width, height * 0.72);
-    c.lineTo(0, height * 0.72);
-    c.fill();
-  }
-  c.globalAlpha = 0.22;
-  for (let building = 0; building < 18; building++) {
-    const x = width * (0.07 + building * 0.049);
-    const w = width * (0.022 + (building % 3) * 0.005);
-    const h = height * (0.04 + ((building * 7 + port.name.length) % 6) * 0.013);
-    const y = height * 0.63 - h;
-    c.fillStyle = building % 3 ? "#a99170" : "#8f8469";
-    c.fillRect(x, y, w, h);
-    c.beginPath();
-    c.moveTo(x - 3, y);
-    c.lineTo(x + w * 0.5, y - h * 0.24);
-    c.lineTo(x + w + 3, y);
-    c.fill();
-    c.fillStyle = "#f4e4bf";
-    for (let window = 0; window < 3; window++)
-      c.fillRect(
-        x + w * 0.2 + window * w * 0.25,
-        y + h * 0.32,
-        w * 0.1,
-        h * 0.2,
-      );
-  }
-  c.restore();
-  const water = c.createLinearGradient(0, height * 0.64, 0, height);
-  water.addColorStop(0, "#9aaa98");
-  water.addColorStop(1, "#6f9285");
-  c.fillStyle = water;
-
-  c.beginPath();
-  c.moveTo(0, height * 0.7);
-  c.bezierCurveTo(
-    width * 0.3,
-    height * 0.68,
-    width * 0.4,
-    height * 0.95,
-    width,
-    height * 0.62,
-  );
-  c.lineTo(width, height);
-  c.lineTo(0, height);
-  c.fill();
-  c.strokeStyle = "rgba(245,235,199,.38)";
-  c.lineWidth = 1.4;
-  for (let row = 0; row < 7; row++) {
-    c.beginPath();
-    for (let x = 0; x <= width; x += 12) {
-      const y =
-        height * 0.8 + row * 12 + Math.sin(x / 50 + time / 1500 + row) * 3;
-      if (!x) c.moveTo(x, y);
-      else c.lineTo(x, y);
-    }
-    c.stroke();
-  }
-  c.strokeStyle = "rgba(89,68,42,.15)";
-  c.beginPath();
-  c.arc(width * 0.5, height * 0.5, height * 0.43, 0, Math.PI * 2);
-  c.moveTo(24, height * 0.5);
-  c.lineTo(width - 24, height * 0.5);
-  c.stroke();
-  const resources = port.resources.join(" ").toLowerCase();
-  const illustration = hasPortMiniature(port.name)
-    ? port.name
-    : /iron|coal|ore|mine/.test(resources)
-      ? PORT_NAMES.drazhOvek
-      : /timber|grain|field/.test(resources)
-        ? PORT_NAMES.vesperport
-        : /pearl|fish|glass/.test(resources)
-          ? PORT_NAMES.mirravel
-          : PORT_NAMES.heliovar;
-  c.save();
-  c.translate(width * 0.5, height * 0.76);
-  c.scale(height / 205, height / 205);
-  const evolution = portEvolution(game.regionalEconomy[port.name]);
-  menuPortArt.draw(c, illustration, evolution);
-  drawPortActivity(
-    c,
-    illustration,
-    time,
-    2,
-    game.windAngle,
-    undefined,
-    evolution,
-  );
-  c.restore();
-  c.save();
-  c.translate(width * 0.8, height * 0.82);
-  c.scale(2.4, 2.4);
-  drawHarborBoats(
-    c,
-    illustration,
-    time,
-    2,
-    game.windAngle,
-    0,
-    1,
-    undefined,
-    evolution,
-  );
-  c.restore();
-  c.save();
-  c.translate(width * 0.08, height * 0.84);
-  c.strokeStyle = "#eff0cd";
-  c.fillStyle = "#eff0cd";
-  c.globalAlpha = 0.3;
-  c.lineWidth = 1.2;
-  const radius = height * 0.045;
-  c.beginPath();
-  c.arc(0, 0, radius, 0, Math.PI * 2);
-  c.stroke();
-  for (let point = 0; point < 8; point++) {
-    const angle = (point * Math.PI) / 4;
-    const length = radius * (point % 2 ? 0.85 : 1.35);
-    c.beginPath();
-    c.moveTo(Math.cos(angle) * length, Math.sin(angle) * length);
-    c.lineTo(
-      Math.cos(angle + 0.5) * radius * 0.22,
-      Math.sin(angle + 0.5) * radius * 0.22,
-    );
-    c.lineTo(
-      Math.cos(angle - 0.5) * radius * 0.22,
-      Math.sin(angle - 0.5) * radius * 0.22,
-    );
-    c.closePath();
-    c.fill();
-  }
-  c.restore();
+  drawHarborPlate(surface, port, {
+    art: menuPortArt,
+    evolution: portEvolution(game.regionalEconomy[port.name]),
+    time: reducedMotion.matches ? 0 : time,
+    windAngle: game.windAngle,
+  });
 }
 
 let lastPortPanelFrame = 0;
