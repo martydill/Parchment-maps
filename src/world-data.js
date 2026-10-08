@@ -2755,6 +2755,14 @@ export const seaRegionLabels = [
   ["THE JADEWATER", 4200, 1260, 27],
   ["THE STORMWARD OCEAN", 5550, 1480, 27],
 ];
+// Seas whose plankton ignite disturbed water at night. Centers follow
+// seaRegionLabels so the name on the chart is the glow a captain sails
+// through; the app maps these exactly like roughSeas.
+export const bioluminescentSeas = [
+  { name: "The Sea of Whispers", x: 1900, y: 930, rx: 420, ry: 260 },
+  { name: "The Southern Encircling Sea", x: 3200, y: 2300, rx: 520, ry: 340 },
+  { name: "The Jadewater", x: 4200, y: 1260, rx: 360, ry: 230 },
+];
 export const roughSeas = [
   { x: 2720, y: 1060, rx: 470, ry: 300, angle: -0.08, strength: 1 },
   { x: 5480, y: 1480, rx: 520, ry: 330, angle: 0.12, strength: 1.15 },

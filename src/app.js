@@ -292,6 +292,7 @@ import {
   sampleWeatherFront,
 } from "./core/weather.js";
 import {
+  bioluminescentSeas,
   discoverySites,
   explorationSites,
   forests,
@@ -308,6 +309,10 @@ import {
   worldMonsters,
   worldShoals,
 } from "./world-data.js";
+import {
+  bioluminescentSeaAt,
+  vesselBioluminescence,
+} from "./core/bioluminescence.js";
 import {
   createDistinctMapSeed,
   createMapTransform,
@@ -469,6 +474,11 @@ function transformWorldData() {
     sea.rx = mapTransform.horizontalLength(sea.rx);
     sea.ry = mapTransform.verticalLength(sea.ry);
   }
+  for (const sea of bioluminescentSeas) {
+    mapRecord(sea);
+    sea.rx = mapTransform.horizontalLength(sea.rx);
+    sea.ry = mapTransform.verticalLength(sea.ry);
+  }
   const spawn = mapPoint(
     HOME_PORT.spawnX,
     HOME_PORT.spawnY,
@@ -503,6 +513,7 @@ const keys = new Set();
 let last = performance.now();
 let gameStarted = false;
 let nearPort = null;
+let glowingSeaName = null;
 let nearExplorationSite = null;
 let nearDiscovery = null;
 let currentPort = null;
@@ -4698,6 +4709,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        merchant,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
       recordMerchantSighting(merchant);
@@ -4737,6 +4754,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         windStrength: game.windStrength,
         reducedMotion: reducedMotion.matches,
         lighting,
+        bioluminescence: vesselBioluminescence(
+          raider,
+          bioluminescentSeas,
+          WORLD.w,
+          lighting,
+        ),
       },
     );
     c.fillStyle = "#8c261b";
@@ -4781,6 +4804,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       windStrength: game.windStrength,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        render,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     });
     c.fillStyle = "#ddf1d9";
     c.font = "bold " + 11 / z + "px Georgia";
@@ -5082,7 +5111,11 @@ function render() {
     reducedMotion: reducedMotion.matches,
     detail: effectDetail(),
   });
-  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh);
+  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh, {
+    lighting,
+    bioluminescentSeas,
+    reducedMotion: reducedMotion.matches,
+  });
   const reflectedVessels = merchantShips.filter(
     (vessel) =>
       merchantVisible(vessel) && pointCurrentlyVisible(vessel.x, vessel.y),
@@ -5214,6 +5247,12 @@ function render() {
         windStrength: game.windStrength,
         reducedMotion: reducedMotion.matches,
         lighting,
+        bioluminescence: vesselBioluminescence(
+          raider,
+          bioluminescentSeas,
+          WORLD.w,
+          lighting,
+        ),
       },
     );
   }
@@ -5259,6 +5298,12 @@ function render() {
       anchored: ship.anchored,
       reducedMotion: reducedMotion.matches,
       lighting,
+      bioluminescence: vesselBioluminescence(
+        ship,
+        bioluminescentSeas,
+        WORLD.w,
+        lighting,
+      ),
     },
   );
   if (nearPort) {
@@ -5915,6 +5960,20 @@ function update(dt) {
         3.8,
       );
     }
+    // The luminous seas announce themselves once the wake starts to glow.
+    const glow = vesselBioluminescence(
+      ship,
+      bioluminescentSeas,
+      WORLD.w,
+      sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
+    );
+    const litSea =
+      glow > 0.08 && ship.speed > 12
+        ? bioluminescentSeaAt(ship, bioluminescentSeas, WORLD.w)?.name
+        : null;
+    if (litSea && litSea !== glowingSeaName)
+      showMessage(`${litSea} glows in your wake.`, 3.4);
+    glowingSeaName = litSea;
   }
   if (!encounters.active || reducedMotion.matches) {
     camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
