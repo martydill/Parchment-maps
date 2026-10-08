@@ -1,4 +1,8 @@
-import { sampleShipMotion, sampleWaterReflection } from "./core/seascape.js";
+import {
+  sampleDeckCrew,
+  sampleShipMotion,
+  sampleWaterReflection,
+} from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
@@ -458,6 +462,56 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
   return { faces, fringes, seams };
 }
 
+// Deck hands scramble as the storm arc builds: tiny ink figures hurry between
+// the rail and the mast, appearing one by one, leaning into the work. They are
+// drawn large for their scale so the scramble still reads at sailing zoom.
+function drawDeckCrew(c, profile, heading, z, motion, intensity) {
+  const time = motion.time || 0;
+  for (let index = 0; index < 5; index++) {
+    const pose = sampleDeckCrew(time, index, intensity);
+    if (pose.alpha <= 0.03) continue;
+    const along = pose.along;
+    const half = hullWidth(profile, along) * 0.5 * pose.side;
+    const footY = along * profile.length;
+    const footZ = deckHeight(profile, along) + 0.35;
+    const bob = Math.abs(pose.step) * 0.5;
+    const lean = pose.side * 0.55;
+    drawLine3d(
+      c,
+      [half, footY, footZ],
+      [half + lean, footY - 0.8, footZ + 2.6 + bob],
+      heading,
+      "#2a1a0e",
+      1.7,
+      z,
+      motion,
+      pose.alpha * 0.9,
+    );
+    const head = projectedPoint(
+      [half + lean, footY - 0.8, footZ + 3.2 + bob],
+      heading,
+      motion,
+    );
+    c.beginPath();
+    c.arc(head[0], head[1], 0.66, 0, Math.PI * 2);
+    c.fillStyle = `rgba(42,26,14,${pose.alpha * 0.9})`;
+    c.fill();
+    // The closest hands reach out to the rigging as they work.
+    if (index < 2)
+      drawLine3d(
+        c,
+        [half + lean, footY - 0.6, footZ + 2 + bob],
+        [half * 1.9, footY + 1.4, footZ + 3.6 + bob],
+        heading,
+        "#2a1a0e",
+        1.1,
+        z,
+        motion,
+        pose.alpha * 0.75,
+      );
+  }
+}
+
 function shipDeckLines(c, profile, heading, z, motion) {
   c.save();
   c.strokeStyle = "rgba(67,43,25,.6)";
@@ -794,7 +848,8 @@ function drawSplinterFlecks(
 ) {
   const flecks = splinterFlecks(seed, damage.splinters);
   if (!flecks.length) return;
-  const t = Number(time) || 0;
+  // The hull's clock freezes under reduced motion, and the chips follow it.
+  const t = Number(motion.time ?? time) || 0;
   c.save();
   c.rotate(heading);
   for (const fleck of flecks) {
@@ -969,6 +1024,7 @@ function drawShipModel(
   damage = null,
   damageKey = null,
   time = 0,
+  crew = 0,
   bioluminescence = null,
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
@@ -1120,6 +1176,8 @@ function drawShipModel(
     }
   }
   shipDeckLines(c, profile, heading, z, motion);
+  if (isPlayer && crew > 0.02)
+    drawDeckCrew(c, profile, heading, z, motion, crew);
   drawHullDetails(c, profile, heading, z, motion, lighting);
 
   // Standing rigging and bowsprit give the model a readable three dimensional
@@ -1316,6 +1374,7 @@ export function drawMerchantShip(
     damage,
     damageKey,
     environment.time ?? 0,
+    0,
     hullBioluminescence({ ...environment, seed: merchant.idNum || 0 }),
   );
   // Smoke climbs from the deck and drifts astern, so it renders above the
@@ -1346,11 +1405,16 @@ export function drawShip(
   const relativeWind = windAngle - angle;
   const damage = environment.damage || null;
   const damageKey = environment.damageKey || null;
-  const motion = sampleShipMotion({
-    time: performance.now() / 1000,
-    ...environment,
-    windStrength,
-  });
+  const clock = environment.time ?? performance.now() / 1000;
+  const motion = {
+    ...sampleShipMotion({
+      time: clock,
+      ...environment,
+      windStrength,
+    }),
+    // Deck hands sample the same frozen clock the hull does.
+    time: environment.reducedMotion ? 0 : clock,
+  };
   const lighting = environment.lighting || sceneLighting();
   c.save();
   c.translate(x, y);
@@ -1373,6 +1437,7 @@ export function drawShip(
     damage,
     damageKey,
     environment.time ?? 0,
+    environment.crew || 0,
     hullBioluminescence(environment),
   );
   c.restore();

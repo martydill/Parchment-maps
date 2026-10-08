@@ -51,6 +51,10 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
         Math.round(windAngle * 100),
         Math.round((lighting?.daylight ?? 1) * 100),
         Math.round((lighting?.storm ?? 0) * 100),
+        // Storm-arc swell and bird presence change the surface ink without
+        // touching roughness, so they belong in the cache key.
+        Math.round((options.arc?.swell ?? 0) * 50),
+        Math.round((options.arc?.birds ?? 1) * 20),
       ].join(":");
       if (
         cadence.shouldRender(time, {

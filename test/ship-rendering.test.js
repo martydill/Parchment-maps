@@ -518,3 +518,42 @@ test("hull reflections lean with a damaged hull", () => {
   assert.equal(callCount(level, "save"), callCount(level, "restore"));
   assert.equal(callCount(heeled, "save"), callCount(heeled, "restore"));
 });
+
+test("scrambling deck crew man the player vessel as the storm arc builds", () => {
+  const idle = canvasContext();
+  drawShip(idle, 50, 60, 0.4, 1.2, 0.8, "brig", 1, { time: 5, crew: 0 });
+  assert.ok(
+    !idle.calls.some(
+      ([method, arg]) => method === "strokeStyle" && arg === "#2a1a0e",
+    ),
+  );
+  const scrambling = canvasContext();
+  drawShip(scrambling, 50, 60, 0.4, 1.2, 0.8, "brig", 1, {
+    time: 5,
+    crew: 1,
+  });
+  const crewStrokes = scrambling.calls.filter(
+    ([method, arg]) => method === "strokeStyle" && arg === "#2a1a0e",
+  );
+  assert.ok(crewStrokes.length >= 5, `crew strokes: ${crewStrokes.length}`);
+  assert.ok(
+    scrambling.calls.some(
+      ([method, arg]) =>
+        method === "fillStyle" && String(arg).startsWith("rgba(42,26,14,"),
+    ),
+  );
+  // Crew freeze with reduced motion just like the hull they stand on.
+  const frozen = canvasContext();
+  drawShip(frozen, 50, 60, 0.4, 1.2, 0.8, "brig", 1, {
+    time: 5,
+    crew: 1,
+    reducedMotion: true,
+  });
+  const again = canvasContext();
+  drawShip(again, 50, 60, 0.4, 1.2, 0.8, "brig", 1, {
+    time: 95,
+    crew: 1,
+    reducedMotion: true,
+  });
+  assert.deepEqual(frozen.calls, again.calls);
+});

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  sampleDeckCrew,
   sampleShipMotion,
   buildWakeRibbon,
   coastFaceDepth,
@@ -313,4 +314,53 @@ test("wake width and foam strength follow vessel speed with safe defaults", () =
   assert.equal(sections[3].width, 2 + 3 * 5.5);
   assert.equal(sections[4].width, 2 + 4 * 5.5);
   assert.ok(sections.every(({ width, alpha }) => width > 0 && alpha >= 0));
+});
+
+test("storm arc swell deepens the hull's heave without changing its phase", () => {
+  const calm = sampleShipMotion({ time: 4.2, seed: 3, roughness: 0.2 });
+  const swelly = sampleShipMotion({
+    time: 4.2,
+    seed: 3,
+    roughness: 0.2,
+    swell: 1,
+  });
+  assert.ok(Math.abs(swelly.heave) > Math.abs(calm.heave));
+  assert.ok(swelly.roll !== calm.roll || swelly.pitch !== calm.pitch);
+  // The long swell component keeps its own slower period, visible as a
+  // different heave at a moment the short waves return to the same phase.
+  const later = sampleShipMotion({ time: 7.4, seed: 3, roughness: 0.2 });
+  const laterSwell = sampleShipMotion({
+    time: 7.4,
+    seed: 3,
+    roughness: 0.2,
+    swell: 1,
+  });
+  assert.ok(Math.abs(laterSwell.heave - later.heave) > 0.01);
+  // Swell never reverses direction or misbehaves out of range.
+  for (const swell of [-3, NaN, 12]) {
+    const clamped = sampleShipMotion({ time: 1, swell });
+    assert.ok(Number.isFinite(clamped.heave));
+    assert.ok(Math.abs(clamped.heave) <= 4.4);
+  }
+  assert.equal(sampleShipMotion({ swell: 1, reducedMotion: true }).heave, 0);
+});
+
+test("deck crew appear one by one as the scramble intensifies", () => {
+  const idle = sampleDeckCrew(10, 0, 0);
+  assert.equal(idle.alpha, 0);
+  const first = sampleDeckCrew(10, 0, 0.6);
+  const last = sampleDeckCrew(10, 4, 0.6);
+  assert.ok(first.alpha > 0);
+  assert.equal(last.alpha, 0, "the fifth hand waits for a full squall");
+  const all = sampleDeckCrew(10, 4, 1);
+  assert.ok(all.alpha > 0);
+  for (let index = 0; index < 6; index++) {
+    const pose = sampleDeckCrew(12.5, index, 1);
+    assert.ok(pose.alpha > 0 && pose.alpha <= 1);
+    assert.ok(Math.abs(pose.along) < 0.5);
+    assert.ok(Math.abs(pose.step) <= 1);
+    assert.deepEqual(sampleDeckCrew(12.5, index, 1), pose);
+    assert.notDeepEqual(sampleDeckCrew(13.5, index, 1), pose);
+  }
+  assert.equal(sampleDeckCrew(NaN, -3, NaN).alpha, 0);
 });

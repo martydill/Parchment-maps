@@ -929,3 +929,91 @@ test("deep-water views skip caustic surfaces altogether", () => {
   assert.equal(stampCanvases.length, allocations);
   assert.equal(target.calls.length, 0);
 });
+
+test("storm arc presence thins the coastal flocks and fades the stragglers", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    rect() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+  };
+  try {
+    const renderer = createSeaRendering({
+      WORLD: { w: 1000, h: 800 },
+      lands: [
+        {
+          poly: [
+            [430, 350],
+            [570, 350],
+            [570, 470],
+            [430, 470],
+          ],
+        },
+      ],
+    });
+    const birdStrokes = (recording) =>
+      recording.strokes.filter(({ style }) =>
+        String(style).startsWith("rgba(35,42,34,"),
+      );
+    const present = recordingContext();
+    renderer.drawSurface(present.context, {
+      ...options,
+      time: 4000,
+      arc: { birds: 1, swell: 0 },
+    });
+    assert.ok(birdStrokes(present).length > 0, "full presence drew no birds");
+    const gone = recordingContext();
+    renderer.drawSurface(gone.context, {
+      ...options,
+      time: 4000,
+      arc: { birds: 0, swell: 0 },
+    });
+    assert.equal(birdStrokes(gone).length, 0);
+    const thinning = recordingContext();
+    renderer.drawSurface(thinning.context, {
+      ...options,
+      time: 4000,
+      arc: { birds: 0.4, swell: 0 },
+    });
+    const faded = birdStrokes(thinning);
+    assert.ok(faded.length > 0, "thinning presence drew no birds");
+    assert.ok(faded.length < birdStrokes(present).length);
+    assert.ok(
+      faded.every(({ style }) => {
+        const alpha = Number(style.slice(style.lastIndexOf(",") + 1, -1));
+        return alpha > 0.3 && alpha < 0.72;
+      }),
+    );
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
+
+test("storm arc swell stretches the wave marks and quickens their pulse", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 1000, h: 800 },
+    lands: [],
+  });
+  const flat = recordingContext();
+  renderer.drawSurface(flat.context, {
+    ...options,
+    time: 3000,
+    arc: { birds: 1, swell: 0 },
+  });
+  const rolling = recordingContext();
+  renderer.drawSurface(rolling.context, {
+    ...options,
+    time: 3000,
+    arc: { birds: 1, swell: 1 },
+  });
+  const extent = (recording) => {
+    const xCoords = recording.strokes
+      .flatMap(({ path }) => path)
+      .filter(([method]) => method === "moveTo")
+      .map(([, x]) => x);
+    return xCoords.length ? Math.max(...xCoords) - Math.min(...xCoords) : 0;
+  };
+  assert.ok(extent(rolling) > extent(flat), "swell should lengthen wave marks");
+});
