@@ -8302,53 +8302,9 @@ function previewEncounter(kind) {
   closeDebugMenu();
   startEncounterIntro({ ...subject, id: `debug:${kind}`, preview: true });
 }
-// Damage profiles for the debug menu. They ride the normal hazard path —
-// applyComponentDamage clamps, recomputes condition, and shipyards repair
-// the result — so every downstream system (stats, readiness, repairs,
-// storm resistance) reacts exactly as it would to real damage.
-const DEBUG_DAMAGE_PROFILES = {
-  light: { hull: 12, rigging: 10 },
-  heavy: { hull: 30, rigging: 26, rudder: 14 },
-  critical: {
-    hull: 58,
-    rigging: 52,
-    rudder: 40,
-    fittings: 30,
-    weapons: 24,
-  },
-};
-const DEBUG_DAMAGE_NOTES = {
-  light: "scraped along a shoal line — fresh wear across the hull",
-  heavy: "rode out a hard squall — rigging slack, rudder straining",
-  critical: "pounded through a full gale — every joint working loose",
-};
 debugMenu.addEventListener("click", (event) => {
   const button = event.target.closest("[data-debug-encounter]");
-  if (button) {
-    previewEncounter(button.dataset.debugEncounter);
-    return;
-  }
-  const damageButton = event.target.closest("[data-debug-damage]");
-  if (!damageButton) return;
-  const level = damageButton.dataset.debugDamage;
-  const profile = DEBUG_DAMAGE_PROFILES[level];
-  if (!profile) return;
-  const { operations, applied } = applyComponentDamage(
-    game.operations,
-    profile,
-  );
-  game.operations = operations;
-  const total = Object.values(applied).reduce((sum, value) => sum + value, 0);
-  applyShipUpgrades();
-  updateHud();
-  if (currentPort) renderHarborPresentation();
-  render();
-  showMessage(
-    total > 0
-      ? `DEBUG DAMAGE · ${DEBUG_DAMAGE_NOTES[level]} (-${total} component wear)`
-      : "DEBUG DAMAGE · the vessel is already in worse shape than that.",
-    total > 0 ? 2.8 : 2,
-  );
+  if (button) previewEncounter(button.dataset.debugEncounter);
 });
 
 function renderChart() {
