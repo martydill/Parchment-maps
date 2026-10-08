@@ -35,6 +35,9 @@ export function portScenePalette(lighting = sceneLighting()) {
       lighting.storm * 0.55,
     );
   return {
+    paperSky: tint("#f3e7c9", "#9c7a91", "#233243"),
+    paperHorizon: tint("#eaddbb", "#efa66c", "#536075"),
+    paperSea: tint("#e5d5b0", "#b78b83", "#344959"),
     sky: tint("#d6decb", "#745d87", "#152536"),
     horizon: tint("#f0e3c0", "#efa66c", "#536075"),
     sea: tint("#6f9285", "#796881", "#243b4b"),

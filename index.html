@@ -1199,6 +1199,19 @@
           <button class="parchment" id="saveGameButton">Save Game</button>
           <button class="parchment" id="loadGameButton">Load Game</button>
         </div>
+        <fieldset class="graphics-settings">
+          <legend>Graphics</legend>
+          <div class="graphics-row">
+            <label for="graphicsQuality">Quality</label>
+            <select id="graphicsQuality">
+              <option value="auto">Auto (recommended)</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <p id="graphicsStatus" role="status" aria-live="polite"></p>
+        </fieldset>
         <button class="parchment" id="closeMenu">Close Menu</button>
       </div>
     </div>
@@ -1372,6 +1385,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=66"></script>
+    <script type="module" src="./src/app.js?v=67"></script>
   </body>
 </html>

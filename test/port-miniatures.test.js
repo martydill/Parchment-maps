@@ -19,6 +19,16 @@ function canvasContext() {
       createLinearGradient() {
         return { addColorStop() {} };
       },
+      globalAlpha: 1,
+      quadraticCurveTo(...values) {
+        coordinates.push(values);
+      },
+      bezierCurveTo(...values) {
+        coordinates.push(values);
+      },
+      ellipse(...values) {
+        coordinates.push(values);
+      },
       createRadialGradient() {
         return { addColorStop() {} };
       },
@@ -225,4 +235,53 @@ test("miniature light resets between menu and default chart rendering", () => {
     day.fills.filter((fill) => typeof fill === "string"),
     restored.fills.filter((fill) => typeof fill === "string"),
   );
+});
+
+test("each named harbor keeps deterministic, distinct architectural geometry", () => {
+  const signatures = new Set();
+  for (const name of Object.values(PORT_NAMES)) {
+    const first = canvasContext();
+    const second = canvasContext();
+    drawPortMiniature(first.context, name);
+    // Drawing another town between frames must not leak its projection or seed.
+    drawPortMiniature(
+      canvasContext().context,
+      PORT_NAMES.mirravel,
+      {},
+      Math.PI,
+    );
+    drawPortMiniature(second.context, name);
+    assert.deepEqual(second.coordinates, first.coordinates, name);
+    assert.deepEqual(
+      second.fills.filter((fill) => typeof fill === "string"),
+      first.fills.filter((fill) => typeof fill === "string"),
+      name,
+    );
+    signatures.add(JSON.stringify(first.coordinates));
+  }
+  assert.equal(signatures.size, Object.values(PORT_NAMES).length);
+});
+
+test("inspection artwork can use a sharper plate without enlarging its chart footprint", () => {
+  const oldDocument = globalThis.document;
+  const canvases = [];
+  const images = [];
+  globalThis.document = {
+    createElement() {
+      const canvas = { getContext: () => canvasContext().context };
+      canvases.push(canvas);
+      return canvas;
+    },
+  };
+  try {
+    const context = { drawImage: (...args) => images.push(args.slice(1)) };
+    createPortMiniatureCache().draw(context, PORT_NAMES.orvessaQuay);
+    createPortMiniatureCache(4).draw(context, PORT_NAMES.orvessaQuay);
+    assert.equal(canvases[1].width, canvases[0].width * 2);
+    assert.equal(canvases[1].height, canvases[0].height * 2);
+    assert.deepEqual(images[0], images[1]);
+  } finally {
+    if (oldDocument === undefined) delete globalThis.document;
+    else globalThis.document = oldDocument;
+  }
 });

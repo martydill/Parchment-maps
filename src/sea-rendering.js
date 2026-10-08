@@ -1,4 +1,10 @@
 import { nearestWrapped } from "./core/math.js";
+import {
+  BIOLUMINESCENT_RGB,
+  bioluminescentNightGain,
+  bioluminescentSeaAt,
+  bioluminescentTwinkle,
+} from "./core/bioluminescence.js";
 import { polygonContainsBounds } from "./core/geometry.js?v=3";
 import { MAP_TILT_COS, MAP_TILT_TAN } from "./core/projection.js";
 import { createAlphaPalette } from "./style-palette.js";
@@ -31,6 +37,13 @@ const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.52);
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
 const wakeBodyStyle = createAlphaPalette("26,87,86", 0, 0.14, 128);
+const wakeGlowEnvelopeStyle = createAlphaPalette(
+  BIOLUMINESCENT_RGB,
+  0,
+  0.3,
+  48,
+);
+const wakeGlowSpeckStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.85, 96);
 const reflectionSailStyle = createAlphaPalette("244,224,177", 0, 0.38, 128);
 const reflectionLampStyle = createAlphaPalette("255,206,124", 0, 0.65, 128);
 const stormSeaStyle = createAlphaPalette("22,49,67", 0, 0.22, 128);
@@ -1067,7 +1080,7 @@ export function createSeaRendering({
     seaSurfaceRendering.draw(c, options);
   }
 
-  function drawWake(c, trail, time, camera, vw, vh) {
+  function drawWake(c, trail, time, camera, vw, vh, environment = {}) {
     const sections = buildWakeRibbon(trail, time, WORLD.w);
     if (sections.length < 2) return;
     const offset =
@@ -1153,6 +1166,69 @@ export function createSeaRendering({
           Math.PI * 2,
         );
         c.fill();
+      }
+    }
+    drawWakeBioluminescence(c, sections, time, environment);
+    c.restore();
+  }
+
+  // In the named luminous seas the churned water itself glows: a faint teal
+  // envelope carries the ribbon between specks that flare and gutter on their
+  // own clocks. Screen composite keeps the glow off the ink beneath it, and
+  // every section samples its own exposure so the fade at a sea's edge is
+  // drawn rather than stepped.
+  function drawWakeBioluminescence(c, sections, time, environment) {
+    const night = bioluminescentNightGain(environment.lighting);
+    if (night < 0.004 || !environment.bioluminescentSeas?.length) return;
+    const t = environment.reducedMotion ? 0 : time / 1000;
+    c.save();
+    c.globalCompositeOperation = "screen";
+    for (let i = 1; i < sections.length; i++) {
+      const a = sections[i - 1],
+        b = sections[i];
+      const sea = bioluminescentSeaAt(
+        b,
+        environment.bioluminescentSeas,
+        WORLD.w,
+      );
+      if (!sea) continue;
+      const glow = night * sea.exposure;
+      if (glow < 0.004) continue;
+      const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const dx = (b.x - a.x) / length;
+      const dy = (b.y - a.y) / length;
+      const nx = -dy;
+      const ny = dx;
+      c.strokeStyle = wakeGlowEnvelopeStyle(glow * 0.32);
+      c.lineWidth = b.width * 1.5;
+      c.beginPath();
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+      c.stroke();
+      for (let speck = 0; speck < 3; speck++) {
+        const scatter = wakeNoise(b.seed, speck + 31);
+        const twinkle = bioluminescentTwinkle(
+          t,
+          scatter * Math.PI * 2 + speck * 2.4,
+        );
+        if (twinkle < 0.22) continue;
+        const along = wakeNoise(b.seed, speck + 37);
+        const cross = (wakeNoise(b.seed, speck + 41) - 0.5) * b.width * 1.7;
+        const x = a.x + dx * length * along + nx * cross;
+        const y = a.y + dy * length * along + ny * cross;
+        const radius = 0.7 + scatter * 1.9;
+        const alpha = Math.min(0.85, glow * twinkle * (0.45 + b.alpha * 1.7));
+        c.fillStyle = wakeGlowSpeckStyle(alpha);
+        c.beginPath();
+        c.ellipse(x, y, radius, radius * 0.72, 0, 0, Math.PI * 2);
+        c.fill();
+        if (twinkle > 0.72) {
+          // The brightest organisms bloom once, then gutter back into the wake.
+          c.fillStyle = wakeGlowSpeckStyle(alpha * 0.25);
+          c.beginPath();
+          c.ellipse(x, y, radius * 3.6, radius * 2.7, 0, 0, Math.PI * 2);
+          c.fill();
+        }
       }
     }
     c.restore();

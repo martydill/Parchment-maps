@@ -1,7 +1,8 @@
+import { getHarborLayout } from "./harbor-layouts.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
-import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
+import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
 import { harborDevelopment, harborProfile } from "./core/harbors.js";
 
 import {
@@ -21,12 +22,58 @@ const chimneySmokeStyle = createAlphaPalette("79,73,65", 0, 0.15, 128);
 const DEFAULT_HEADING = -0.34;
 let gridCos = Math.cos(DEFAULT_HEADING);
 let gridSin = Math.sin(DEFAULT_HEADING);
+let gridHeading = DEFAULT_HEADING;
+let localFrame = { u: 0, v: 0, z: 0, angle: 0, scale: 1 };
 
 function setGridHeading(heading) {
   gridCos = Math.cos(heading);
   gridSin = Math.sin(heading);
+  gridHeading = heading;
+  localFrame = { u: 0, v: 0, z: 0, angle: 0, scale: 1 };
 }
-const INK = "#35271e";
+
+// Rotate footprints in the map's ground plane. Canvas rotation would tilt the
+// towers too; this keeps every vertical wall upright at any building angle.
+function withFrame({ u = 0, v = 0, z = 0, angle = 0, scale = 1 }, draw) {
+  const parent = localFrame;
+  const cos = Math.cos(parent.angle),
+    sin = Math.sin(parent.angle);
+  localFrame = {
+    u: parent.u + (u * cos - v * sin) * parent.scale,
+    v: parent.v + (u * sin + v * cos) * parent.scale,
+    z: parent.z + z * parent.scale,
+    angle: parent.angle + angle,
+    scale: parent.scale * scale,
+  };
+  try {
+    return draw();
+  } finally {
+    localFrame = parent;
+  }
+}
+const INK = "#64503b";
+const pigmentCache = new Map();
+
+// Dry watercolor leaves the paper visible instead of shading like a 3D model.
+function paperPigment(color) {
+  if (!/^#[\da-f]{6}$/i.test(color)) return color;
+  if (!pigmentCache.has(color)) {
+    const paper = [242, 226, 191];
+    const channels = [1, 3, 5].map((offset, index) =>
+      Math.round(
+        parseInt(color.slice(offset, offset + 2), 16) * 0.66 +
+          paper[index] * 0.34,
+      ),
+    );
+    pigmentCache.set(color, `rgb(${channels.join(",")})`);
+  }
+  return pigmentCache.get(color);
+}
+
+function variation(u, v, seed = 0) {
+  const value = Math.sin(u * 12.9898 + v * 78.233 + seed * 37.719) * 43758.5453;
+  return value - Math.floor(value);
+}
 const SCENES = new Map([
   [
     PORT_NAMES.orvessaQuay,
@@ -118,7 +165,17 @@ const templates = new Map(
 );
 for (const name of Object.values(PORT_NAMES)) {
   const profile = harborProfile(name);
-  SCENES.set(name, { ...templates.get(profile.kind), ...profile });
+  SCENES.set(name, {
+    ...templates.get(profile.kind),
+    ...profile,
+    layout: getHarborLayout(name),
+    flag: getHarborLayout(name).flag,
+    smoke: getHarborLayout(name).smoke ?? [],
+    seed: [...name].reduce(
+      (sum, letter) => (Math.imul(sum, 31) + letter.charCodeAt(0)) >>> 0,
+      7,
+    ),
+  });
 }
 
 export function hasPortMiniature(name) {
@@ -127,7 +184,7 @@ export function hasPortMiniature(name) {
 
 // Architecture is costly to trace, but changes only when the harbor develops.
 // Keep one transparent plate per port; live workers, flags and boats stay separate.
-export function createPortMiniatureCache({ resolution = 2 } = {}) {
+export function createPortMiniatureCache(resolution = 2) {
   const plates = new Map();
   return {
     draw(
@@ -148,7 +205,7 @@ export function createPortMiniatureCache({ resolution = 2 } = {}) {
       if (!plate || plate.key !== key) {
         const canvas = plate?.canvas ?? document.createElement("canvas");
         canvas.width = 224 * resolution;
-        canvas.height = 192 * resolution;
+        canvas.height = 224 * resolution;
         const art = canvas.getContext("2d");
         art.scale(resolution, resolution);
         art.translate(112, 136);
@@ -156,81 +213,91 @@ export function createPortMiniatureCache({ resolution = 2 } = {}) {
         art.save();
         art.globalCompositeOperation = "source-atop";
         art.fillStyle = `rgba(12,24,48,${plateLighting.night * 0.48})`;
-        art.fillRect(-112, -136, 224, 192);
+        art.fillRect(-112, -136, 224, 224);
+        art.fillStyle = `rgba(225,116,58,${plateLighting.dusk * 0.12})`;
+        art.fillRect(-112, -136, 224, 224);
+        art.fillStyle = `rgba(63,96,128,${plateLighting.storm * 0.15})`;
+        art.fillRect(-112, -136, 224, 224);
         art.restore();
         plate = { key, canvas };
         plates.set(name, plate);
       }
-      c.drawImage(plate.canvas, -112, -136, 224, 192);
+      c.drawImage(plate.canvas, -112, -136, 224, 224);
       return true;
     },
   };
 }
 
 function point(u, v, height = 0) {
+  const cos = Math.cos(localFrame.angle),
+    sin = Math.sin(localFrame.angle);
+  const x = localFrame.u + (u * cos - v * sin) * localFrame.scale;
+  v = localFrame.v + (u * sin + v * cos) * localFrame.scale;
+  u = x;
+  height = localFrame.z + height * localFrame.scale;
   return [
     u * gridCos - v * gridSin,
     u * gridSin + v * gridCos - height * MAP_TILT_TAN,
   ];
 }
 
-function face(c, vertices, fill, stroke = INK, width = 0.8) {
+function face(c, vertices, fill, stroke = INK, width = 0.48) {
+  const points = vertices.map((vertex) => point(...vertex));
   c.beginPath();
-  vertices.forEach(([u, v, height], index) => {
-    const [x, y] = point(u, v, height);
-    if (index) c.lineTo(x, y);
-    else c.moveTo(x, y);
+  points.forEach(([x, y], index) => {
+    if (!index) c.moveTo(x, y);
+    else {
+      const [px, py] = points[index - 1];
+      const bend = (variation(x, y) - 0.5) * 0.48;
+      c.quadraticCurveTo((px + x) / 2 + bend, (py + y) / 2 - bend, x, y);
+    }
   });
   c.closePath();
-  const [a, b, d] = vertices;
-  const ab = b.map((value, index) => value - a[index]);
-  const ad = d.map((value, index) => value - a[index]);
-  const nx = ab[1] * ad[2] - ab[2] * ad[1];
-  const ny = ab[2] * ad[0] - ab[0] * ad[2];
-  const nz = ab[0] * ad[1] - ab[1] * ad[0];
-  // The miniature faces use both winding orders. Orient roofs upward and
-  // walls toward the camera before rotating their normals into map space.
-  const sign = nz ? Math.sign(nz) : Math.sign(nx * gridSin + ny * gridCos) || 1;
-  c.fillStyle = litPigment(
-    fill,
-    [
-      (nx * gridCos - ny * gridSin) * sign,
-      (nx * gridSin + ny * gridCos) * sign,
-      nz * sign,
-    ],
-    miniatureLighting,
-  );
+  c.fillStyle = paperPigment(fill);
   c.fill();
   if (stroke) {
     c.strokeStyle = stroke;
     c.lineWidth = width;
     c.stroke();
   }
+  // Fine broken etching follows the shadow side, never a screen-space texture.
+  if (
+    stroke &&
+    /^#/.test(fill) &&
+    points.length >= 4 &&
+    vertices.some((vertex) => vertex[2] !== vertices[0][2])
+  ) {
+    c.save();
+    c.clip();
+    const xs = points.map(([x]) => x),
+      ys = points.map(([, y]) => y);
+    const left = Math.min(...xs),
+      right = Math.max(...xs);
+    const top = Math.min(...ys),
+      bottom = Math.max(...ys);
+    c.strokeStyle = "rgba(78,57,36,.16)";
+    c.lineWidth = 0.28;
+    c.beginPath();
+    for (let x = left - (bottom - top); x < right; x += 3.4) {
+      const inset = variation(x, top) * 2;
+      c.moveTo(x + inset, bottom - inset);
+      c.lineTo(x + (bottom - top) * 0.7, top + inset);
+    }
+    c.stroke();
+    c.restore();
+  }
 }
 
-function line(c, a, b, color = "rgba(48,35,25,.5)", width = 0.7) {
+function line(c, a, b, color = "rgba(76,53,33,.5)", width = 0.55) {
   const [ax, ay] = point(...a);
   const [bx, by] = point(...b);
   c.strokeStyle = color;
   c.lineWidth = width;
   c.beginPath();
   c.moveTo(ax, ay);
-  c.lineTo(bx, by);
+  const bend = (variation(ax, by) - 0.5) * 0.45;
+  c.quadraticCurveTo((ax + bx) / 2 + bend, (ay + by) / 2 - bend, bx, by);
   c.stroke();
-}
-
-function halo(c) {
-  const glow = c.createRadialGradient(-12, -22, 3, 0, -12, 78);
-  glow.addColorStop(0, "rgba(255,227,168,.32)");
-  glow.addColorStop(1, "rgba(129,103,65,0)");
-  c.fillStyle = glow;
-  c.beginPath();
-  c.ellipse(0, -19, 78, 58, 0, 0, Math.PI * 2);
-  c.fill();
-  c.fillStyle = "rgba(33,35,28,.24)";
-  c.beginPath();
-  c.ellipse(9, 8, 66, 16, -0.13, 0, Math.PI * 2);
-  c.fill();
 }
 
 function terrace(c, u, v, w, d, base, top, color, edge = "#67523d") {
@@ -286,12 +353,25 @@ function terrace(c, u, v, w, d, base, top, color, edge = "#67523d") {
 }
 
 function landform(c, outline, base, top, color, edge) {
+  // The quay is cut stone with an irregular contour, rather than a solid plinth.
+  outline = outline.flatMap(([u, v], index) => {
+    const next = outline[(index + 1) % outline.length];
+    return [
+      [u, v],
+      [
+        (u + next[0]) / 2 + (variation(u, v) - 0.5) * 3,
+        (v + next[1]) / 2 + (variation(v, u) - 0.5) * 3,
+      ],
+    ];
+  });
   const walls = outline.map((first, index) => ({
     first,
     second: outline[(index + 1) % outline.length],
   }));
   walls.sort(
-    (a, b) => (a.first[1] + a.second[1]) / 2 - (b.first[1] + b.second[1]) / 2,
+    (a, b) =>
+      point((a.first[0] + a.second[0]) / 2, (a.first[1] + a.second[1]) / 2)[1] -
+      point((b.first[0] + b.second[0]) / 2, (b.first[1] + b.second[1]) / 2)[1],
   );
   for (const { first, second } of walls)
     face(
@@ -309,6 +389,22 @@ function landform(c, outline, base, top, color, edge) {
     outline.map(([u, v]) => [u, v, top]),
     color,
   );
+  c.save();
+  c.clip();
+  for (let row = -34; row < 25; row += 4) {
+    for (let col = -64; col < 64; col += 7) {
+      const u = col + ((row / 4) % 2) * 3.5;
+      const v = row + variation(col, row) * 1.5;
+      line(
+        c,
+        [u, v, top + 0.1],
+        [u + 3 + variation(row, col) * 2, v, top + 0.1],
+        "rgba(93,73,47,.2)",
+        0.3,
+      );
+    }
+  }
+  c.restore();
 }
 
 function windowFront(c, u, v, z, size = 2.6, lit = false) {
@@ -320,9 +416,13 @@ function windowFront(c, u, v, z, size = 2.6, lit = false) {
       [u + size / 2, v, z + size * 1.45],
       [u - size / 2, v, z + size * 1.45],
     ],
-    lit || miniatureLighting.night > 0.4 ? "rgba(255,199,108,.95)" : "#3d3831",
-    "#e9d1a3",
-    0.48,
+    miniatureLighting.night > 0.4
+      ? "rgba(255,199,108,.95)"
+      : lit
+        ? "#bc965b"
+        : "#685d4c",
+    "#cbb99a",
+    0.4,
   );
   line(
     c,
@@ -334,16 +434,46 @@ function windowFront(c, u, v, z, size = 2.6, lit = false) {
 }
 
 function building(c, scene, spec) {
-  const { u, v, w, d, h, z = 5, roof = "gable", windows = 2, tint } = spec;
+  const character = variation(spec.u, spec.v, scene.seed);
+  withFrame(spec, () =>
+    drawBuilding(c, scene, { ...spec, u: 0, v: 0, z: 0, character }),
+  );
+}
+
+function drawBuilding(c, scene, spec) {
+  const {
+    u,
+    v,
+    w,
+    d,
+    h,
+    z = 0,
+    roof = "gable",
+    windows = 2,
+    tint,
+    character = 0.5,
+  } = spec;
+  const angle = gridHeading + localFrame.angle;
   const a = u - w / 2,
-    b = u + w / 2,
-    back = v - d / 2,
-    front = v + d / 2;
+    b = u + w / 2;
+  const front = v + (Math.cos(angle) >= 0 ? d / 2 : -d / 2);
+  const back = v - (front - v);
+  const side = Math.sin(angle) <= 0 ? a : b;
   const top = z + h;
   const shadowU =
-    -(LIGHT_DIRECTION.x * gridCos + LIGHT_DIRECTION.y * gridSin) * h * 0.65;
+    -(
+      LIGHT_DIRECTION.x * Math.cos(angle) +
+      LIGHT_DIRECTION.y * Math.sin(angle)
+    ) *
+    h *
+    0.32;
   const shadowV =
-    -(-LIGHT_DIRECTION.x * gridSin + LIGHT_DIRECTION.y * gridCos) * h * 0.65;
+    -(
+      -LIGHT_DIRECTION.x * Math.sin(angle) +
+      LIGHT_DIRECTION.y * Math.cos(angle)
+    ) *
+    h *
+    0.32;
   face(
     c,
     [
@@ -352,7 +482,7 @@ function building(c, scene, spec) {
       [b + shadowU, front + shadowV, z],
       [a + shadowU, front + shadowV, z],
     ],
-    "rgba(32,32,26,.19)",
+    "rgba(93,75,48,.08)",
     null,
   );
   face(
@@ -363,16 +493,16 @@ function building(c, scene, spec) {
       [b + 1, front + 2, z],
       [a - 1, front + 2, z],
     ],
-    "rgba(29,28,23,.22)",
+    "rgba(93,75,48,.07)",
     null,
   );
   face(
     c,
     [
-      [a, back, z],
-      [a, front, z],
-      [a, front, top],
-      [a, back, top],
+      [side, back, z],
+      [side, front, z],
+      [side, front, top],
+      [side, back, top],
     ],
     scene.side,
   );
@@ -424,9 +554,18 @@ function building(c, scene, spec) {
         Math.min(2.8, w / 5),
         index === 0 && h > 24,
       );
-      if (h > 32) windowFront(c, x, front + 0.08, z + h * 0.72, 2.2);
+      if (h > 24) windowFront(c, x, front + 0.08, z + h * 0.76, 2.1);
+      if (h > 48) windowFront(c, x, front + 0.08, z + h * 0.26, 2.1);
+      if (character > 0.45)
+        for (const side of [-1, 1])
+          line(
+            c,
+            [x + side * 2.1, front + 0.1, z + h * 0.46],
+            [x + side * 2.1, front + 0.1, z + h * 0.46 + 3.5],
+            scene.roof,
+            0.8,
+          );
     }
-    windowFront(c, a - 0.08, v + d * 0.05, z + h * 0.56, 2.1);
   }
   if (roof === "flat") {
     face(
@@ -471,7 +610,11 @@ function building(c, scene, spec) {
       ],
       scene.roof,
     );
-    for (let stripe = back + 3; stripe < front; stripe += 5)
+    for (
+      let stripe = Math.min(back, front) + 3;
+      stripe < Math.max(back, front);
+      stripe += 5
+    )
       line(
         c,
         [a + 1, stripe, top + 0.4],
@@ -487,11 +630,172 @@ function building(c, scene, spec) {
       0.9,
     );
   }
+
+  if (windows && w > 10) {
+    facadeDetails(c, scene, {
+      u,
+      v,
+      w,
+      d,
+      h,
+      z,
+      roof,
+      character,
+      facadeV: front,
+    });
+  }
+}
+
+// An address can be a timber merchant's house, an arcaded counting hall, or
+// a shop with a hanging sign. Details are fixed across frames and save reloads.
+function facadeDetails(
+  c,
+  scene,
+  { u, v, w, d, h, z, roof, character, facadeV },
+) {
+  const front = facadeV + Math.sign(facadeV - v) * 0.12,
+    a = u - w / 2,
+    b = u + w / 2,
+    top = z + h;
+  const timber = ["quays", "fishing", "windmills", "marsh"].includes(
+    scene.kind,
+  );
+  if (
+    roof !== "flat" &&
+    ["quays", "canals"].includes(scene.kind) &&
+    character > 0.35
+  ) {
+    const ridge = top + Math.min(10, w * 0.34);
+    const gable = [[a, front, top]];
+    for (let step = 0; step < 4; step++) {
+      const x = a + (w * (step + 1)) / 8;
+      const height = top + ((ridge - top) * (step + 1)) / 4;
+      gable.push([x - w / 8, front, height], [x, front, height]);
+    }
+    for (let step = 3; step >= 0; step--) {
+      const x = b - (w * (step + 1)) / 8;
+      const height = top + ((ridge - top) * (step + 1)) / 4;
+      gable.push([x, front, height], [x + w / 8, front, height]);
+    }
+    gable.push([b, front, top]);
+    face(c, gable, scene.wall, INK, 0.45);
+    windowFront(c, u, front + 0.1, top + 1, 1.9);
+  }
+  if (timber && character > 0.3) {
+    for (const x of [a + 1, u, b - 1])
+      line(c, [x, front, z], [x, front, top], "#78634a", 0.7);
+    line(
+      c,
+      [a, front, z + h * 0.36],
+      [b, front, z + h * 0.36],
+      "#78634a",
+      0.65,
+    );
+    for (const x of [a + 1, u])
+      line(
+        c,
+        [x, front, z + h * 0.4],
+        [x + w / 2 - 1, front, top - 2],
+        "#78634a",
+        0.55,
+      );
+  }
+  // Recessed arched doors with stone voussoirs and a threshold.
+  const [dx, dy] = point(u, front, z + 0.8);
+  const doorW = Math.min(3.2, w * 0.14),
+    doorH = Math.min(10, h * 0.38) * MAP_TILT_TAN;
+  c.fillStyle = "#7e6c53";
+  c.strokeStyle = "#b9a281";
+  c.lineWidth = 0.65;
+  c.beginPath();
+  c.moveTo(dx - doorW, dy);
+  c.lineTo(dx - doorW, dy - doorH);
+  c.quadraticCurveTo(dx, dy - doorH - 3, dx + doorW, dy - doorH);
+  c.lineTo(dx + doorW, dy);
+  c.closePath();
+  c.fill();
+  c.stroke();
+  line(c, [u - 4, front + 1, z], [u + 4, front + 1, z], "#cbb590", 0.9);
+  if (character > 0.66 && h < 45) {
+    line(c, [b - 2, front, z + h * 0.4], [b + 4, front, z + h * 0.4], INK, 0.5);
+    line(
+      c,
+      [b + 3, front, z + h * 0.4],
+      [b + 3, front, z + h * 0.4 - 5],
+      INK,
+      0.4,
+    );
+    face(
+      c,
+      [
+        [b + 1, front, z + h * 0.4 - 3],
+        [b + 5, front, z + h * 0.4 - 3],
+        [b + 5, front, z + h * 0.4 - 7],
+        [b + 1, front, z + h * 0.4 - 7],
+      ],
+      scene.roof,
+      INK,
+      0.4,
+    );
+  }
+  if (roof !== "flat") {
+    const ridge = top + Math.min(10, w * 0.34);
+    for (let row = 0.2; row < 0.95; row += 0.19) {
+      const x = a + w * 0.5 * row,
+        height = top + (ridge - top) * row;
+      line(
+        c,
+        [x, v - d / 2, height],
+        [x, front, height],
+        "rgba(67,45,29,.32)",
+        0.35,
+      );
+      for (let tile = v - d / 2 + 1; tile < v + d / 2; tile += 3)
+        line(
+          c,
+          [x, tile, height],
+          [x + 1.3, tile, height + 0.7],
+          "rgba(67,45,29,.27)",
+          0.3,
+        );
+    }
+    if (character > 0.48) {
+      // A little dormer breaks up the otherwise uniform roof silhouette.
+      face(
+        c,
+        [
+          [a + 2, v, top + 2],
+          [a + 7, v, top + 2],
+          [a + 7, v, top + 8],
+          [a + 4.5, v, top + 11],
+          [a + 2, v, top + 8],
+        ],
+        scene.wall,
+      );
+      windowFront(c, a + 4.5, v + 0.05, top + 4, 1.7);
+      line(c, [a + 1, v, top + 8], [a + 4.5, v, top + 12], scene.roof, 1);
+      line(c, [a + 4.5, v, top + 12], [a + 8, v, top + 8], scene.roof, 1);
+    }
+    if (character < 0.38) {
+      face(
+        c,
+        [
+          [b - 4, v - 2, top + 1],
+          [b - 1, v - 2, top + 1],
+          [b - 1, v - 2, top + 12],
+          [b - 4, v - 2, top + 12],
+        ],
+        scene.wall,
+      );
+      line(c, [b - 5, v - 2, top + 12], [b, v - 2, top + 12], INK, 0.75);
+    }
+  }
 }
 
 function battlement(c, scene, u, v, w, d, z, h) {
   building(c, scene, { u, v, w, d, h, z, roof: "flat", windows: 0 });
-  const front = v + d / 2;
+  const front =
+    v + (Math.cos(gridHeading + localFrame.angle) >= 0 ? d / 2 : -d / 2);
   for (let x = u - w / 2 + 2; x < u + w / 2 - 1; x += 7)
     face(
       c,
@@ -532,7 +836,7 @@ function frustum(
         q(second, topRadius, height),
         q(first, topRadius, height),
       ],
-      depth: Math.sin((first + second) / 2),
+      depth: Math.sin((first + second) / 2 + gridHeading + localFrame.angle),
       index,
     });
   }
@@ -542,8 +846,8 @@ function frustum(
       c,
       side.vertices,
       colors[side.index % colors.length],
-      "rgba(49,37,29,.58)",
-      0.55,
+      "rgba(82,63,42,.4)",
+      0.3,
     );
   face(
     c,
@@ -570,19 +874,13 @@ function cone(c, u, v, radius, base, rise, color) {
         [u + Math.cos(next) * radius, v + Math.sin(next) * radius, base],
         [u, v, base + rise],
       ],
-      depth: Math.sin((angle + next) / 2),
+      depth: Math.sin((angle + next) / 2 + gridHeading + localFrame.angle),
       index,
     });
   }
   triangles.sort((a, b) => a.depth - b.depth);
   for (const triangle of triangles)
-    face(
-      c,
-      triangle.vertices,
-      triangle.index % 2 ? color : "#d3ae77",
-      "rgba(52,37,28,.55)",
-      0.55,
-    );
+    face(c, triangle.vertices, color, "rgba(82,63,42,.4)", 0.3);
 }
 
 function pier(c, u, v, w = 12, d = 23, color = "#816143") {
@@ -592,8 +890,8 @@ function pier(c, u, v, w = 12, d = 23, color = "#816143") {
       c,
       [u - w / 2 + 1, plank, 3.2],
       [u + w / 2 - 1, plank, 3.2],
-      "rgba(37,29,24,.42)",
-      0.7,
+      "rgba(69,51,33,.42)",
+      0.4,
     );
   for (const y of [v - d / 2 + 3, v + d / 2 - 3]) {
     line(c, [u - w / 2 + 2, y, 3], [u - w / 2 + 2, y, 10], "#493728", 1.6);
@@ -602,8 +900,8 @@ function pier(c, u, v, w = 12, d = 23, color = "#816143") {
 }
 
 function crane(c, u, v, h = 40) {
-  line(c, [u, v, 3], [u, v, h], "#543a28", 2.1);
-  line(c, [u, v, h], [u + 20, v - 5, h - 4], "#765436", 2);
+  line(c, [u, v, 3], [u, v, h], "#796144", 1.2);
+  line(c, [u, v, h], [u + 20, v - 5, h - 4], "#90744e", 1.1);
   line(c, [u + 20, v - 5, h - 4], [u + 20, v - 5, 11], "#655340", 0.7);
   line(c, [u, v, h], [u - 10, v + 4, 4], "#4e3a2b", 0.85);
   line(c, [u + 18, v - 5, 11], [u + 22, v - 5, 11], "#53402f", 1.8);
@@ -672,7 +970,7 @@ function awning(c, u, v, width, height, color) {
 }
 
 function lighthouse(c, u, v) {
-  frustum(c, u, v, 5, 89, 11, 7, ["#e6d8ad", "#cbbd99", "#fff0c3", "#c0af8f"]);
+  frustum(c, u, v, 0, 89, 11, 7, ["#e6d8ad", "#cbbd99", "#fff0c3", "#c0af8f"]);
   frustum(c, u, v, 33, 42, 8.8, 8.2, ["#b85b43", "#934b3a", "#ce7554"]);
   frustum(c, u, v, 87, 93, 10, 10, ["#554a3f", "#66564a"]);
   frustum(c, u, v, 93, 108, 6.5, 6.5, ["#f6d895", "#bd9665"]);
@@ -682,7 +980,7 @@ function lighthouse(c, u, v) {
 }
 
 function windmill(c, u, v, height = 67) {
-  frustum(c, u, v, 5, height, 8, 5.5, [
+  frustum(c, u, v, 0, height, 8, 5.5, [
     "#dbcaa3",
     "#b9a988",
     "#e5d5b1",
@@ -750,521 +1048,194 @@ function chimney(c, scene, u, v, height) {
     );
 }
 
-function drawQuays(c, scene) {
-  landform(
-    c,
-    [
-      [-60, -32],
-      [39, -32],
-      [55, -20],
-      [60, 9],
-      [32, 15],
-      [-58, 13],
-      [-63, -4],
-    ],
-    -4,
-    5,
-    scene.ground,
-    "#70563d",
+function dome(c, scene, u, v, z, radius) {
+  const [x, y] = point(u, v, z);
+  c.fillStyle = paperPigment(scene.roof);
+  c.strokeStyle = INK;
+  c.lineWidth = 0.5;
+  c.beginPath();
+  c.moveTo(x - radius, y);
+  c.bezierCurveTo(
+    x - radius,
+    y - radius * 1.2,
+    x + radius,
+    y - radius * 1.2,
+    x + radius,
+    y,
   );
-  for (const [u, v, w, d, h] of [
-    [-48, -24, 17, 15, 28],
-    [-28, -25, 16, 14, 34],
-    [-8, -26, 19, 16, 29],
-    [13, -25, 17, 15, 37],
-    [35, -24, 17, 14, 31],
-    [52, -20, 13, 13, 24],
-  ])
-    building(c, scene, { u, v, w, d, h, windows: 2 });
-  for (const [u, v, w, d, h] of [
-    [-51, -6, 14, 13, 22],
-    [-33, -5, 16, 14, 29],
-    [-15, -4, 15, 13, 26],
-    [26, -4, 18, 13, 26],
-    [46, -3, 16, 13, 23],
-  ])
-    building(c, scene, { u, v, w, d, h, windows: 2 });
-  battlement(c, scene, 5, -17, 18, 18, 5, 62);
-  building(c, scene, {
-    u: 5,
-    v: -17,
-    w: 21,
-    d: 20,
-    h: 8,
-    z: 68,
-    roof: "gable",
-    windows: 0,
-  });
-  pier(c, -39, 23);
-  pier(c, 35, 23);
-  crane(c, 48, 9, 45);
-  crane(c, -51, 5, 39);
-  cargo(c, -25, 12, 3);
-  cargo(c, 17, 10, 2);
-}
-
-function drawCitadel(c, scene) {
-  landform(
-    c,
-    [
-      [-63, -25],
-      [-43, -36],
-      [43, -36],
-      [63, -20],
-      [59, 15],
-      [-56, 16],
-    ],
-    -7,
-    8,
-    scene.ground,
-    "#66635d",
-  );
-  battlement(c, scene, 0, -9, 112, 37, 8, 16);
-  for (const u of [-48, 48]) battlement(c, scene, u, -17, 16, 16, 8, 42);
-  terrace(c, 0, -17, 82, 30, 24, 34, "#999588", "#6d6a64");
-  for (const u of [-33, -18, 18, 33])
-    building(c, scene, {
-      u,
-      v: -20,
-      w: 13,
-      d: 12,
-      h: 27,
-      z: 34,
-      roof: "flat",
-      windows: 1,
-    });
-  battlement(c, scene, 0, -23, 29, 25, 34, 67);
-  battlement(c, scene, 0, -23, 18, 17, 101, 8);
-  face(
-    c,
-    [
-      [-7, 10, 8],
-      [7, 10, 8],
-      [7, 10, 24],
-      [-7, 10, 24],
-    ],
-    "#514b43",
-  );
-  for (const z of [50, 68, 86]) windowFront(c, 0, -10, z, 2.2);
-  line(c, [-58, 15, 18], [58, 15, 18], "rgba(240,225,185,.47)", 1.1);
-}
-
-function drawLighthouseCity(c, scene) {
-  landform(
-    c,
-    Array.from({ length: 12 }, (_, index) => {
-      const angle = (index / 12) * Math.PI * 2;
-      return [Math.cos(angle) * 60, -9 + Math.sin(angle) * 27];
-    }),
-    -4,
-    5,
-    scene.ground,
-    "#8d8673",
-  );
-  face(
-    c,
-    [
-      [-17, 0, 5.1],
-      [-4, 0, 5.1],
-      [1, 16, 5.1],
-      [-13, 16, 5.1],
-    ],
-    "#688a8b",
-    "#4f7173",
-  );
-  line(c, [-16, 5, 7], [-2, 5, 7], "#d4c5a2", 2);
-  pier(c, -40, 23, 11, 25, "#9b8a6c");
-  pier(c, 42, 22, 11, 24, "#9b8a6c");
-  for (const [u, v, w, d, h] of [
-    [-51, -23, 14, 14, 23],
-    [-35, -23, 17, 14, 30],
-    [-18, -24, 14, 13, 25],
-    [35, -22, 15, 14, 29],
-    [52, -20, 12, 12, 22],
-    [-46, -3, 13, 13, 20],
-    [-26, -4, 16, 13, 25],
-    [41, -4, 16, 13, 23],
-  ])
-    building(c, scene, { u, v, w, d, h, windows: 2 });
-  lighthouse(c, 9, -17);
-  frustum(c, -10, -22, 28, 48, 10, 8, ["#d7c6a0", "#b7a98f", "#eedbb6"]);
-  cone(c, -10, -22, 9, 48, 10, "#578081");
-  cargo(c, -47, 10, 2);
-}
-
-function drawFoundry(c, scene) {
-  landform(
-    c,
-    [
-      [-61, -20],
-      [-51, -34],
-      [-30, -29],
-      [-11, -37],
-      [21, -33],
-      [57, -25],
-      [63, 4],
-      [49, 14],
-      [8, 11],
-      [-33, 17],
-      [-62, 7],
-    ],
-    -8,
-    5,
-    scene.ground,
-    "#493f39",
-  );
-  terrace(c, -8, -17, 92, 30, 5, 17, "#766354", "#403833");
-  for (const [u, v, w, d, h] of [
-    [-48, -20, 17, 15, 25],
-    [-25, -20, 20, 17, 28],
-    [2, -21, 22, 16, 31],
-    [29, -22, 18, 15, 26],
-    [49, -19, 15, 13, 24],
-    [-39, -3, 18, 14, 22],
-    [-13, -3, 17, 13, 25],
-    [16, -4, 21, 14, 23],
-    [40, -2, 17, 13, 27],
-  ])
-    building(c, scene, {
-      u,
-      v,
-      w,
-      d,
-      h,
-      z: v < -10 ? 17 : 5,
-      roof: "flat",
-      windows: 2,
-    });
-  chimney(c, scene, -32, -20, 90);
-  chimney(c, scene, -12, -19, 75);
-  chimney(c, scene, 16, -24, 64);
-  pier(c, -42, 22, 14, 21, "#675146");
-  crane(c, 48, 3, 51);
-  cargo(c, 25, 9, 3);
-}
-
-function drawTerraceCity(c, scene) {
-  landform(
-    c,
-    [
-      [-61, 15],
-      [-55, -14],
-      [-34, -34],
-      [32, -34],
-      [55, -15],
-      [62, 14],
-    ],
-    -5,
-    7,
-    scene.ground,
-    "#9c744f",
-  );
-  terrace(c, 0, -18, 102, 31, 7, 19, "#d2ad78", "#a27952");
-  terrace(c, 0, -25, 77, 24, 19, 33, "#e2bd84", "#a27a52");
-  for (const [u, v, w, d, h, z] of [
-    [-48, -7, 17, 14, 25, 7],
-    [-29, -8, 16, 13, 27, 7],
-    [31, -8, 16, 13, 29, 7],
-    [49, -7, 15, 13, 24, 7],
-    [-32, -23, 14, 12, 28, 33],
-    [32, -23, 14, 12, 28, 33],
-  ])
-    building(c, scene, { u, v, w, d, h, z, windows: 2 });
-  battlement(c, scene, 0, -27, 33, 20, 33, 44);
-  frustum(c, 0, -27, 77, 98, 9, 8, ["#f0d49a", "#c09a67", "#e3c58b"]);
-  cone(c, 0, -27, 11, 98, 17, "#b7784b");
-  for (const u of [-57, 57]) {
-    frustum(c, u, -21, 7, 68, 6, 4, ["#e7c384", "#ba915f"]);
-    cone(c, u, -21, 6, 68, 9, "#a76548");
+  c.quadraticCurveTo(x, y + radius * 0.3, x - radius, y);
+  c.fill();
+  c.stroke();
+  for (const rib of [-0.55, 0, 0.55]) {
+    c.beginPath();
+    c.moveTo(x + rib * radius, y);
+    c.quadraticCurveTo(
+      x + rib * radius * 0.6,
+      y - radius * 0.7,
+      x,
+      y - radius * 0.9,
+    );
+    c.stroke();
   }
-  for (const u of [-17, -8, 8, 17])
-    line(c, [u, 10, 7], [u, 10, 20], "#876a4d", 1.2);
-  for (const [u, color] of [
-    [-36, "#9f5b47"],
-    [-19, "#567d79"],
-    [19, "#b87f4b"],
-    [36, "#74724e"],
-  ])
-    awning(c, u, 3, 12, 19, color);
-  pier(c, -45, 25, 11, 20, "#9d764e");
+  line(c, [u, v, z + radius * 1.8], [u, v, z + radius * 2.4], INK, 0.55);
 }
 
-function drawWindmillCity(c, scene) {
-  landform(
-    c,
-    Array.from({ length: 12 }, (_, index) => {
-      const angle = (index / 12) * Math.PI * 2;
-      return [Math.cos(angle) * 62, -9 + Math.sin(angle) * 25];
-    }),
-    -4,
-    5,
-    scene.ground,
-    "#697451",
-  );
-  terrace(c, 0, -24, 109, 26, 5, 15, "#a2a77e", "#737959");
-  for (const [u, v, w, d, h] of [
-    [-52, -6, 15, 13, 23],
-    [-31, -4, 17, 14, 27],
-    [-8, -5, 15, 13, 25],
-    [30, -4, 18, 14, 26],
-    [51, -5, 15, 13, 23],
-  ])
-    building(c, scene, { u, v, w, d, h, windows: 2 });
-  windmill(c, -43, -27, 72);
-  windmill(c, 0, -30, 83);
-  windmill(c, 43, -27, 68);
-  pier(c, -48, 22, 10, 20, "#746b4b");
-  pier(c, 45, 22, 10, 20, "#746b4b");
-  cargo(c, 21, 10, 2);
+function tree(c, u, v, height, seed) {
+  line(c, [u, v, 4], [u, v, height], "#7b6b4e", 0.7);
+  const [x, y] = point(u, v, height);
+  c.beginPath();
+  for (let lobe = 0; lobe <= 24; lobe++) {
+    const angle = (lobe / 24) * Math.PI * 2;
+    const radius = 5 + variation(lobe, seed) * 2;
+    const px = x + Math.cos(angle) * radius,
+      py = y + Math.sin(angle) * radius * 0.8;
+    if (!lobe) c.moveTo(px, py);
+    else c.lineTo(px, py);
+  }
+  c.closePath();
+  c.fillStyle = "#a6ae88";
+  c.fill();
+  c.strokeStyle = "rgba(75,83,52,.45)";
+  c.lineWidth = 0.35;
+  c.stroke();
+  for (let sprig = 0; sprig < 26; sprig++) {
+    const angle = sprig * 2.4,
+      radius = variation(sprig, seed) * 5;
+    const px = x + Math.cos(angle) * radius,
+      py = y + Math.sin(angle) * radius * 0.8;
+    c.beginPath();
+    c.moveTo(px - 1, py + 0.5);
+    c.quadraticCurveTo(px, py - 1.3, px + 1.2, py);
+    c.strokeStyle = sprig % 3 ? "rgba(77,91,51,.4)" : "rgba(242,230,190,.7)";
+    c.lineWidth = 0.3;
+    c.stroke();
+  }
 }
 
 function palm(c, u, v, h = 40) {
-  line(c, [u, v, 5], [u + 3, v, h], "#71583b", 2.2);
+  line(c, [u, v, 5], [u + 3, v, h], "#71583b", 1.2);
   const [x, y] = point(u + 3, v, h);
-  c.strokeStyle = "#536e48";
-  c.lineWidth = 3;
+  c.strokeStyle = "#70805a";
+  c.lineWidth = 1.8;
   for (let leaf = -2; leaf <= 2; leaf++) {
     c.beginPath();
     c.moveTo(x, y);
-    c.quadraticCurveTo(x + leaf * 8, y - 9, x + leaf * 11, y + 8);
+    c.quadraticCurveTo(x + leaf * 6, y - 7, x + leaf * 9, y + 6);
     c.stroke();
   }
 }
 
-function drawCanalCity(c, scene) {
-  // Three islands joined by arched bridges make a different skyline from a
-  // solid quay. The blue channels remain visible between the roof clusters.
-  for (const u of [-39, 0, 39]) {
-    terrace(c, u, -8, 29, 43, -4, 5, scene.ground, scene.side);
-    for (const v of [-23, -3])
-      building(c, scene, {
-        u: u + (v < -10 ? -2 : 2),
-        v,
-        w: 19,
-        d: 14,
-        h: 26 + ((scene.variant * 3 + u + 39) % 13),
-        windows: 2,
-      });
-  }
-  for (const u of [-20, 20]) {
-    face(
-      c,
-      [
-        [u - 7, 2, 6],
-        [u + 7, 2, 6],
-        [u + 7, 10, 6],
-        [u - 7, 10, 6],
-      ],
-      scene.wall,
-    );
-    const [x, y] = point(u, 10, 4);
-    c.strokeStyle = scene.side;
-    c.lineWidth = 3;
+function drawLandmark(c, scene, mark) {
+  const { type, h = 55, r = 7, w = 16, d = 18 } = mark;
+  withFrame({ ...mark, z: mark.z ?? 5 }, () => {
+    switch (type) {
+      case "lighthouse":
+        lighthouse(c, 0, 0);
+        break;
+      case "windmill":
+        windmill(c, 0, 0, h);
+        break;
+      case "chimney":
+        chimney(c, scene, 0, 0, h);
+        break;
+      case "spire":
+        frustum(c, 0, 0, 0, h, r, r * 0.72, [scene.wall, scene.side]);
+        cone(c, 0, 0, r * 1.3, h, 17, scene.roof);
+        windowFront(c, 0, r, h * 0.4, 2);
+        break;
+      case "turret":
+      case "furnace":
+        frustum(c, 0, 0, 0, h, r, r * 0.88, [scene.wall, scene.side]);
+        if (type === "furnace") dome(c, scene, 0, 0, h, r * 0.9);
+        else {
+          frustum(c, 0, 0, h, h + 4, r + 1, r + 1, [scene.wall, scene.side]);
+          for (let merlon = 0; merlon < 10; merlon++) {
+            const angle = (merlon / 10) * Math.PI * 2;
+            const u = Math.cos(angle) * r,
+              v = Math.sin(angle) * r;
+            line(c, [u, v, h + 4], [u, v, h + 8], scene.wall, 2.2);
+          }
+          windowFront(c, 0, r, h * 0.5, 2.6);
+        }
+        break;
+      case "dome":
+        frustum(c, 0, 0, 0, h, r * 0.9, r * 0.9, [scene.wall, scene.side]);
+        dome(c, scene, 0, 0, h, r);
+        break;
+      case "keep":
+        battlement(c, scene, 0, 0, w, d, 0, h);
+        break;
+      case "clock": {
+        building(c, scene, { u: 0, v: 0, w, d, h, windows: 2 });
+        const front =
+          Math.cos(gridHeading + localFrame.angle) >= 0 ? d / 2 : -d / 2;
+        const [x, y] = point(0, front, h * 0.8);
+        c.beginPath();
+        c.ellipse(x, y, 3.4, 4.2, 0, 0, Math.PI * 2);
+        c.fillStyle = "#e8d8ac";
+        c.fill();
+        c.strokeStyle = INK;
+        c.lineWidth = 0.45;
+        c.stroke();
+        c.beginPath();
+        c.moveTo(x, y - 2.8);
+        c.lineTo(x, y);
+        c.lineTo(x + 2, y + 0.8);
+        c.stroke();
+        break;
+      }
+      case "ribs":
+        for (let rib = 0; rib < 9; rib++) {
+          const [x, y] = point(0, -19 + rib * 4, 5);
+          c.beginPath();
+          c.moveTo(x - 9, y);
+          c.bezierCurveTo(x - 10, y - 12, x + 10, y - 12, x + 9, y);
+          c.strokeStyle = "#8c8066";
+          c.lineWidth = 0.9;
+          c.stroke();
+        }
+        break;
+    }
+  });
+}
+
+function drawNets(c, u, v, angle) {
+  withFrame({ u, v, angle }, () => {
+    for (const x of [-9, 9]) line(c, [x, 0, 5], [x, 0, 26], "#786a50", 1);
+    line(c, [-9, 0, 26], [9, 0, 26], "#786a50", 0.7);
+    for (let thread = -7; thread < 9; thread += 3) {
+      line(c, [thread, 0, 23], [thread + 2, 0, 8], "rgba(64,80,67,.5)", 0.4);
+      line(
+        c,
+        [-7, 0, 15 + thread],
+        [9, 0, 15 + thread],
+        "rgba(64,80,67,.4)",
+        0.4,
+      );
+    }
+  });
+}
+
+function drawDock(c, scene, [u, v, w, d, angle]) {
+  withFrame({ u, v, angle }, () => {
+    pier(c, 0, 0, w, d, scene.side);
+    const [x, y] = point(w / 2 + 2, -d / 2 + 3, 3);
     c.beginPath();
-    c.moveTo(x - 7, y + 2);
-    c.quadraticCurveTo(x, y - 6, x + 7, y + 2);
+    c.ellipse(x, y, 2.1, 0.9, 0, 0, Math.PI * 2);
+    c.strokeStyle = "#9a825d";
+    c.lineWidth = 0.45;
     c.stroke();
-  }
-  frustum(c, 0, -28, 5, 70, 9, 7, [scene.wall, scene.side]);
-  cone(c, 0, -28, 9, 70, 17, scene.roof);
-  for (const u of [-47, 47]) pier(c, u, 24, 10, 20, "#827356");
-  for (const u of [-35, 4, 36]) awning(c, u, 6, 12, 20, "#668888");
+  });
 }
 
-function drawFishingVillage(c, scene) {
-  landform(
-    c,
-    [
-      [-61, 8],
-      [-53, -25],
-      [-10, -34],
-      [48, -23],
-      [62, 13],
-    ],
-    -5,
-    7,
-    scene.ground,
-    scene.side,
+function samplePromenade(points, progress) {
+  const position = progress * (points.length - 1);
+  const index = Math.min(points.length - 2, Math.floor(position));
+  const blend = position - index;
+  return points[index].map(
+    (value, coordinate) =>
+      value + (points[index + 1][coordinate] - value) * blend,
   );
-  for (const [u, v, h] of [
-    [-42, -10, 21],
-    [-19, -20, 29],
-    [7, -20, 34],
-    [37, -11, 24],
-  ])
-    building(c, scene, {
-      u,
-      v,
-      w: 19,
-      d: 16,
-      h: h + scene.variant * 2,
-      z: 7,
-      windows: 1,
-    });
-  // Tall drying racks, ropes, and nets identify the working waterfront.
-  for (const u of [-42, 0, 42]) {
-    pier(c, u, 26, 11, 32, "#778078");
-    line(c, [u - 8, 10, 7], [u - 8, 10, 35], "#594c3e", 1.4);
-    line(c, [u + 8, 10, 7], [u + 8, 10, 35], "#594c3e", 1.4);
-    line(c, [u - 8, 10, 35], [u + 8, 10, 35], "#665849", 1);
-    for (let thread = -6; thread <= 6; thread += 3) {
-      line(
-        c,
-        [u + thread, 10, 32],
-        [u + thread + 2, 10, 14],
-        "rgba(51,67,64,.55)",
-        0.6,
-      );
-      line(
-        c,
-        [u - 6, 10, 17 + thread],
-        [u + 6, 10, 17 + thread],
-        "rgba(51,67,64,.4)",
-        0.6,
-      );
-    }
-  }
-  frustum(c, -49, -27, 7, 62 + scene.variant * 3, 7, 5, [
-    scene.wall,
-    scene.side,
-  ]);
-  cone(c, -49, -27, 7, 62 + scene.variant * 3, 8, scene.roof);
-}
-
-function drawReedVillage(c, scene) {
-  for (const [u, v] of [
-    [-44, -12],
-    [-20, -24],
-    [10, -25],
-    [39, -10],
-    [-14, 5],
-    [21, 7],
-  ]) {
-    for (const side of [-1, 1])
-      line(
-        c,
-        [u + side * 6, v + 5, -4],
-        [u + side * 6, v + 5, 13],
-        "#5e6247",
-        1.8,
-      );
-    terrace(c, u, v, 18, 16, 9, 13, "#8f9166", "#626747");
-    building(c, scene, {
-      u,
-      v,
-      w: 15,
-      d: 13,
-      h: 15 + scene.variant * 3,
-      z: 13,
-      windows: 1,
-    });
-  }
-  terrace(c, 0, 17, 109, 6, 1, 5, "#9d9468", "#686344");
-  pier(c, 0, 33, 9, 28, "#85835d");
-  for (const u of [-58, -32, 32, 58])
-    for (let reed = 0; reed < 4; reed++) {
-      line(
-        c,
-        [u + reed * 2, 14, -1],
-        [u + reed * 2 - 2, 14, 12 + (reed % 2) * 5],
-        "#69724b",
-        0.8,
-      );
-      line(
-        c,
-        [u + reed * 2 - 2, 14, 12],
-        [u + reed * 2 - 2, 14, 16],
-        "#806e44",
-        1.8,
-      );
-    }
-  frustum(c, 0, -34, 5, 48, 7, 5, [scene.wall, scene.side]);
-  cone(c, 0, -34, 12, 48, 12, scene.roof);
-}
-
-function drawTropicalMarket(c, scene) {
-  landform(
-    c,
-    [
-      [-62, 12],
-      [-55, -22],
-      [-15, -34],
-      [46, -24],
-      [63, 13],
-    ],
-    -4,
-    5,
-    scene.ground,
-    "#978459",
-  );
-  for (const [u, v, h] of [
-    [-38, -18, 28],
-    [-12, -25, 34],
-    [15, -21, 29],
-    [40, -15, 26],
-  ])
-    building(c, scene, {
-      u,
-      v,
-      w: 20,
-      d: 16,
-      h: h + scene.variant * 3,
-      windows: 2,
-    });
-  frustum(c, 0, -30, 5, 68, 10, 8, [scene.wall, scene.side]);
-  cone(c, 0, -30, 12, 68, 16, "#4f8583");
-  for (const [u, color] of [
-    [-43, "#ae5b43"],
-    [-21, "#577e7b"],
-    [5, "#c79b51"],
-    [29, "#79618a"],
-  ]) {
-    awning(c, u, 6, 17, 23, color);
-    cargo(c, u - 4, 13, 2);
-  }
-  palm(c, -57, -20, 45);
-  palm(c, 57, -15, 48);
-  for (const u of [-38, 0, 38]) pier(c, u, 27, 10, 27, "#997449");
-}
-
-function drawMonastery(c, scene) {
-  landform(
-    c,
-    [
-      [-58, 12],
-      [-60, -12],
-      [-28, -33],
-      [37, -31],
-      [62, 12],
-    ],
-    -9,
-    17,
-    scene.ground,
-    scene.side,
-  );
-  terrace(c, 0, -12, 95, 39, 17, 25, scene.wall, scene.side);
-  for (const u of [-31, 31])
-    building(c, scene, { u, v: -13, w: 22, d: 29, h: 28, z: 25, windows: 3 });
-  building(c, scene, { u: 0, v: -22, w: 30, d: 23, h: 41, z: 25, windows: 2 });
-  frustum(c, 0, -25, 66, 93, 8, 6, [scene.wall, scene.side]);
-  cone(c, 0, -25, 9, 93, 18, scene.roof);
-  for (let step = 0; step < 7; step++)
-    terrace(
-      c,
-      0,
-      11 + step * 3,
-      24,
-      4,
-      2,
-      25 - step * 3,
-      scene.wall,
-      scene.side,
-    );
-  for (const u of [-49, 49]) {
-    frustum(c, u, -24, 17, 52, 5, 4, ["#4e6b4a", "#79906a"]);
-    cone(c, u, -24, 7, 52, 17, "#526f4c");
-  }
-  pier(c, 0, 36, 20, 20, "#96835f");
 }
 
 export function drawPortMiniature(
@@ -1276,58 +1247,197 @@ export function drawPortMiniature(
 ) {
   const scene = SCENES.get(name);
   if (!scene) return false;
-  setGridHeading(heading);
+  const layout = scene.layout;
+  setGridHeading(heading + layout.angle);
   miniatureLighting = lighting;
   c.save();
+  c.scale(layout.scale, layout.scale);
   c.lineJoin = "round";
-  halo(c);
-  switch (scene.kind) {
-    case "quays":
-      drawQuays(c, scene);
-      break;
-    case "citadel":
-      drawCitadel(c, scene);
-      break;
-    case "lighthouse":
-      drawLighthouseCity(c, scene);
-      break;
-    case "foundry":
-      drawFoundry(c, scene);
-      break;
-    case "terraces":
-      drawTerraceCity(c, scene);
-      break;
-    case "windmills":
-      drawWindmillCity(c, scene);
-      break;
-    case "canals":
-      drawCanalCity(c, scene);
-      break;
-    case "fishing":
-      drawFishingVillage(c, scene);
-      break;
-    case "marsh":
-      drawReedVillage(c, scene);
-      break;
-    case "tropical":
-      drawTropicalMarket(c, scene);
-      break;
-    case "monastery":
-      drawMonastery(c, scene);
-      break;
+  c.lineCap = "round";
+  if (layout.water) {
+    face(
+      c,
+      layout.water.map(([u, v]) => [u, v, -4]),
+      "rgba(96,151,145,.18)",
+      null,
+    );
+    c.save();
+    c.clip();
+    for (let v = -24; v < 52; v += 6)
+      for (let u = -60; u < 65; u += 17) {
+        const offset = variation(u, v) * 5;
+        line(
+          c,
+          [u + offset, v, -4],
+          [u + offset + 9, v, -4],
+          "rgba(67,117,112,.22)",
+          0.3,
+        );
+      }
+    c.restore();
   }
+  for (const { outline, z } of layout.grounds)
+    landform(c, outline, z > 10 ? -3 : z - 4, z, scene.ground, scene.side);
+  for (const [u, v, w, d, angle, z] of layout.bridges ?? [])
+    withFrame({ u, v, angle }, () =>
+      terrace(c, 0, 0, w, d, z - 3, z, scene.wall, scene.side),
+    );
+  for (const [u, v, w, d, count, bottom, top] of layout.steps ?? [])
+    for (let step = 0; step < count; step++)
+      terrace(
+        c,
+        u,
+        v + (step * d) / 2,
+        w,
+        d / 2,
+        bottom,
+        top - ((top - bottom) * step) / count,
+        scene.wall,
+        scene.side,
+      );
+  for (let index = 1; index < layout.walk.length; index++)
+    line(
+      c,
+      layout.walk[index - 1],
+      layout.walk[index],
+      "rgba(234,217,174,.65)",
+      2,
+    );
   const development = harborDevelopment(evolution);
-  for (let dock = 0; dock < development.docks; dock++)
-    pier(c, -51 + dock * 51, 31, 9, 26 + dock * 4, scene.side);
-  cargo(c, -31, 14, Math.ceil(development.cargo / 2));
-  cargo(c, 28, 14, Math.floor(development.cargo / 2));
+  layout.docks
+    .slice(0, Math.min(layout.docks.length, development.docks + 1))
+    .forEach((dock) => drawDock(c, scene, dock));
+  const objects = [];
+  for (const [u, v, w, d, h, angle, z = 5, roof = "gable"] of layout.houses)
+    objects.push({
+      u,
+      v,
+      draw() {
+        if (layout.stilted)
+          withFrame({ u, v, angle }, () => {
+            for (const side of [-1, 1])
+              line(
+                c,
+                [(side * w) / 3, d / 3, -4],
+                [(side * w) / 3, d / 3, z],
+                "#747457",
+                1.1,
+              );
+            terrace(c, 0, 0, w + 3, d + 3, z - 2, z, scene.ground, scene.side);
+          });
+        building(c, scene, {
+          u,
+          v,
+          w,
+          d,
+          h,
+          angle,
+          z,
+          roof,
+          windows: Math.max(1, Math.floor(w / 8)),
+        });
+      },
+    });
+  for (const mark of layout.landmarks)
+    objects.push({ ...mark, draw: () => drawLandmark(c, scene, mark) });
+  for (const [u, v, w, d, angle, z, h] of layout.walls ?? [])
+    objects.push({
+      u,
+      v,
+      draw: () =>
+        withFrame({ u, v, angle }, () =>
+          battlement(c, scene, 0, 0, w, d, z, h),
+        ),
+    });
+  for (const [u, v, h] of layout.trees)
+    objects.push({ u, v, draw: () => tree(c, u, v, h, scene.seed) });
+  for (const [u, v, h] of layout.palms ?? [])
+    objects.push({ u, v, draw: () => palm(c, u, v, h) });
+  for (const [u, v, angle] of layout.nets ?? [])
+    objects.push({ u, v, draw: () => drawNets(c, u, v, angle) });
+  for (const [u, v, h, angle] of layout.cranes ?? [])
+    objects.push({
+      u,
+      v,
+      draw: () => withFrame({ u, v, angle }, () => crane(c, 0, 0, h)),
+    });
+  for (const [u, v, width, height] of layout.awnings ?? [])
+    objects.push({
+      u,
+      v,
+      draw: () => awning(c, u, v, width, height, scene.roof),
+    });
+  const [warehouse, works] = layout.expansion;
+  const [wu, wv, wa, wz] = warehouse,
+    [tu, tv, ta, tz] = works;
   if (development.warehouses)
-    building(c, scene, { u: 62, v: 5, w: 13, d: 11, h: 21, windows: 1 });
-  if (development.cranes) crane(c, 61, 12, 36);
-  if (development.foundries) chimney(c, scene, -62, -9, 42);
-  if (development.fortifications) battlement(c, scene, -62, 0, 12, 14, 5, 18);
-  if (development.level >= 3)
-    building(c, scene, { u: -57, v: -14, w: 13, d: 14, h: 38, windows: 2 });
+    objects.push({
+      u: wu,
+      v: wv,
+      draw: () =>
+        building(c, scene, {
+          u: wu,
+          v: wv,
+          w: 16,
+          d: 12,
+          h: 17,
+          angle: wa,
+          z: wz,
+          windows: 2,
+        }),
+    });
+  if (development.cranes)
+    objects.push({
+      u: tu,
+      v: tv,
+      draw: () =>
+        withFrame({ u: tu, v: tv, angle: ta }, () => crane(c, 0, 0, 30)),
+    });
+  if (development.foundries)
+    objects.push({
+      u: wu,
+      v: wv,
+      draw: () =>
+        withFrame({ u: wu, v: wv, z: wz }, () => chimney(c, scene, 0, 0, 34)),
+    });
+  if (development.fortifications)
+    objects.push({
+      u: tu,
+      v: tv,
+      draw: () =>
+        withFrame({ u: tu, v: tv, angle: ta }, () =>
+          battlement(c, scene, 0, 0, 10, 9, tz, 14),
+        ),
+    });
+  objects.sort((a, b) => point(a.u, a.v)[1] - point(b.u, b.v)[1]);
+  objects.forEach((object) => object.draw());
+  for (const [u, v] of layout.reeds ?? [])
+    for (let reed = 0; reed < 5; reed++) {
+      line(
+        c,
+        [u + reed * 2, v, 0],
+        [u + reed * 2 - 2, v, 12 + (reed % 3) * 3],
+        "#82845d",
+        0.6,
+      );
+      line(
+        c,
+        [u + reed * 2 - 2, v, 11],
+        [u + reed * 2 - 2, v, 15],
+        "#90764c",
+        1.1,
+      );
+    }
+  for (let index = 0; index < development.cargo; index++) {
+    const [u, v, z] = samplePromenade(
+      layout.walk,
+      (index + 1) / (development.cargo + 1),
+    );
+    withFrame(
+      { u, v, z: z - 5, angle: layout.houses[index % layout.houses.length][5] },
+      () => cargo(c, 0, 0, 1),
+    );
+  }
   c.restore();
   return true;
 }
@@ -1384,21 +1494,25 @@ export function drawPortActivity(
 ) {
   const scene = SCENES.get(name);
   if (!scene || zoom < 1.08) return;
-  setGridHeading(heading);
+  const layout = scene.layout;
+  setGridHeading(heading + layout.angle);
   miniatureLighting = lighting;
   const seconds = time / 1000;
   const development = harborDevelopment(evolution);
   c.save();
+  c.scale(layout.scale, layout.scale);
   c.lineJoin = "round";
+  c.lineCap = "round";
   // Workers walk between the market and the quays. Prosperity changes the
   // crowd density, while distressed harbors keep only a small working crew.
   for (let worker = 0; worker < development.workers; worker++) {
-    const u =
-      -41 +
-      (worker * 83) / development.workers +
-      Math.sin(seconds * 0.45 + worker * 2.4) * 4;
-    const v = 9 + (worker % 2) * 5;
-    const [x, y] = point(u, v, 10);
+    const progress =
+      ((worker + 0.5) / development.workers +
+        Math.sin(seconds * 0.16 + worker) * 0.025 +
+        1) %
+      1;
+    const [u, v, z] = samplePromenade(layout.walk, progress);
+    const [x, y] = point(u, v, z + 5);
     c.fillStyle = worker % 3 ? "#4b5145" : "#9c6045";
     c.fillRect(x - 1, y - 3, 2, 4);
     c.fillStyle = "#d9bd8c";
@@ -1414,7 +1528,8 @@ export function drawPortActivity(
   }
   if (["canals", "tropical", "quays"].includes(scene.kind)) {
     for (let pennant = 0; pennant < 5; pennant++) {
-      const [x, y] = point(-38 + pennant * 19, 5, 29);
+      const [u, v, z] = samplePromenade(layout.walk, (pennant + 1) / 6);
+      const [x, y] = point(u, v, z + 18);
       c.fillStyle = ["#aa5844", "#5b7e79", "#c69b52"][pennant % 3];
       c.beginPath();
       c.moveTo(x - 3, y);
@@ -1425,7 +1540,12 @@ export function drawPortActivity(
     }
   }
   if (scene.kind === "lighthouse") {
-    const [x, y] = point(9, -17, 100);
+    const beacon = layout.landmarks.find((mark) => mark.type === "lighthouse");
+    const [x, y] = point(
+      beacon?.u ?? layout.flag[0],
+      beacon?.v ?? layout.flag[1],
+      (beacon?.z ?? 5) + 100 * (beacon?.scale ?? 1),
+    );
     const glow = c.createRadialGradient(x, y, 1, x, y, 28);
     glow.addColorStop(0, "rgba(255,233,162,.46)");
     glow.addColorStop(1, "rgba(255,217,133,0)");
@@ -1445,23 +1565,21 @@ export function drawPortActivity(
     c.fill();
     c.restore();
   }
-  if (scene.kind === "windmills") {
-    for (const [u, v, z] of [
-      [-43, -27, 66],
-      [0, -30, 77],
-      [43, -27, 62],
-    ])
+  for (const mark of layout.landmarks.filter(
+    (mark) => mark.type === "windmill",
+  ))
+    withFrame(mark, () =>
       rotor(
         c,
-        u,
-        v,
-        z,
-        0.27 + u * 0.02 + Math.sin(seconds * 0.45 + u) * 0.045,
+        0,
+        0,
+        mark.h - 6,
+        0.27 + Math.sin(seconds * 0.45 + mark.u) * 0.045,
         0.35,
-      );
-  }
+      ),
+    );
   if (scene.kind === "foundry") {
-    const [x, y] = point(-12, 2, 12);
+    const [x, y] = point(...layout.forge);
     c.fillStyle = foundryGlowStyle(0.32 + Math.sin(seconds * 1.8) * 0.06);
     c.beginPath();
     c.ellipse(x, y, 11, 4, 0, 0, Math.PI * 2);
@@ -1481,7 +1599,8 @@ export function drawPortActivity(
     }
   }
   if (scene.kind === "quays") {
-    const [x, y] = point(45, 8, 29);
+    const craneSite = layout.docks[1];
+    const [x, y] = point(craneSite[0], craneSite[1] - 13, 28);
     const sway = Math.sin(seconds * 0.8) * 3;
     c.strokeStyle = "rgba(59,43,30,.75)";
     c.lineWidth = 0.8;
@@ -1495,12 +1614,13 @@ export function drawPortActivity(
     c.strokeRect(x + sway - 4, y + 16, 8, 6);
   }
   if (scene.kind === "terraces") {
-    const [x, y] = point(22, 11, 19);
+    const [u, v, width, height] = layout.awnings[1];
+    const [x, y] = point(u, v, height);
     const flutter = Math.sin(seconds * 2.1) * 1.6;
     c.fillStyle = "rgba(171,81,52,.8)";
     c.beginPath();
-    c.moveTo(x - 13, y);
-    c.lineTo(x + 13, y);
+    c.moveTo(x - width / 2, y);
+    c.lineTo(x + width / 2, y);
     c.lineTo(x + 10, y + 7 + flutter);
     c.lineTo(x - 10, y + 7 - flutter);
     c.closePath();
