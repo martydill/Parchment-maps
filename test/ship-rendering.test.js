@@ -127,6 +127,120 @@ test("night accents follow each rig's sail edges and disappear in daylight", () 
   }
 });
 
+test("cloth is lightly translucent with stitched seams and opaque timber", () => {
+  const context = canvasContext();
+  drawMerchantShip(context, { x: 0, y: 0, vesselClass: "brig", idNum: 1 });
+  const opacities = context.calls
+    .filter(([property]) => property === "globalAlpha")
+    .map(([, alpha]) => alpha);
+  assert.ok(opacities.some((alpha) => alpha > 0.9 && alpha < 0.98));
+  assert.ok(opacities.includes(1));
+  assert.ok(
+    context.calls.some(
+      ([method, dash]) => method === "setLineDash" && dash.length === 2,
+    ),
+  );
+  assert.ok(
+    context.calls.some(
+      ([property, style]) =>
+        property === "strokeStyle" && style === "rgba(48,31,19,.2)",
+    ),
+  );
+});
+
+test("all five deck planks face upward at every ship heading", () => {
+  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const context = canvasContext();
+    drawMerchantShip(
+      context,
+      { x: 0, y: 0, angle, vesselClass: "carrack", idNum: 1 },
+      1,
+      0,
+      { reducedMotion: true },
+    );
+    assert.equal(
+      context.calls.filter(
+        ([property, value]) =>
+          property === "strokeStyle" && value === "rgba(57,36,25,.28)",
+      ).length,
+      5,
+    );
+  }
+});
+
+test("pennants point downwind for every vessel heading in both renderers", () => {
+  for (const angle of [0, 0.7, Math.PI, -Math.PI / 2]) {
+    for (const windAngle of [0, 1.2, Math.PI, -Math.PI / 2]) {
+      for (const player of [true, false]) {
+        const context = canvasContext();
+        const environment = {
+          reducedMotion: true,
+          windAngle,
+          windStrength: 0.22,
+        };
+        if (player)
+          drawShip(
+            context,
+            0,
+            0,
+            angle,
+            windAngle,
+            0.22,
+            "cutter",
+            1,
+            environment,
+          );
+        else
+          drawMerchantShip(
+            context,
+            { x: 0, y: 0, angle, vesselClass: "cutter" },
+            1,
+            0,
+            environment,
+          );
+        const start = context.calls.findLastIndex(
+          ([method]) => method === "beginPath",
+        );
+        const [, topX, topY] = context.calls[start + 1];
+        const [, tipX, tipY] = context.calls[start + 2];
+        const length = (player ? 9 : 6) * 0.92;
+        assert.ok(Math.abs(tipX - topX - Math.cos(windAngle) * length) < 1e-10);
+        assert.ok(
+          Math.abs(
+            tipY - topY - Math.sin(windAngle) * length - 1.1 * MAP_TILT_TAN,
+          ) < 1e-10,
+        );
+      }
+    }
+  }
+});
+
+test("airborne spray drifts with wind and vanishes when anchored", () => {
+  const sprayDrops = (windAngle, anchored = false) => {
+    const context = canvasContext();
+    drawMerchantShip(
+      context,
+      { x: 0, y: 0, speed: 100, vesselClass: "cutter" },
+      1,
+      0,
+      { reducedMotion: true, windAngle, windStrength: 0.22, anchored },
+    );
+    let style;
+    return context.calls.filter(([method, value]) => {
+      if (method === "fillStyle") style = value;
+      return method === "ellipse" && style?.startsWith("rgba(255,245,216,");
+    });
+  };
+  const east = sprayDrops(0);
+  const west = sprayDrops(Math.PI);
+  assert.equal(east.length, 10);
+  assert.equal(west.length, 10);
+  // Local model coordinates: due east is negative Y before heading rotation.
+  for (let index = 0; index < east.length; index++)
+    assert.ok(east[index][2] < west[index][2]);
+  assert.deepEqual(sprayDrops(0, true), []);
+});
+
 test("swell moves projected geometry without moving the vessel's map origin", () => {
   const first = canvasContext();
   const second = canvasContext();

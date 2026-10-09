@@ -236,9 +236,7 @@ body.map-opening #debugButton {
 #encounterIntro[hidden] {
   display: none;
 }
-#encounterIntro[data-kind="whale"] {
-  --encounter-accent: #b8c9b1;
-}
+
 #encounterIntro[data-kind="monster"] {
   --encounter-accent: #8daea8;
 }
@@ -2279,62 +2277,6 @@ button.parchment {
 .combat-scroll {
   width: min(92vw, 660px);
   border-color: rgba(119, 43, 28, 0.72);
-}
-
-.combat-visual {
-  position: relative;
-  overflow: hidden;
-  height: clamp(210px, 31vw, 290px);
-  margin: 14px 0 16px;
-  border: 1px solid rgba(78, 45, 24, 0.35);
-  border-radius: 14px;
-  background: #315d62;
-  box-shadow: inset 0 0 34px rgba(32, 18, 9, 0.34);
-}
-.combat-scene {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.combat-ship-label {
-  position: absolute;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  color: #f9e8b6;
-  text-shadow: 0 1px 2px #1d120a;
-}
-.player-ship-label {
-  left: 32%;
-  bottom: 13%;
-  transform: translateX(-50%);
-}
-.enemy-ship-label {
-  left: 61%;
-  bottom: 29%;
-  transform: translateX(-50%);
-}
-.combat-location,
-.combat-profile {
-  position: absolute;
-  top: 10px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: rgba(23, 18, 13, 0.58);
-  color: #fff3cf;
-  font-size: 12px;
-}
-.combat-location {
-  left: 10px;
-}
-.combat-location span,
-.combat-location b {
-  display: block;
-}
-.combat-profile {
-  right: 10px;
 }
 
 .combat-balance {
@@ -5980,51 +5922,6 @@ body.port-open {
   }
 }
 
-/* The arriving ship's painted harbor settles into the Dock illustration. */
-.port-arrival {
-  position: fixed;
-  inset: 0;
-  z-index: 180;
-  pointer-events: auto;
-}
-.port-arrival[hidden] {
-  display: none;
-}
-#portArrivalScene {
-  position: absolute;
-  display: block;
-  object-fit: cover;
-  pointer-events: none;
-}
-.port-arrival-caption {
-  position: absolute;
-  left: 7vw;
-  top: 9vh;
-  color: #fff0ce;
-  text-shadow: 0 2px 12px #152536;
-  opacity: var(--arrival-caption, 1);
-}
-.port-arrival-caption > span {
-  font: 12px var(--font-ui);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-.port-arrival-caption h2 {
-  margin: 12px 0 6px;
-  font-size: clamp(32px, 5vw, 64px);
-}
-.port-arrival-caption p {
-  font: 14px var(--font-ui);
-}
-#skipPortArrival {
-  position: absolute;
-  right: 5vw;
-  bottom: 6vh;
-  padding: 12px 20px;
-}
-#portPanel.port-arriving {
-  opacity: var(--port-reveal, 0);
-}
 .dock-harbor-scene {
   margin: 0 0 18px;
 }

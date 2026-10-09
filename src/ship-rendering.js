@@ -4,6 +4,7 @@ import {
   sampleWaterReflection,
 } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
+import { sailStitchLines } from "./core/ship-materials.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import {
   LIGHT_DIRECTION,
@@ -123,7 +124,7 @@ function hullWidth(profile, along) {
   return profile.beam * (startWidth + (endWidth - startWidth) * ratio);
 }
 
-function buildHullFaces(profile) {
+function buildHullFaces(profile, seed = 0) {
   const length = profile.length;
   const stations = HULL_STATIONS.map(([along, width]) => {
     const y = along * length;
@@ -164,6 +165,39 @@ function buildHullFaces(profile) {
     });
   }
 
+  // Three timber strakes follow the hull's taper. Pigment varies by board,
+  // never by frame, and fine grain stays on each depth-sorted surface.
+  const timber = ["#75492b", "#805332", "#704329", "#875735", "#79502e"];
+  const mix = (a, b, amount) =>
+    a.map((value, axis) => value + (b[axis] - value) * amount);
+  const strakes = faces.flatMap((face, index) => {
+    const [a, b, d, e] = face.vertices;
+    // Port faces run along the keel first; starboard faces run down the side.
+    const [topA, bottomA, bottomB, topB] =
+      index % 2 ? [a, e, d, b] : [a, b, d, e];
+    return Array.from({ length: 3 }, (_, row) => {
+      const top = row / 3;
+      const bottom = (row + 1) / 3;
+      const vertices = [
+        mix(topA, bottomA, top),
+        mix(topA, bottomA, bottom),
+        mix(topB, bottomB, bottom),
+        mix(topB, bottomB, top),
+      ];
+      return {
+        vertices: index % 2 ? vertices.toReversed() : vertices,
+        fill: timber[
+          Math.floor(
+            damageNoise(seed * 19 + index * 7 + row * 31) * timber.length,
+          ) % timber.length
+        ],
+        outline: "rgba(48,31,19,.26)",
+        grain: [mix(topA, bottomA, top + 0.16), mix(topB, bottomB, top + 0.16)],
+      };
+    });
+  });
+  faces.splice(0, faces.length, ...strakes);
+
   const bow = stations[0];
   const stern = stations.at(-1);
   faces.push({
@@ -187,11 +221,25 @@ function buildHullFaces(profile) {
     outline: "#392419",
   });
 
-  const deck = [
-    ...stations.map((station) => station.starboardTop),
-    ...stations.toReversed().map((station) => station.portTop),
-  ];
-  faces.push({ vertices: deck, fill: "#a8753d", outline: "#392419" });
+  const deckTones = ["#a8753d", "#b18149", "#a4713b", "#b5874e", "#ac7c43"];
+  for (let plank = 0; plank < 5; plank++) {
+    const edge = (station, across) => [
+      station.starboardTop[0] * across,
+      station.starboardTop[1],
+      station.starboardTop[2],
+    ];
+    faces.push({
+      deck: true,
+      vertices: [
+        ...stations.map((station) => edge(station, -1 + (plank + 1) * 0.4)),
+        ...stations
+          .toReversed()
+          .map((station) => edge(station, -1 + plank * 0.4)),
+      ],
+      fill: deckTones[(plank + Math.abs(Math.trunc(seed))) % deckTones.length],
+      outline: "rgba(57,36,25,.28)",
+    });
+  }
 
   return faces;
 }
@@ -302,7 +350,9 @@ function worldFace(face, heading, order, motion, lighting) {
   );
   const first = vertices[0];
   const second = vertices[1];
-  const third = vertices[2];
+  // Deck station edges curve along the keel. Cross an actual plank width to
+  // find its upward normal, rather than three points on that curved edge.
+  const third = face.deck ? vertices.at(-1) : vertices[2];
   const ab = [second.x - first.x, second.y - first.y, second.z - first.z];
   const ac = [third.x - first.x, third.y - first.y, third.z - first.z];
   let normal = [
@@ -326,6 +376,11 @@ function worldFace(face, heading, order, motion, lighting) {
       point.x,
       point.y - point.z * MAP_TILT_TAN,
     ]),
+    grain: face.grain?.map((point) => projectedPoint(point, heading, motion)),
+    stitches: face.stitches?.map((line) =>
+      line.map((point) => projectedPoint(point, heading, motion)),
+    ),
+    opacity: face.cloth ? 0.98 - lighting.daylight * 0.045 : 1,
     depth,
     order,
   };
@@ -334,6 +389,7 @@ function worldFace(face, heading, order, motion, lighting) {
 function paintFaces(c, faces, z) {
   faces.sort((a, b) => a.depth - b.depth || a.order - b.order);
   for (const face of faces) {
+    c.save();
     c.beginPath();
     face.projected.forEach(([x, y], index) => {
       if (index) c.lineTo(x, y);
@@ -341,13 +397,32 @@ function paintFaces(c, faces, z) {
     });
     c.closePath();
     c.fillStyle = face.fill;
+    c.globalAlpha = face.opacity;
     c.fill();
+    c.globalAlpha = 1;
     if (face.outline) {
       c.strokeStyle = face.outline;
       c.lineWidth = 0.85 / z;
       c.lineJoin = "round";
       c.stroke();
     }
+    if (face.grain || face.stitches?.length) {
+      c.clip();
+      c.strokeStyle = face.grain ? "rgba(48,31,19,.2)" : "rgba(104,81,48,.32)";
+      c.lineWidth = (face.grain ? 0.35 : 0.45) / z;
+      c.beginPath();
+      for (const [a, b] of face.grain ? [face.grain] : face.stitches) {
+        c.moveTo(...a);
+        c.lineTo(...b);
+      }
+      c.stroke();
+      if (face.stitches?.length) {
+        c.setLineDash([0.55 / z, 1.25 / z]);
+        c.strokeStyle = "rgba(255,243,207,.65)";
+        c.stroke();
+      }
+    }
+    c.restore();
   }
 }
 
@@ -392,8 +467,10 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
     const emit = (triangle, outline) =>
       faces.push({
         vertices: triangle,
-        fill: panelIndex % 2 ? "#d8c697" : "#eadbb1",
-        outline: outline ? "rgba(70,49,29,.75)" : undefined,
+        fill: panelIndex % 2 ? "#dfcda5" : "#eadbb8",
+        outline: outline ? "rgba(105,82,49,.22)" : undefined,
+        cloth: true,
+        stitches: sailStitchLines(triangle),
         doubleSided: true,
         order: 20 + mastIndex * 10 + panelIndex,
       });
@@ -688,7 +765,16 @@ function drawHullDetails(c, profile, heading, z, motion, lighting) {
   }
 }
 
-function drawHullWater(c, profile, motion, heading, z, bioluminescence) {
+function drawHullWater(
+  c,
+  profile,
+  motion,
+  heading,
+  z,
+  bioluminescence,
+  windX,
+  windY,
+) {
   const strength = motion.wake;
   if (strength < 0.02) return;
   const beam = profile.beam;
@@ -748,12 +834,15 @@ function drawHullWater(c, profile, motion, heading, z, bioluminescence) {
     c.stroke();
     for (let drop = 0; drop < 5; drop++) {
       const spread = drop / 5;
-      const lift = Math.abs(motion.heave) * 0.8;
-      c.fillStyle = bowSprayStyle(strength * (0.48 - spread * 0.3));
+      const lift = Math.abs(motion.heave) * 0.8 + motion.spray * strength * 2;
+      const drift = motion.spray * (0.5 + spread) * 2.5;
+      c.fillStyle = bowSprayStyle(
+        strength * (0.48 - spread * 0.3) * (0.8 + motion.spray * 0.2),
+      );
       c.beginPath();
       c.ellipse(
-        side * (beam * 0.7 + spread * strength * 10 + motion.flutter * 0.4),
-        -length * (0.48 - spread * 0.2) - lift * (1 - spread),
+        side * (beam * 0.7 + spread * strength * 10) + windX * drift,
+        -length * (0.48 - spread * 0.2) - lift * (1 - spread) + windY * drift,
         (0.65 + strength * 0.5) * (1 - spread * 0.5),
         0.45 + strength * 0.4,
         heading * 0.12,
@@ -1051,7 +1140,7 @@ function drawShipModel(
     };
   c.save();
   c.translate(x, y);
-  drawHullWater(c, profile, motion, heading, z, bioluminescence);
+  drawHullWater(c, profile, motion, heading, z, bioluminescence, windX, windY);
   // Soft contact shadow stays on the water as the hull rises and falls.
   // The contact shadow falls southeast of the shared northwest light.
   for (const [spread, style] of CONTACT_SHADOWS) {
@@ -1071,7 +1160,7 @@ function drawShipModel(
   if (damage?.splinters > 0)
     drawSplinterFlecks(c, profile, heading, z, motion, damage, time, seed);
 
-  const hull = buildHullFaces(profile);
+  const hull = buildHullFaces(profile, seed);
   const cabinStart = profile.length * 0.17;
   const cabinEnd = profile.length * 0.43;
   const cabinWidth = profile.beam * (profile.cabin === "high" ? 0.62 : 0.48);
@@ -1218,6 +1307,18 @@ function drawShipModel(
         motion,
       );
     }
+    // Small rail caps catch the shared scene light, without metallic outlines.
+    drawLine3d(
+      c,
+      [side * cabinWidth, railY - 0.6, railZ + 0.12],
+      [side * cabinWidth, railY + 0.6, railZ + 0.12],
+      heading,
+      litPigment("#c39b55", [0, 0, 1], lighting),
+      0.8,
+      z,
+      motion,
+      0.85,
+    );
   }
   shipDeckLines(c, profile, heading, z, motion);
   if (isPlayer && crew > 0.02)
@@ -1245,6 +1346,17 @@ function drawShipModel(
       );
     }
     drawLine3d(c, [0, mast.y, base], top, heading, "#352519", 1.55, z, motion);
+    drawLine3d(
+      c,
+      [-0.75, mast.y, base + 1.3],
+      [0.75, mast.y, base + 1.3],
+      heading,
+      litPigment("#c39b55", [0, 0, 1], lighting),
+      0.7,
+      z,
+      motion,
+      0.8,
+    );
     drawLine3d(
       c,
       [-0.7, mast.y, base + 1],
@@ -1343,17 +1455,21 @@ function drawShipModel(
     heading,
     motion,
   );
+  const windLength = Math.hypot(windX, windY);
+  const pennantLength = (isPlayer ? 9 : 6) * (0.92 + motion.gust * 0.08);
+  const pennantX = windX / windLength;
+  const pennantY = windY / windLength;
   const pennantTip = projectedPoint(
     [
-      (isPlayer ? 9 : 6) + motion.flutter,
-      leadMast.y + 0.8 + motion.flutter * 1.4,
-      leadMast.height - 1.1 + motion.flutter,
+      pennantX * pennantLength - pennantY * motion.flutter,
+      leadMast.y + pennantY * pennantLength + pennantX * motion.flutter,
+      leadMast.height - 1.1 + motion.flutter * 0.7,
     ],
     heading,
     motion,
   );
   const pennantBase = projectedPoint(
-    [0, leadMast.y + (isPlayer ? 2.6 : 1.7), leadMast.height - 2.3],
+    [0, leadMast.y, leadMast.height - (isPlayer ? 2.6 : 1.7)],
     heading,
     motion,
   );
@@ -1410,8 +1526,8 @@ export function drawMerchantShip(
     merchant.y,
     angle + Math.PI / 2,
     z,
-    Math.cos(relativeWind) * motion.billow,
     Math.sin(relativeWind) * motion.billow,
+    -Math.cos(relativeWind) * motion.billow,
     motion,
     lighting,
     false,
@@ -1473,8 +1589,8 @@ export function drawShip(
     0,
     angle + Math.PI / 2,
     z / playerScale,
-    Math.cos(relativeWind) * motion.billow,
     Math.sin(relativeWind) * motion.billow,
+    -Math.cos(relativeWind) * motion.billow,
     motion,
     lighting,
     true,

@@ -3,6 +3,7 @@ import {
   seasonalAppearance,
   seasonalSeaPalette,
 } from "./core/seasons.js";
+import { createMountainShadowRendering } from "./mountain-shadow-rendering.js";
 import { PORT_NAMES, LAND_NAMES } from "./names.js";
 import {
   expandPolygon,
@@ -2441,7 +2442,14 @@ export function createMapRendering({
   }
 
   buildMapLayer();
+  const mountainShadows = createMountainShadowRendering({
+    world: WORLD,
+    lands,
+    terrainPlans,
+    ports,
+  });
   return {
+    mountainShadows,
     exploredCtx,
     exploredMask,
     FOG_MASK_SCALE,

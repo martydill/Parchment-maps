@@ -17,7 +17,7 @@ export function createEncounterState() {
 export function beginEncounter(state, encounter, camera) {
   const preview = encounter.preview === true;
   if (
-    !["raider", "whale", "monster"].includes(encounter.kind) ||
+    !["raider", "monster"].includes(encounter.kind) ||
     !encounter.id ||
     !encounter.name ||
     ![encounter.x, encounter.y].every(Number.isFinite) ||
@@ -81,16 +81,13 @@ export function encounterCamera(active, frame, home, worldWidth) {
 }
 
 export function creatureEncounter(index, [x, y], appearance) {
-  // Dolphins are ambient; whales and the ominous dorsal fins get an entrance.
-  if (index % 3 === 1 || appearance.rise < 0.65) return null;
-  const whale = index % 3 === 0;
+  // Whales and dolphins stay ambient; only surfaced leviathans interrupt sailing.
+  if (index % 3 !== 2 || appearance.rise < 0.65) return null;
   return {
     id: `creature:${index}`,
-    kind: whale ? "whale" : "monster",
-    name: whale ? "The great whale" : "The deepwater leviathan",
-    caption: whale
-      ? "A wonder of the open sea"
-      : "Something stirs beneath the waves",
+    kind: "monster",
+    name: "The deepwater leviathan",
+    caption: "Something stirs beneath the waves",
     x,
     y,
     index,
