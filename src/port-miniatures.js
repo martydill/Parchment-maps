@@ -1,9 +1,15 @@
 import { mixSeasonColor } from "./core/seasons.js";
 import { getHarborLayout } from "./harbor-layouts.js";
+import { harborFocalWalk } from "./core/harbor-composition.js";
+import { drawHarborSkyline } from "./harbor-skyline-rendering.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
-import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
+import {
+  LIGHT_DIRECTION,
+  lightingHierarchy,
+  sceneLighting,
+} from "./core/lighting.js";
 import { harborDevelopment, harborProfile } from "./core/harbors.js";
 
 import {
@@ -13,6 +19,7 @@ import {
 } from "./core/port-scene.js";
 
 let miniatureLighting = sceneLighting();
+let capturedLightEdges = null;
 
 const foundryGlowStyle = createAlphaPalette("249,148,68", 0.26, 0.38, 128);
 const foundrySparkStyle = createAlphaPalette("255,183,86", 0, 0.7, 128);
@@ -212,7 +219,21 @@ export function createPortMiniatureCache(resolution = 2) {
         const art = canvas.getContext("2d");
         art.scale(resolution, resolution);
         art.translate(112, 136);
-        drawPortMiniature(art, name, evolution, heading, plateLighting, season);
+        const lightEdges = [];
+        const previousCapture = capturedLightEdges;
+        capturedLightEdges = lightEdges;
+        try {
+          drawPortMiniature(
+            art,
+            name,
+            evolution,
+            heading,
+            plateLighting,
+            season,
+          );
+        } finally {
+          capturedLightEdges = previousCapture;
+        }
         art.save();
         art.globalCompositeOperation = "source-atop";
         art.fillStyle = `rgba(12,24,48,${plateLighting.night * 0.48})`;
@@ -222,11 +243,32 @@ export function createPortMiniatureCache(resolution = 2) {
         art.fillStyle = `rgba(63,96,128,${plateLighting.storm * 0.15})`;
         art.fillRect(-112, -136, 224, 224);
         art.restore();
-        plate = { key, canvas };
+        plate = { key, canvas, lightEdges };
         plates.set(name, plate);
       }
       c.drawImage(plate.canvas, -112, -136, 224, 224);
       return true;
+    },
+    // Reuse the exact projected architecture edges above the night/weather
+    // wash. Only currently visible ports receive these practical highlights.
+    drawLights(c, name, lighting) {
+      const plate = plates.get(name);
+      const { amber } = lightingHierarchy(1, lighting);
+      if (!plate || amber < 0.01) return;
+      c.save();
+      const scale = SCENES.get(name).layout.scale;
+      c.scale(scale, scale);
+      c.globalCompositeOperation = "screen";
+      c.strokeStyle = `rgba(255,199,112,${amber * 0.72})`;
+      c.lineWidth = 0.85;
+      c.lineCap = "round";
+      c.beginPath();
+      for (const [a, b] of plate.lightEdges) {
+        c.moveTo(...a);
+        c.lineTo(...b);
+      }
+      c.stroke();
+      c.restore();
     },
   };
 }
@@ -301,6 +343,13 @@ function line(c, a, b, color = "rgba(76,53,33,.5)", width = 0.55) {
   const bend = (variation(ax, by) - 0.5) * 0.45;
   c.quadraticCurveTo((ax + bx) / 2 + bend, (ay + by) / 2 - bend, bx, by);
   c.stroke();
+}
+
+function amberEdge(c, a, b) {
+  capturedLightEdges?.push([point(...a), point(...b)]);
+  const { amber } = lightingHierarchy(1, miniatureLighting);
+  if (amber < 0.01) return;
+  line(c, a, b, `rgba(255,199,112,${amber * 0.72})`, 0.85);
 }
 
 function terrace(c, u, v, w, d, base, top, color, edge = "#67523d") {
@@ -419,7 +468,7 @@ function windowFront(c, u, v, z, size = 2.6, lit = false) {
       [u + size / 2, v, z + size * 1.45],
       [u - size / 2, v, z + size * 1.45],
     ],
-    miniatureLighting.night > 0.4
+    miniatureLighting.night > 0.4 && (lit || variation(u, v + z) > 0.68)
       ? "rgba(255,199,108,.95)"
       : lit
         ? "#bc965b"
@@ -582,6 +631,8 @@ function drawBuilding(c, scene, spec) {
       scene.roof,
     );
     line(c, [a, front, top + 2], [b, front, top + 2], "#514135", 1.3);
+    if (character > 0.58)
+      amberEdge(c, [a, front, top + 2.2], [u, front, top + 2.2]);
     if (scene.snow) {
       c.save();
       c.globalAlpha *= scene.snow;
@@ -645,6 +696,8 @@ function drawBuilding(c, scene, spec) {
       "rgba(255,231,179,.56)",
       0.9,
     );
+    if (character > 0.58)
+      amberEdge(c, [a, front, top + 0.4], [u, front, ridge + 0.4]);
   }
 
   if (windows && w > 10) {
@@ -913,12 +966,15 @@ function pier(c, u, v, w = 12, d = 23, color = "#816143") {
     line(c, [u - w / 2 + 2, y, 3], [u - w / 2 + 2, y, 10], "#493728", 1.6);
     line(c, [u - w / 2 + 2, y, 10], [u - w / 2 + 4, y, 10], "#b99b6c", 1.1);
   }
+  amberEdge(c, [u - w / 2, v, 3.4], [u - w / 2, v + d / 2, 3.4]);
+  amberEdge(c, [u - w / 2, v + d / 2, 3.4], [u + w / 2, v + d / 2, 3.4]);
 }
 
-function crane(c, u, v, h = 40) {
+function crane(c, u, v, h = 40, working = false) {
   line(c, [u, v, 3], [u, v, h], "#796144", 1.2);
   line(c, [u, v, h], [u + 20, v - 5, h - 4], "#90744e", 1.1);
-  line(c, [u + 20, v - 5, h - 4], [u + 20, v - 5, 11], "#655340", 0.7);
+  if (!working)
+    line(c, [u + 20, v - 5, h - 4], [u + 20, v - 5, 11], "#655340", 0.7);
   line(c, [u, v, h], [u - 10, v + 4, 4], "#4e3a2b", 0.85);
   line(c, [u + 18, v - 5, 11], [u + 22, v - 5, 11], "#53402f", 1.8);
   face(
@@ -1391,13 +1447,25 @@ export function drawPortMiniature(
     objects.push({
       u,
       v,
-      draw: () => withFrame({ u, v, angle }, () => crane(c, 0, 0, h)),
+      draw: () =>
+        withFrame({ u, v, angle }, () =>
+          crane(c, 0, 0, h, layout.composition.focus === "crane"),
+        ),
     });
   for (const [u, v, width, height] of layout.awnings ?? [])
     objects.push({
       u,
       v,
       draw: () => awning(c, u, v, width, height, scene.roof),
+    });
+  for (const [u, v, z] of layout.lanterns)
+    objects.push({
+      u,
+      v,
+      draw: () => {
+        line(c, [u, v, 3], [u, v, z + 3], "#574b37", 0.8);
+        line(c, [u, v, z + 3], [u + 3, v, z + 3], "#574b37", 0.8);
+      },
     });
   const [warehouse, works] = layout.expansion;
   const [wu, wv, wa, wz] = warehouse,
@@ -1570,6 +1638,40 @@ function harborBoat(c, u, v, seconds, phase, windAngle, season) {
   }
 }
 
+function drawDockLantern(c, u, v, z, seconds, phase, lighting) {
+  const [x, y] = point(u + 3, v, z);
+  const warmth = Math.max(lighting.night, lighting.dusk * 0.65);
+  const pulse = 0.92 + Math.sin(seconds * 1.4 + phase * 2) * 0.08;
+  c.save();
+  c.globalAlpha *= 0.2 + warmth * 0.8;
+  if (warmth > 0.01) {
+    const glow = c.createRadialGradient(x, y, 0, x, y, 13);
+    glow.addColorStop(0, `rgba(255,211,128,${warmth * pulse * 0.5})`);
+    glow.addColorStop(1, "rgba(255,211,128,0)");
+    c.fillStyle = glow;
+    c.beginPath();
+    c.arc(x, y, 13, 0, Math.PI * 2);
+    c.fill();
+    for (let row = 0; row < 5; row++) {
+      const spread = 1.5 + row * 0.6;
+      const drift = Math.sin(seconds * 0.8 + row + phase) * 0.7;
+      line(
+        c,
+        [u + 3 - spread + drift, v + row * 2, 0],
+        [u + 3 + spread + drift, v + row * 2, 0],
+        `rgba(255,210,131,${warmth * pulse * (1 - row / 5) * 0.5})`,
+        0.9,
+      );
+    }
+  }
+  c.fillStyle = "#ffdaa0";
+  c.strokeStyle = "#665039";
+  c.lineWidth = 0.6;
+  c.fillRect(x - 1.5, y - 2, 3, 4);
+  c.strokeRect(x - 1.5, y - 2, 3, 4);
+  c.restore();
+}
+
 export function drawPortActivity(
   c,
   name,
@@ -1592,15 +1694,12 @@ export function drawPortActivity(
   c.scale(layout.scale, layout.scale);
   c.lineJoin = "round";
   c.lineCap = "round";
-  // Workers walk between the market and the quays. Prosperity changes the
-  // crowd density, while distressed harbors keep only a small working crew.
-  for (let worker = 0; worker < development.workers; worker++) {
-    const progress =
-      ((worker + 0.5) / development.workers +
-        Math.sin(seconds * 0.16 + worker) * 0.025 +
-        1) %
-      1;
-    const [u, v, z] = samplePromenade(layout.walk, progress);
+  const focalWalk = harborFocalWalk(layout);
+  const workerCount = Math.min(6, development.workers);
+  // The working crew stays at one quay or market, leaving the skyline quiet.
+  for (let worker = 0; worker < workerCount; worker++) {
+    const progress = (1 + Math.sin(seconds * 0.12 + worker * 0.9)) / 2;
+    const [u, v, z] = samplePromenade(focalWalk, progress);
     const [x, y] = point(u, v, z + 5);
     c.fillStyle = worker % 3 ? "#4b5145" : "#9c6045";
     c.fillRect(x - 1, y - 3, 2, 4);
@@ -1614,19 +1713,6 @@ export function drawPortActivity(
     c.moveTo(x - 1, y + 1);
     c.lineTo(x + Math.sin(seconds * 2 + worker), y + 3);
     c.stroke();
-  }
-  if (["canals", "tropical", "quays"].includes(scene.kind)) {
-    for (let pennant = 0; pennant < 5; pennant++) {
-      const [u, v, z] = samplePromenade(layout.walk, (pennant + 1) / 6);
-      const [x, y] = point(u, v, z + 18);
-      c.fillStyle = ["#aa5844", "#5b7e79", "#c69b52"][pennant % 3];
-      c.beginPath();
-      c.moveTo(x - 3, y);
-      c.lineTo(x + 3, y);
-      c.lineTo(x + Math.sin(seconds * 2 + pennant) * 2, y + 7);
-      c.closePath();
-      c.fill();
-    }
   }
   if (scene.kind === "lighthouse") {
     const beacon = layout.landmarks.find((mark) => mark.type === "lighthouse");
@@ -1655,9 +1741,10 @@ export function drawPortActivity(
     c.restore();
   }
   for (const mark of layout.landmarks.filter(
-    (mark) => mark.type === "windmill",
+    (mark, index) =>
+      mark.type === "windmill" && index === layout.composition.signature,
   ))
-    withFrame(mark, () =>
+    withFrame({ ...mark, z: mark.z ?? 5 }, () =>
       rotor(
         c,
         0,
@@ -1687,38 +1774,45 @@ export function drawPortActivity(
       c.fill();
     }
   }
-  if (scene.kind === "quays") {
-    const craneSite = layout.docks[1];
-    const [x, y] = point(craneSite[0], craneSite[1] - 13, 28);
-    const sway = Math.sin(seconds * 0.8) * 3;
-    c.strokeStyle = "rgba(59,43,30,.75)";
-    c.lineWidth = 0.8;
-    c.beginPath();
-    c.moveTo(x, y);
-    c.lineTo(x + sway, y + 17);
-    c.stroke();
-    c.fillStyle = "#8d633c";
-    c.strokeStyle = "#493423";
-    c.fillRect(x + sway - 4, y + 16, 8, 6);
-    c.strokeRect(x + sway - 4, y + 16, 8, 6);
+  if (layout.composition.focus === "crane") {
+    const [u, v, h, angle] = layout.cranes[0];
+    withFrame({ u, v, angle }, () => {
+      const sway = Math.sin(seconds * 0.7) * 1.2;
+      const lift = 12 + (1 - Math.cos(seconds * 0.45)) * 7;
+      const boom = [20, -5, h - 4];
+      const load = [20 + sway, -5, lift];
+      line(c, boom, load, "#655340", 0.8);
+      withFrame({ u: load[0] - 2, v: load[1], z: lift - 9 }, () =>
+        cargo(c, 0, 0, 1),
+      );
+    });
   }
-  if (scene.kind === "terraces") {
-    const [u, v, width, height] = layout.awnings[1];
-    const [x, y] = point(u, v, height);
-    const flutter = Math.sin(seconds * 2.1) * 1.6;
-    c.fillStyle = "rgba(171,81,52,.8)";
-    c.beginPath();
-    c.moveTo(x - width / 2, y);
-    c.lineTo(x + width / 2, y);
-    c.lineTo(x + 10, y + 7 + flutter);
-    c.lineTo(x - 10, y + 7 - flutter);
-    c.closePath();
-    c.fill();
+  if (layout.composition.focus === "awning") {
+    const [u, v, width, height] = layout.awnings[layout.composition.site];
+    // Only the loose striped hem moves; the canopy remains attached to its posts.
+    for (let stripe = 0; stripe < 6; stripe++) {
+      const left = u - width / 2 + (stripe * width) / 6;
+      const flutter = Math.sin(seconds * 1.6 + stripe * 0.55) * 0.65;
+      face(
+        c,
+        [
+          [left, v + 8, height - 5],
+          [left + width / 6, v + 8, height - 5],
+          [left + width / 6, v + 8.5, height - 7 + flutter],
+          [left, v + 8.5, height - 7 + flutter],
+        ],
+        stripe % 2 ? "#e7d3a8" : scene.roof,
+        null,
+      );
+    }
+  }
+  for (const [index, [u, v, z]] of layout.lanterns.entries()) {
+    drawDockLantern(c, u, v, z, seconds, index, lighting);
   }
   const [fu, fv, fz] = scene.flag;
   const [fx, fy] = point(fu, fv, fz);
   const wind = Math.cos(windAngle) >= 0 ? 1 : -1;
-  const flutter = Math.sin(seconds * 3 + fu) * 1.4;
+  const flutter = Math.sin(fu) * 0.8;
   line(c, [fu, fv, fz - 15], [fu, fv, fz + 4], "#3e3025", 1.1);
   c.fillStyle = development.crisis
     ? "#75664d"
@@ -1757,7 +1851,7 @@ export function drawPortActivity(
     const density = Math.max(season.snow, season.blossoms, season.autumn);
     c.save();
     const baseAlpha = c.globalAlpha;
-    for (let particle = 0; particle < 14; particle++) {
+    for (let particle = 0; particle < 6; particle++) {
       const phase = (seconds * 0.07 + particle * 0.618) % 1;
       c.globalAlpha = baseAlpha * density * Math.sin(phase * Math.PI) * 0.65;
       c.fillStyle =
@@ -1766,9 +1860,10 @@ export function drawPortActivity(
           : season.autumn > 0.5
             ? "#d0934e"
             : "#f6dad0";
+      const [focusX, focusY] = point(...focalWalk[0]);
       const x =
-        -70 + ((particle * 37 + Math.cos(windAngle) * phase * 30) % 140);
-      const y = -100 + phase * 115;
+        focusX - 20 + ((particle * 17 + Math.cos(windAngle) * phase * 10) % 40);
+      const y = focusY - 45 + phase * 50;
       c.beginPath();
       c.ellipse(
         x + Math.sin(seconds * 0.7 + particle) * 3,
@@ -1798,6 +1893,7 @@ export function drawHarborBoats(
   evolution = {},
   lighting = sceneLighting(),
   season,
+  limit = Infinity,
 ) {
   if (!SCENES.has(name) || zoom < 1.08) return;
   setGridHeading(heading);
@@ -1819,7 +1915,7 @@ export function drawHarborBoats(
         ),
       )
     : development.boats;
-  for (let index = 0; index < boats; index++) {
+  for (let index = 0; index < Math.min(boats, limit); index++) {
     const side = index % 2 ? 1 : -1;
     const x =
       outwardX * (9 + Math.floor(index / 2) * 18) - outwardY * side * 19;
@@ -1828,6 +1924,47 @@ export function drawHarborBoats(
     const u = x * gridCos + y * gridSin;
     const v = -x * gridSin + y * gridCos;
     harborBoat(c, u, v, seconds, side * 1.2 + index, windAngle, season);
+  }
+  c.restore();
+}
+
+// In harbor paintings the fishing station belongs to an authored pier, rather
+// than the same foreground corner in every town. Chart fleets stay separate.
+export function drawDocksideFishingBoats(
+  c,
+  name,
+  time,
+  evolution = {},
+  lighting = sceneLighting(),
+  season,
+  windAngle = 0,
+) {
+  const scene = SCENES.get(name);
+  if (!scene || scene.layout.composition.focus !== "fishing") return;
+  const layout = scene.layout;
+  const [u, v, width, length, angle] = layout.docks[layout.composition.site];
+  setGridHeading(DEFAULT_HEADING + layout.angle);
+  miniatureLighting = lighting;
+  const count = Math.min(
+    3,
+    Math.max(
+      1,
+      Math.round(harborDevelopment(evolution).boats * (season?.fishing ?? 1)),
+    ),
+  );
+  c.save();
+  c.scale(layout.scale, layout.scale);
+  for (let index = 0; index < count; index++) {
+    const along = length / 2 + 7 + Math.floor(index / 2) * 10;
+    const across = (index % 2 ? -1 : 1) * (width / 2 + 7);
+    withFrame(
+      {
+        u: u + across * Math.cos(angle) - along * Math.sin(angle),
+        v: v + across * Math.sin(angle) + along * Math.cos(angle),
+        scale: 0.75,
+      },
+      () => harborBoat(c, 0, 0, time / 1000, index * 1.2, windAngle, season),
+    );
   }
   c.restore();
 }
@@ -1946,34 +2083,7 @@ export function drawPortScene(
     }
   });
   layer(0.5, () => {
-    for (let building = 0; building < 18; building++) {
-      const x = width * (0.07 + building * 0.049);
-      const w = width * (0.022 + (building % 3) * 0.005);
-      const h = height * (0.04 + ((building * 7 + name.length) % 6) * 0.013);
-      const y = height * 0.63 - h;
-      c.globalAlpha = 0.38;
-      c.fillStyle = palette.ridge;
-      c.fillRect(x, y, w, h);
-      c.beginPath();
-      c.moveTo(x - 3, y);
-      c.lineTo(x + w * 0.5, y - h * 0.24);
-      c.lineTo(x + w + 3, y);
-      c.fillStyle = mixSeasonColor(
-        palette.ridge,
-        "#e9f0e9",
-        (season?.snow ?? 0) * (1 - lighting.night * 0.8),
-      );
-      c.fill();
-      c.fillStyle = "#ffd08b";
-      c.globalAlpha = lighting.night * 0.65;
-      for (let window = 0; window < 3; window++)
-        c.fillRect(
-          x + w * (0.2 + window * 0.25),
-          y + h * 0.32,
-          w * 0.1,
-          h * 0.2,
-        );
-    }
+    drawHarborSkyline(c, name, width, height, palette, lighting);
   });
   const water = c.createLinearGradient(0, height * 0.64, 0, height);
   water.addColorStop(0, palette.horizon);
@@ -2023,24 +2133,35 @@ export function drawPortScene(
       lighting,
       season,
     );
-  });
-  layer(1.7, () => {
-    c.translate(width * 0.84, height * 0.89);
-    c.scale(height / 240, height / 240);
-    drawHarborBoats(
+    drawDocksideFishingBoats(
       c,
       name,
       clock,
-      2,
-      windAngle,
-      0,
-      1,
-      DEFAULT_HEADING,
       evolution,
       lighting,
       season,
+      windAngle,
     );
   });
+  if (SCENES.get(name).layout.composition.focus === "lantern")
+    layer(1.7, () => {
+      c.translate(width * 0.84, height * 0.89);
+      c.scale(height / 240, height / 240);
+      drawHarborBoats(
+        c,
+        name,
+        clock,
+        2,
+        windAngle,
+        0,
+        1,
+        DEFAULT_HEADING,
+        evolution,
+        lighting,
+        season,
+        1,
+      );
+    });
   if (ship && drawPlayerShip)
     layer(1.4, () => {
       const x =

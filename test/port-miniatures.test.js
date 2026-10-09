@@ -4,6 +4,7 @@ import {
   createPortMiniatureCache,
   drawPortActivity,
   drawHarborBoats,
+  drawDocksideFishingBoats,
   drawPortMiniature,
   drawPortScene,
   hasPortMiniature,
@@ -88,6 +89,40 @@ test("port activity skips unknown ports and distant miniatures", () => {
   drawPortActivity(context, "Unknown", 1000, 2);
   drawPortActivity(context, PORT_NAMES.drazhOvek, 1000, 1);
   assert.deepEqual(fills, []);
+});
+
+test("cached roof and dock accents follow the harbor heading and stay selective at night", () => {
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: () => ({ getContext: () => canvasContext().context }),
+  };
+  try {
+    const cache = createPortMiniatureCache();
+    const { context, coordinates } = canvasContext();
+    const strokes = [];
+    context.stroke = () => strokes.push(context.strokeStyle);
+    cache.drawLights(context, "Unknown", sceneLighting(0));
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.equal(strokes.length, 0);
+    cache.draw(context, PORT_NAMES.velquorin);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting());
+    assert.equal(strokes.length, 0);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.deepEqual(strokes, ["rgba(255,199,112,0.72)"]);
+    assert.ok(
+      coordinates.length > 4,
+      "both docks and selected roofs catch light",
+    );
+    assert.ok(coordinates.flat().every(Number.isFinite));
+    const originalEdges = structuredClone(coordinates);
+    coordinates.length = 0;
+    cache.draw(context, PORT_NAMES.velquorin, {}, Math.PI / 2);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.notDeepEqual(coordinates, originalEdges);
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
 });
 
 test("all harbor silhouettes and live activity render with finite coordinates", () => {
@@ -425,4 +460,96 @@ test("inspection artwork can use a sharper plate without enlarging its chart foo
     if (oldDocument === undefined) delete globalThis.document;
     else globalThis.document = oldDocument;
   }
+});
+
+test("all harbor compositions fit banner and mobile surfaces with balanced drawing state", () => {
+  for (const name of Object.values(PORT_NAMES)) {
+    for (const [width, height] of [
+      [1440, 320],
+      [390, 240],
+    ]) {
+      const { context, coordinates } = canvasContext();
+      let depth = 0;
+      context.save = () => depth++;
+      context.restore = () => {
+        depth--;
+        assert.ok(depth >= 0);
+      };
+      drawPortScene(context, {
+        width,
+        height,
+        name,
+        time: 14000,
+        lighting: sceneLighting(0),
+        architecture: { draw: drawPortMiniature },
+        evolution: { level: 3 },
+      });
+      assert.equal(depth, 0, name);
+      assert.ok(coordinates.flat().every(Number.isFinite), name);
+    }
+  }
+});
+
+test("reduced motion freezes each harbor's focal activity, reflections, and boats", () => {
+  for (const name of Object.values(PORT_NAMES)) {
+    const draw = (time, reducedMotion) => {
+      const recording = canvasContext();
+      drawPortScene(recording.context, {
+        width: 720,
+        height: 380,
+        name,
+        time,
+        reducedMotion,
+        lighting: sceneLighting(0),
+        architecture: { draw() {} },
+      });
+      return recording.coordinates;
+    };
+    assert.deepEqual(draw(2000, true), draw(19000, true), name);
+    assert.notDeepEqual(draw(2000, false), draw(19000, false), name);
+  }
+});
+
+test("painting boat limits bound busy fleets without changing the chart population", () => {
+  const render = (limit) => {
+    const { context, coordinates } = canvasContext();
+    drawHarborBoats(
+      context,
+      PORT_NAMES.eoswatch,
+      14000,
+      2,
+      0,
+      0,
+      1,
+      undefined,
+      { level: 3 },
+      undefined,
+      seasonalAppearance(49),
+      limit,
+    );
+    return coordinates.length;
+  };
+  assert.equal(render(0), 0);
+  assert.equal(render(2), render(1) * 2);
+  assert.ok(render(undefined) > render(2));
+});
+
+test("dockside fishing stations use each port's pier and skip other harbor activities", () => {
+  const positions = new Set();
+  for (const name of [
+    PORT_NAMES.mirravel,
+    PORT_NAMES.eoswatch,
+    PORT_NAMES.ossuwhale,
+  ]) {
+    const { context, coordinates } = canvasContext();
+    drawDocksideFishingBoats(context, name, 14000);
+    assert.ok(coordinates.length > 0);
+    assert.ok(coordinates.flat().every(Number.isFinite));
+    positions.add(JSON.stringify(coordinates));
+  }
+  assert.equal(positions.size, 3);
+  const { context, coordinates } = canvasContext();
+  drawDocksideFishingBoats(context, "Unknown", 14000);
+  drawDocksideFishingBoats(context, PORT_NAMES.heliovar, 14000);
+  assert.deepEqual(coordinates, []);
 });

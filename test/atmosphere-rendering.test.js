@@ -362,3 +362,16 @@ test("the darkness mask follows the tier's mask resolution", () => {
     "returning to the default tier repaints once",
   );
 });
+
+test("zoom repaints the ship's light pool while a steady zoom reuses it", () => {
+  const context = canvasContext();
+  const state = options();
+  drawNightAtmosphere(context, state);
+  const initial = paints();
+  drawNightAtmosphere(context, { ...state, zoom: 2 });
+  assert.equal(paints(), initial + 1);
+  drawNightAtmosphere(context, { ...state, zoom: 2, time: 9000 });
+  assert.equal(paints(), initial + 1);
+  drawNightAtmosphere(context, { ...state, zoom: 0.4 });
+  assert.equal(paints(), initial + 2);
+});

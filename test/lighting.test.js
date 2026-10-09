@@ -4,6 +4,7 @@ import {
   advanceTimeOfDay,
   LIGHT_DIRECTION,
   litPigment,
+  lightingHierarchy,
   nightSightLimit,
   normalizeTimeOfDay,
   sceneLighting,
@@ -43,6 +44,30 @@ test("moon and storms change night brightness and sight distance", () => {
 });
 
 const pigmentChannels = (color) => color.match(/\d+/g).map(Number);
+
+test("lighting hierarchy preserves a sharp approach and fades the middle distance", () => {
+  const day = lightingHierarchy();
+  const zoomedOut = lightingHierarchy(0.1);
+  const zoomedIn = lightingHierarchy(2);
+  assert.equal(day.amber, 0);
+  assert.equal(zoomedOut.sharpRadius, 110);
+  assert.equal(zoomedOut.washRadius, 300);
+  assert.ok(zoomedIn.sharpRadius > day.sharpRadius);
+  assert.ok(zoomedIn.washRadius > day.washRadius);
+  for (const invalid of [0, -1, NaN, Infinity])
+    assert.deepEqual(lightingHierarchy(invalid), day);
+  const night = lightingHierarchy(1, sceneLighting(0));
+  const storm = lightingHierarchy(1, sceneLighting(0, 0.5));
+  assert.equal(night.amber, 1);
+  assert.ok(storm.amber > 0 && storm.amber < night.amber);
+  assert.equal(storm.sharpRadius, night.sharpRadius);
+  assert.ok(storm.washRadius < night.washRadius);
+  assert.ok(storm.washOpacity > day.washOpacity);
+  assert.ok(storm.pigmentOpacity > day.pigmentOpacity);
+  // The falloff stays ordered even at extreme close-up zoom in a storm.
+  const close = lightingHierarchy(100, sceneLighting(0, 0.5));
+  assert.ok(close.washRadius >= close.sharpRadius + 100);
+});
 
 test("relief lighting separates lit faces, shaded faces, and weather", () => {
   const normal = [LIGHT_DIRECTION.x, LIGHT_DIRECTION.y, LIGHT_DIRECTION.z];

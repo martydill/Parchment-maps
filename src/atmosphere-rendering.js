@@ -1,6 +1,8 @@
 import { sampleLighthouse } from "./core/seascape.js";
 import { createAlphaPalette } from "./style-palette.js";
 import { celestialPosition } from "./core/sea-optics.js";
+import { lightingHierarchy } from "./core/lighting.js";
+import { MAP_TILT_COS } from "./core/projection.js";
 
 const starStyle = createAlphaPalette("223,235,255", 0, 0.65, 128);
 
@@ -16,12 +18,14 @@ function darknessUnchanged(
   ship,
   lighthouses,
   maskScale,
+  focusRadius,
 ) {
   return (
     darknessState &&
     darknessState.width === width &&
     darknessState.height === height &&
     darknessState.maskScale === maskScale &&
+    darknessState.focusRadius === focusRadius &&
     darknessState.night === lighting.night &&
     darknessState.moon === lighting.moon &&
     darknessState.storm === lighting.storm &&
@@ -247,6 +251,7 @@ export function drawNightAtmosphere(
     reducedMotion,
     particleScale = 1,
     maskScale = DARKNESS_SCALE,
+    zoom = 1,
   },
 ) {
   const starCount = Number.isFinite(particleScale)
@@ -266,6 +271,7 @@ export function drawNightAtmosphere(
   }
   const maskWidth = Math.ceil(width * maskScale);
   const maskHeight = Math.ceil(height * maskScale);
+  const focusRadius = lightingHierarchy(zoom, lighting).sharpRadius;
   if (
     darknessCanvas.width !== maskWidth ||
     darknessCanvas.height !== maskHeight
@@ -277,13 +283,30 @@ export function drawNightAtmosphere(
   // Beam rotation and star twinkle do not change this painted mask. Reusing
   // its exact pixels avoids repainting every lamp while the view is steady.
   if (
-    !darknessUnchanged(lighting, width, height, ship, lighthouses, maskScale)
+    !darknessUnchanged(
+      lighting,
+      width,
+      height,
+      ship,
+      lighthouses,
+      maskScale,
+      focusRadius,
+    )
   ) {
-    paintDarkness(lighting, width, height, ship, lighthouses, maskScale);
+    paintDarkness(
+      lighting,
+      width,
+      height,
+      ship,
+      lighthouses,
+      maskScale,
+      focusRadius,
+    );
     darknessState = {
       width,
       height,
       maskScale,
+      focusRadius,
       night: lighting.night,
       moon: lighting.moon,
       storm: lighting.storm,
@@ -304,7 +327,13 @@ export function drawNightAtmosphere(
   );
   c.save();
   c.globalCompositeOperation = "screen";
-  glow(c, ship.x, ship.y, 110, `rgba(255,180,76,${lighting.night * 0.26})`);
+  glow(
+    c,
+    ship.x,
+    ship.y,
+    focusRadius,
+    `rgba(150,187,211,${lighting.night * 0.075})`,
+  );
   for (const light of lighthouses) {
     const sample = sampleLighthouse(reducedMotion ? 0 : time, light.index);
     const strength =
@@ -370,7 +399,15 @@ export function drawNightAtmosphere(
   c.restore();
 }
 
-function paintDarkness(lighting, width, height, ship, lighthouses, maskScale) {
+function paintDarkness(
+  lighting,
+  width,
+  height,
+  ship,
+  lighthouses,
+  maskScale,
+  focusRadius,
+) {
   const d = darknessContext;
   d.setTransform(maskScale, 0, 0, maskScale, 0, 0);
   d.clearRect(0, 0, width, height);
@@ -382,7 +419,22 @@ function paintDarkness(lighting, width, height, ship, lighthouses, maskScale) {
   d.fillStyle = shade;
   d.fillRect(0, 0, width, height);
   d.globalCompositeOperation = "destination-out";
-  glow(d, ship.x, ship.y, 170, `rgba(0,0,0,${lighting.night * 0.85})`);
+  d.save();
+  d.translate(ship.x, ship.y);
+  d.scale(1, MAP_TILT_COS);
+  const focus = d.createRadialGradient(0, 0, 0, 0, 0, focusRadius * 2.4);
+  focus.addColorStop(0, `rgba(0,0,0,${lighting.night * 0.94})`);
+  focus.addColorStop(0.32, `rgba(0,0,0,${lighting.night * 0.8})`);
+  focus.addColorStop(0.65, `rgba(0,0,0,${lighting.night * 0.26})`);
+  focus.addColorStop(1, "rgba(0,0,0,0)");
+  d.fillStyle = focus;
+  d.fillRect(
+    -focusRadius * 2.4,
+    -focusRadius * 2.4,
+    focusRadius * 4.8,
+    focusRadius * 4.8,
+  );
+  d.restore();
   for (const light of lighthouses) {
     const { glowRadius, kind } = sampleLighthouse(0, light.index);
     lightBloom(
@@ -402,12 +454,12 @@ export function drawShipLanterns(c, ship, lighting) {
   if (lighting.night < 0.08) return;
   c.save();
   c.globalCompositeOperation = "screen";
-  const lanternGlowStyle = `rgba(255,187,75,${lighting.night * 0.55})`;
+  const lanternGlowStyle = `rgba(255,187,75,${lighting.night * 0.35})`;
   const lanternLampStyle = `rgba(255,237,167,${lighting.night * 0.95})`;
   for (const offset of [-13, 13]) {
     const x = ship.x + Math.cos(ship.angle) * offset;
     const y = ship.y + Math.sin(ship.angle) * offset * 0.9;
-    glow(c, x, y, 35, lanternGlowStyle);
+    glow(c, x, y, 22, lanternGlowStyle);
     c.fillStyle = lanternLampStyle;
     c.beginPath();
     c.arc(x, y, 2.2, 0, Math.PI * 2);

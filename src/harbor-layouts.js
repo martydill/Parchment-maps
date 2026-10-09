@@ -1354,6 +1354,58 @@ const plans = {
   },
 };
 
+// Signature names and working waterfronts are authored per port, including
+// towns that share an architectural family. Indices refer to the plans above.
+const compositions = {
+  orvessaQuay: ["The Exchange Clock", 0, "crane", 1],
+  narthkel: ["Admiralty Keep", 0, "lantern", 0],
+  mirravel: ["The Mirror Beacon", 0, "fishing", 1],
+  drazhOvek: ["The Twin Stacks", 0, "crane", 0],
+  heliovar: ["The Sun Dome", 0, "awning", 1],
+  vesperport: ["The Three Sails", 1, "fishing", 0],
+  velquorin: ["The Canal Needle", 0, "lantern", 0],
+  kavrenQuay: ["The Tide Clock", 0, "crane", 0],
+  verdigate: ["The Green Mill", 0, "fishing", 0],
+  pearlveinBay: ["The Pearl Cupolas", 1, "lantern", 0],
+  mirelune: ["The Reed Pavilion", 0, "fishing", 0],
+  eoswatch: ["The Dawn Bell", 0, "fishing", 0],
+  ossuwhale: ["The Great Whale Ribs", 0, "fishing", 0],
+  kavrelHaven: ["The Spice Rotunda", 0, "awning", 1],
+  orrasanctAnchorage: ["The Pilgrim Spire", 0, "lantern", 0],
+  cloudhollow: ["The Sky Abbey", 0, "lantern", 0],
+  veyrgloam: ["The Gloaming Light", 0, "lantern", 0],
+  pearlspirel: ["The Ivory Needles", 0, "lantern", 0],
+  stormholden: ["The Storm Bastion", 0, "lantern", 0],
+  starrynFall: ["The Star Court", 0, "lantern", 0],
+  aetherreach: ["The High Watch", 0, "lantern", 0],
+  cindervaleStrand: ["The Cinder Kiln", 0, "crane", 0],
+  crimsonharrow: ["The Copper Stacks", 0, "crane", 0],
+  thrymmor: ["The Ore Mill", 0, "crane", 0],
+  meridQasryn: ["The Grand Qasryn Dome", 0, "awning", 1],
+};
+
+for (const [key, [title, signature, focus, site]] of Object.entries(
+  compositions,
+)) {
+  const plan = plans[key];
+  if (focus === "crane" && !plan.cranes?.length) {
+    const [u, v, , length, angle] = plan.docks[site];
+    plan.cranes = [[u, v - length / 2, 42, angle]];
+  }
+  const [u, v, width, length, angle] = plan.docks[0];
+  plan.lanterns = [-1, 1].map((side) => [
+    u + side * ((Math.cos(angle) * width) / 2 - (Math.sin(angle) * length) / 3),
+    v + side * ((Math.sin(angle) * width) / 2 + (Math.cos(angle) * length) / 3),
+    14,
+  ]);
+  plan.composition = {
+    title,
+    signature,
+    focus,
+    site: focus === "crane" ? 0 : site,
+  };
+}
+
 const layouts = new Map(
   Object.entries(plans).map(([key, plan]) => [PORT_NAMES[key], plan]),
 );
