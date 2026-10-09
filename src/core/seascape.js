@@ -144,6 +144,12 @@ export function sampleShipMotion({
     : (0.25 + sea * 0.75) * (1 + arcSwell * 0.9) * (anchored ? 0.35 : 1);
   const phase = seed * 2.399963;
   const swellWave = Math.sin(t * 1.65 + phase);
+  // One slow pressure envelope drives every wind-sensitive material. Keep it
+  // separate from hull swell, so pennants still catch gusts while at anchor.
+  const gust = reducedMotion
+    ? 0
+    : wind *
+      (Math.sin(t * 1.1 + phase) * 0.7 + Math.sin(t * 2.3 + phase) * 0.3);
   return {
     heave:
       amplitude *
@@ -152,9 +158,12 @@ export function sampleShipMotion({
         Math.sin(t * 0.55 + phase) * arcSwell * 0.8),
     roll: amplitude * Math.sin(t * 1.4 + phase + 0.7) * 0.075,
     pitch: amplitude * Math.cos(t * 1.65 + phase) * (0.035 + underway * 0.025),
-    billow:
-      (0.45 + wind * 1.55) * (1 + Math.sin(t * 2.1 + phase) * amplitude * 0.18),
-    flutter: Math.sin(t * 8 + phase) * amplitude * (0.3 + wind * 0.7),
+    gust,
+    billow: (0.45 + wind * 1.55) * (1 + gust * 0.16),
+    flutter: reducedMotion
+      ? 0
+      : Math.sin(t * 8 + phase) * wind * (0.45 + gust * 0.2),
+    spray: wind * (0.55 + gust * 0.35),
     wake: underway,
   };
 }

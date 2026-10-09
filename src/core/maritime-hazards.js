@@ -91,6 +91,7 @@ export function hazardAhead({
   shoals,
   roughSeas,
   worldWidth,
+  iceAt,
 }) {
   for (let step = 0; step <= 8; step++) {
     const ahead = (distance * step) / 8;
@@ -98,6 +99,8 @@ export function hazardAhead({
       x: position.x + Math.cos(heading) * ahead,
       y: position.y + Math.sin(heading) * ahead,
     };
+    if (iceAt?.(point).exposure >= 0.12)
+      return { type: "ice", name: "Drifting sea ice", distance: ahead };
     const shoal = shoalAtPosition(point, shoals, worldWidth);
     if (shoal && shoal.exposure >= 0.12)
       return { type: "shoal", name: shoal.name, distance: ahead };

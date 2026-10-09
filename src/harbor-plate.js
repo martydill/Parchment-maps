@@ -1,7 +1,13 @@
 import { sceneLighting } from "./core/lighting.js";
 import { portLayerOffset, portScenePalette } from "./core/port-scene.js";
 import { harborProfile } from "./core/harbors.js";
-import { drawHarborBoats, drawPortActivity } from "./port-miniatures.js";
+import { getHarborLayout } from "./harbor-layouts.js";
+import { drawHarborSkyline } from "./harbor-skyline-rendering.js";
+import {
+  drawHarborBoats,
+  drawPortActivity,
+  drawDocksideFishingBoats,
+} from "./port-miniatures.js";
 
 const captions = {
   quays: "Merchant houses & the old exchange",
@@ -87,6 +93,7 @@ export function drawHarborPlate(
     0,
   );
   const profile = harborProfile(port.name);
+  const composition = getHarborLayout(port.name)?.composition;
   const palette = portScenePalette(lighting, season);
   const clock = reducedMotion ? 0 : time;
   const layer = (depth, draw) => {
@@ -136,6 +143,9 @@ export function drawHarborPlate(
       c.stroke();
     }
   });
+  layer(0.5, () =>
+    drawHarborSkyline(c, port.name, width, height, palette, lighting),
+  );
   layer(0.7, () => {
     const coastY = height * 0.69;
     const sea = c.createLinearGradient(0, coastY - 24, 0, height);
@@ -207,32 +217,40 @@ export function drawHarborPlate(
       lighting,
       season,
     );
+    drawDocksideFishingBoats(
+      c,
+      port.name,
+      clock,
+      evolution,
+      lighting,
+      season,
+      windAngle,
+    );
     c.restore();
   });
-  layer(1.7, () => {
-    for (const [x, y, outward, boatScale] of [
-      [0.19, 0.78, 1, 1],
-      [0.77, 0.76, -1, 0.8],
-    ]) {
-      c.save();
-      c.translate(width * x, height * y);
-      c.scale(scale * boatScale * 0.65, scale * boatScale * 0.65);
-      drawHarborBoats(
-        c,
-        port.name,
-        clock,
-        2,
-        windAngle,
-        outward,
-        0,
-        undefined,
-        evolution,
-        lighting,
-        season,
-      );
-      c.restore();
-    }
-  });
+  if (composition?.focus !== "fishing")
+    layer(1.7, () => {
+      for (const [x, y, outward, boatScale] of [[0.77, 0.76, -1, 0.8]]) {
+        c.save();
+        c.translate(width * x, height * y);
+        c.scale(scale * boatScale * 0.65, scale * boatScale * 0.65);
+        drawHarborBoats(
+          c,
+          port.name,
+          clock,
+          2,
+          windAngle,
+          outward,
+          0,
+          undefined,
+          evolution,
+          lighting,
+          season,
+          1,
+        );
+        c.restore();
+      }
+    });
   if (ship && drawPlayerShip)
     layer(1.4, () => {
       drawPlayerShip(
@@ -269,7 +287,9 @@ export function drawHarborPlate(
   c.fillStyle = "#846d4d";
   c.font = `italic ${height * 0.019}px Georgia`;
   c.fillText(
-    captions[profile?.kind] ?? "The old town & merchant anchorage",
+    composition?.title ??
+      captions[profile?.kind] ??
+      "The old town & merchant anchorage",
     width / 2,
     height * 0.925,
   );

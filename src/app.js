@@ -1,11 +1,15 @@
 import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
+import { createChartSprayRendering } from "./chart-spray-rendering.js";
+import { createSeaIceRendering } from "./sea-ice-rendering.js";
+import { seaIceSpeed } from "./core/sea-ice.js";
 import {
   seasonalAppearance,
   seasonalFishingBoats,
   seasonAtDay,
 } from "./core/seasons.js";
 import { terrainBiome } from "./core/terrain.js";
-import { drawHarborPlate } from "./harbor-plate.js?v=3";
+import { drawHarborPlate } from "./harbor-plate.js?v=4";
+import { getHarborLayout } from "./harbor-layouts.js";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -358,7 +362,7 @@ import {
   createPortMiniatureCache,
   drawPortActivity,
   hasPortMiniature,
-} from "./port-miniatures.js?v=5";
+} from "./port-miniatures.js?v=6";
 import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
@@ -1506,6 +1510,16 @@ const seasonalWorldRendering = createSeasonalWorldRendering({
   world: WORLD,
   lands,
 });
+const chartSpray = createChartSprayRendering();
+const seaIce = createSeaIceRendering({
+  world: WORLD,
+  lands,
+  ports,
+  biomeAt: (x, y) => seasonalWorldRendering.biomeAt(x, y),
+});
+let seaIceTime = 0;
+const localSeaIce = (position) =>
+  seaIce.at(position, debugSeasonDay ?? game.day, seaIceTime);
 const fishingGrounds = discoverySites.filter(
   (site) => site.type === "Seasonal fishing ground",
 );
@@ -1540,6 +1554,7 @@ const {
   fogCtx,
   mapLayer,
   drawTerrainDetails,
+  mountainShadows,
   riverPaths,
   minimapFog,
   minimapFogCtx,
@@ -2527,7 +2542,8 @@ function initializeMerchantShips() {
 }
 function updateMerchantShips(dt) {
   for (const merchant of merchantShips) {
-    merchant.distance += merchant.speed * dt;
+    merchant.distance +=
+      merchant.speed * localSeaIce(merchant).speedMultiplier * dt;
     if (merchant.distance >= merchant.routeLength) {
       deliverMerchantCargo(merchant);
     }
@@ -2573,7 +2589,9 @@ function updateFleetShips(dt) {
   if (!fleet || !Array.isArray(fleet.ships) || fleet.ships.length === 0) return;
   const ctx = fleetContext();
   for (const ship of fleet.ships) {
-    const { arrived } = updateFleetShip(ship, dt, ctx);
+    const ice = localSeaIce(ship);
+    const { arrived } = updateFleetShip(ship, dt * ice.speedMultiplier, ctx);
+    ship.speed *= ice.speedMultiplier;
     if (!arrived) continue;
     const events = resolveFleetArrival(game, ship, ctx);
     for (const event of events) {
@@ -4024,7 +4042,13 @@ function renderHarborPresentation() {
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
   const harbor = document.getElementById("portHarborIllustration");
-  harbor.setAttribute("aria-label", `Your ship berthed at ${currentPort.name}`);
+  const landmark = getHarborLayout(currentPort.name)?.composition.title;
+  harbor.setAttribute(
+    "aria-label",
+    `Your ship berthed at ${currentPort.name}${landmark ? `, beside ${landmark}` : ""}`,
+  );
+  document.querySelector(".dock-harbor-caption").textContent =
+    landmark ?? "Alongside the quay";
   drawMenuPort(harbor, currentPort, performance.now());
   renderDepartureReadiness();
 }
@@ -5542,6 +5566,14 @@ function render() {
     reducedMotion: reducedMotion.matches,
     detail: effectDetail(),
   });
+  mountainShadows.draw(ctx, { camera, vw, vh, lighting });
+  seaIce.draw(ctx, {
+    camera,
+    vw,
+    vh,
+    day: debugSeasonDay ?? game.day,
+    time: seaIceTime,
+  });
   seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh, {
     lighting,
     bioluminescentSeas,
@@ -5800,6 +5832,7 @@ function render() {
     });
   }
   drawShipLanterns(ctx, shipScreen, lighting);
+  chartSpray.draw(ctx, { vw, vh, particleScale: graphics.particleScale });
 
   // Lamps and the docking ring sit above the weather wash, so ports and the
   // immediate approach remain discoverable as the scene darkens.
@@ -6179,8 +6212,13 @@ function updateSeaWarning() {
     shoals: worldShoals,
     roughSeas,
     worldWidth: WORLD.w,
+    iceAt: localSeaIce,
   });
-  if (ahead?.type === "shoal")
+  if (ahead?.type === "ice")
+    lines.push(
+      `SEA ICE ${ahead.distance < 60 ? "UNDER KEEL" : "AHEAD"} · floes slow the ship; steer for open water`,
+    );
+  else if (ahead?.type === "shoal")
     lines.push(
       `${ahead.name.toUpperCase()} ${ahead.distance < 60 ? "UNDER KEEL" : "AHEAD"} · slow below ${shipSpeedKnots(45, waterline).toFixed(1)} knots or steer clear`,
     );
@@ -6206,6 +6244,8 @@ function updateSeaWarning() {
 }
 function update(dt) {
   if (debugPaused || encounters.active?.preview) return;
+  chartSpray.update(dt, currentStormArc());
+  if (!reducedMotion.matches) seaIceTime += dt * 1000;
   // Fleet vessels trade autonomously in real time and keep sailing even while
   // the player is docked or has a town dossier open — otherwise commissioning a
   // ship, assigning a route, and checking the Fleet tab from port would appear
@@ -6270,7 +6310,8 @@ function update(dt) {
     ship.angle += Math.max(-maxTurn, Math.min(maxTurn, diff));
   }
   ship.speed *= Math.pow(inp.active ? 0.992 : 0.978, dt * 60);
-  ship.speed = Math.max(0, Math.min(ship.maxSpeed, ship.speed));
+  const ice = localSeaIce(ship);
+  ship.speed = seaIceSpeed(ship.speed, ship.maxSpeed, ice, dt);
   const windPush = ship.anchored
     ? 0
     : game.windStrength * 18 * calculateShipStats(game.shipUpgrades).windDrift;
@@ -6292,14 +6333,16 @@ function update(dt) {
       safeWind.x +
       current.x * currentPush +
       edge.x * recoveryPush) *
-      dt;
+      dt *
+      ice.speedMultiplier;
   let ny =
     ship.y +
     (Math.sin(ship.angle) * ship.speed +
       safeWind.y +
       current.y * currentPush +
       edge.y * recoveryPush) *
-      dt;
+      dt *
+      ice.speedMultiplier;
   const hitBoundary = ny < MAP_MARGIN || ny > WORLD.h - MAP_MARGIN;
   const hitLand = !hitBoundary && onLand(nx, ny);
   if (hitBoundary) {

@@ -218,6 +218,43 @@ test("rough weather increases motion, while an anchored ship has no wake", () =>
   assert.notDeepEqual(sampleShipMotion({ ...options, seed: 1 }), calm);
 });
 
+test("one gust envelope coordinates billow, flutter amplitude and spray", () => {
+  const wind = 0.7;
+  for (let time = 0; time < 30; time += 0.2) {
+    const pose = sampleShipMotion({ time, windStrength: wind * 0.22 });
+    assert.ok(Math.abs(pose.gust) <= wind);
+    assert.equal(pose.billow, (0.45 + wind * 1.55) * (1 + pose.gust * 0.16));
+    assert.equal(pose.spray, wind * (0.55 + pose.gust * 0.35));
+    assert.equal(
+      pose.flutter,
+      Math.sin(time * 8) * wind * (0.45 + pose.gust * 0.2),
+    );
+    const anchored = sampleShipMotion({
+      time,
+      windStrength: wind * 0.22,
+      anchored: true,
+      speed: 150,
+    });
+    assert.equal(anchored.gust, pose.gust);
+    assert.equal(anchored.billow, pose.billow);
+    assert.equal(anchored.flutter, pose.flutter);
+    assert.equal(anchored.spray, pose.spray);
+    assert.equal(anchored.wake, 0);
+  }
+  const still = sampleShipMotion({
+    time: 7,
+    windStrength: 0.22,
+    reducedMotion: true,
+  });
+  assert.equal(still.gust, 0);
+  assert.equal(still.flutter, 0);
+  assert.equal(still.spray, 0.55);
+  const calm = sampleShipMotion({ time: 7, windStrength: 0 });
+  assert.equal(Math.abs(calm.gust), 0);
+  assert.equal(Math.abs(calm.flutter), 0);
+  assert.equal(calm.spray, 0);
+});
+
 test("reduced motion freezes the model and cloth at every time and seed", () => {
   const options = {
     seed: 7,
