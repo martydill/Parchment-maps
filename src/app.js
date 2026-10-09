@@ -4359,12 +4359,7 @@ for (const id of [
   });
 }
 
-let portArrival = null;
-const arrivalOverlay = document.getElementById("portArrival");
-const arrivalCanvas = document.getElementById("portArrivalScene");
-const arrivalSkip = document.getElementById("skipPortArrival");
-
-function drawMenuPort(surface, port, time, arrivalShip) {
+function drawMenuPort(surface, port, time) {
   if (surface.id === "portHarborIllustration") {
     const rect = surface.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -4401,10 +4396,9 @@ function drawMenuPort(surface, port, time, arrivalShip) {
     reducedMotion: reducedMotion.matches,
     architecture: menuPortArt,
     ship:
-      arrivalShip ??
-      (currentPort === port
+      currentPort === port
         ? portArrivalFrame(PORT_ARRIVAL_DURATION).ship
-        : undefined),
+        : undefined,
     drawPlayerShip(c, pose, light, clock) {
       c.save();
       c.translate(pose.x, pose.y);
@@ -4431,99 +4425,13 @@ function drawMenuPort(surface, port, time, arrivalShip) {
     },
   };
   const atlas =
-    surface.id === "portCityIllustration" ||
-    surface.id === "townIllustration" ||
-    (surface === arrivalCanvas &&
-      document
-        .querySelector('#portPanel .port-panel[data-tab="city"]')
-        .classList.contains("active"));
+    surface.id === "portCityIllustration" || surface.id === "townIllustration";
   if (atlas) drawHarborPlate(surface, port, { ...options, art: menuPortArt });
   else drawPortScene(surface.getContext("2d"), options);
 }
 
-function finishPortArrival(restoreFocus = true) {
-  if (!portArrival) return;
-  portArrival = null;
-  arrivalOverlay.hidden = true;
-  const panel = document.getElementById("portPanel");
-  panel.inert = false;
-  panel.classList.remove("port-arriving");
-  panel.style.removeProperty("--port-reveal");
-  drawMenuPort(
-    document.getElementById("portHarborIllustration"),
-    currentPort,
-    performance.now(),
-  );
-  if (restoreFocus) panel.querySelector(".port-tab.active").focus();
-}
-
-function startPortArrival() {
-  const panel = document.getElementById("portPanel");
-  if (reducedMotion.matches) {
-    panel.querySelector(".port-tab.active").focus();
-    return;
-  }
-  portArrival = { start: performance.now() };
-  panel.inert = true;
-  panel.classList.add("port-arriving");
-  panel.style.setProperty("--port-reveal", 0);
-  document.getElementById("portArrivalName").textContent = currentPort.name;
-  arrivalOverlay.hidden = false;
-  animatePortArrival(portArrival.start);
-  arrivalSkip.focus();
-}
-
-arrivalSkip.addEventListener("click", () => finishPortArrival());
-arrivalOverlay.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    finishPortArrival();
-  } else if (event.key === "Tab") {
-    event.preventDefault();
-    arrivalSkip.focus();
-  }
-});
-
-function animatePortArrival(now) {
-  if (!portArrival) return;
-  const frame = portArrivalFrame(
-    now - portArrival.start,
-    reducedMotion.matches,
-  );
-  if (frame.complete) {
-    finishPortArrival();
-    return;
-  }
-  const target = document.querySelector("#portPanel .port-panel.active canvas");
-  const destination = target.getBoundingClientRect();
-  const merge = frame.reveal;
-  Object.assign(arrivalCanvas.style, {
-    left: `${destination.left * merge}px`,
-    top: `${destination.top * merge}px`,
-    width: `${window.innerWidth * (1 - merge) + destination.width * merge}px`,
-    height: `${window.innerHeight * (1 - merge) + destination.height * merge}px`,
-    opacity: frame.opacity,
-  });
-  const bounds = arrivalCanvas.getBoundingClientRect();
-  const resolution = Math.min(
-    window.devicePixelRatio || 1,
-    1440 / bounds.width,
-    1100 / bounds.height,
-  );
-  const width = Math.round(bounds.width * resolution);
-  const height = Math.round(bounds.height * resolution);
-  if (arrivalCanvas.width !== width) arrivalCanvas.width = width;
-  if (arrivalCanvas.height !== height) arrivalCanvas.height = height;
-  drawMenuPort(arrivalCanvas, currentPort, now, frame.ship);
-  document
-    .getElementById("portPanel")
-    .style.setProperty("--port-reveal", merge);
-  arrivalOverlay.style.setProperty("--arrival-caption", 1 - merge);
-}
-
 let lastPortPanelFrame = 0;
 function animatePortPanels(now) {
-  animatePortArrival(now);
   if (now - lastPortPanelFrame < (reducedMotion.matches ? 250 : 33)) return;
   const elapsed = Math.min(100, now - lastPortPanelFrame);
   lastPortPanelFrame = now;
@@ -5881,20 +5789,19 @@ function stopEncounterDrums() {
   encounterDrums = [];
 }
 
-function playEncounterDrums(kind) {
+function playEncounterDrums() {
   stopEncounterDrums();
   if (!encounterSoundEnabled || encounterAudio?.state !== "running") return;
-  const wonder = kind === "whale";
-  const beats = wonder ? [0, 0.65] : [0, 0.24, 0.52, 1.03];
+  const beats = [0, 0.24, 0.52, 1.03];
   for (const [index, offset] of beats.entries()) {
     const start = encounterAudio.currentTime + offset;
     const drum = encounterAudio.createOscillator();
     const gain = encounterAudio.createGain();
     drum.type = "sine";
-    drum.frequency.setValueAtTime(wonder ? 110 : 145 - index * 12, start);
-    drum.frequency.exponentialRampToValueAtTime(wonder ? 48 : 38, start + 0.22);
+    drum.frequency.setValueAtTime(145 - index * 12, start);
+    drum.frequency.exponentialRampToValueAtTime(38, start + 0.22);
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(wonder ? 0.45 : 0.85, start + 0.008);
+    gain.gain.linearRampToValueAtTime(0.85, start + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
     drum.connect(gain);
     gain.connect(encounterAudioGain);
@@ -5939,7 +5846,6 @@ function startEncounterIntro(encounter) {
   encounterOverlay.dataset.kind = encounter.kind;
   document.getElementById("encounterEyebrow").textContent = {
     raider: "Hostile sails · encounter",
-    whale: "Lookout · whale sighting",
     monster: "From the depths · sea monster",
   }[encounter.kind];
   document.getElementById("encounterName").textContent = encounter.name;
@@ -5954,7 +5860,7 @@ function startEncounterIntro(encounter) {
   encounterOverlay.hidden = false;
   document.body.classList.add("encounter-active");
   document.getElementById("skipEncounter").focus({ preventScroll: true });
-  playEncounterDrums(encounter.kind);
+  playEncounterDrums();
   return true;
 }
 
@@ -7054,7 +6960,7 @@ function openPort() {
   // current events, and customs standing — is seen before trading.
   activateSectionTabs(document.getElementById("portPanel"), "harbor");
   document.getElementById("portPanel").style.display = "grid";
-  startPortArrival();
+  document.querySelector("#portPanel .port-tab.active").focus();
   updateHud();
 }
 
@@ -7124,371 +7030,6 @@ function removeCombatCargo(profile) {
   return lot;
 }
 
-function combatSceneRandom(seed) {
-  let value = (Math.floor(seed) || 1) >>> 0;
-  return () => {
-    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
-    return value / 4294967296;
-  };
-}
-
-function drawCombatRidge(c, width, horizon, peaks, fill, ink) {
-  c.beginPath();
-  c.moveTo(0, horizon);
-  peaks.forEach(([x, y]) => c.lineTo(x * width, y));
-  c.lineTo(width, horizon);
-  c.closePath();
-  c.fillStyle = fill;
-  c.fill();
-  c.strokeStyle = ink;
-  c.lineWidth = 1.4;
-  c.stroke();
-}
-
-function drawCombatCoastline(c, width, height, climate, seed) {
-  const random = combatSceneRandom(seed + 73);
-  const horizon = height * 0.43;
-  const peaks = [];
-  for (let index = 0; index <= 24; index++) {
-    const x = index / 24;
-    const summit = 0.24 + random() * 0.15;
-    peaks.push([x, horizon - (Math.sin(x * Math.PI) * summit + random() * 5)]);
-  }
-  const tones =
-    climate === "ice"
-      ? ["#a7b9ae", "#768a82", "rgba(224,231,214,.75)"]
-      : climate === "marsh"
-        ? ["#9a9a68", "#667653", "rgba(67,91,56,.78)"]
-        : ["#ae9b70", "#777650", "rgba(67,78,49,.78)"];
-  drawCombatRidge(c, width, horizon, peaks, tones[0], "rgba(59,49,31,.52)");
-  const nearPeaks = peaks.map(([x, y], index) => [
-    x,
-    Math.min(horizon + 5, y + 15 + Math.sin(index * 1.9) * 7),
-  ]);
-  drawCombatRidge(
-    c,
-    width,
-    horizon + 9,
-    nearPeaks,
-    tones[1],
-    "rgba(53,48,29,.62)",
-  );
-
-  // A foreground headland bends into the water and leaves a small sheltered cove.
-  c.beginPath();
-  c.moveTo(width * 0.76, horizon + 5);
-  c.bezierCurveTo(
-    width * 0.71,
-    height * 0.52,
-    width * 0.82,
-    height * 0.55,
-    width * 0.78,
-    height * 0.61,
-  );
-  c.bezierCurveTo(
-    width * 0.75,
-    height * 0.66,
-    width * 0.9,
-    height * 0.68,
-    width * 0.88,
-    height * 0.76,
-  );
-  c.bezierCurveTo(
-    width * 0.86,
-    height * 0.84,
-    width * 0.94,
-    height * 0.86,
-    width,
-    height * 0.82,
-  );
-  c.lineTo(width, height);
-  c.lineTo(width * 0.7, height);
-  c.closePath();
-  c.fillStyle = tones[2];
-  c.fill();
-  c.strokeStyle = "rgba(58,43,27,.82)";
-  c.lineWidth = 2;
-  c.stroke();
-
-  // Warm exposed rock and short ink hachures give the shore a readable edge.
-  c.beginPath();
-  c.moveTo(width * 0.76, horizon + 5);
-  c.bezierCurveTo(
-    width * 0.71,
-    height * 0.52,
-    width * 0.82,
-    height * 0.55,
-    width * 0.78,
-    height * 0.61,
-  );
-  c.bezierCurveTo(
-    width * 0.75,
-    height * 0.66,
-    width * 0.9,
-    height * 0.68,
-    width * 0.88,
-    height * 0.76,
-  );
-  c.strokeStyle = "rgba(220,196,145,.9)";
-  c.lineWidth = 4;
-  c.stroke();
-  c.strokeStyle = "rgba(49,42,27,.34)";
-  c.lineWidth = 1;
-  for (let index = 0; index < 13; index++) {
-    const x = width * (0.84 + random() * 0.14);
-    const y = height * (0.72 + random() * 0.23);
-    c.beginPath();
-    c.moveTo(x, y);
-    c.lineTo(x + 7 + random() * 11, y - 3 - random() * 7);
-    c.stroke();
-  }
-}
-
-function drawCombatShip(c, x, waterline, size, facing, raider, vesselClass) {
-  c.save();
-  c.translate(x, waterline);
-  c.scale(size * facing, size);
-
-  // A narrow wake and reflected hull tie the side-view ship to the sea.
-  c.fillStyle = "rgba(14, 42, 48, .32)";
-  c.beginPath();
-  c.ellipse(0, 4, 53, 5, 0, 0, Math.PI * 2);
-  c.fill();
-  c.strokeStyle = "rgba(230, 223, 188, .5)";
-  c.lineWidth = 1.5;
-  c.beginPath();
-  c.moveTo(-49, 3);
-  c.quadraticCurveTo(-66, 1, -77, 5);
-  c.moveTo(-43, 7);
-  c.quadraticCurveTo(-59, 10, -69, 8);
-  c.stroke();
-
-  const mast = raider ? "#42352c" : "#60452e";
-  const sail = raider ? "#b9ad92" : "#e4d7ad";
-  const sailShade = raider ? "#8f8673" : "#b7a67f";
-  const hull = raider ? "#50352e" : "#815038";
-  const hullShade = raider ? "#2f2826" : "#51372b";
-  const largeShip = vesselClass === "carrack" || vesselClass === "galleon";
-
-  // Rigging and sails share the same horizon-level, side-on perspective.
-  c.strokeStyle = "rgba(47, 42, 35, .72)";
-  c.lineWidth = 0.8;
-  c.beginPath();
-  c.moveTo(-45, -8);
-  c.lineTo(-14, -66);
-  c.lineTo(45, -8);
-  c.moveTo(-41, -8);
-  c.lineTo(17, -53);
-  c.lineTo(43, -8);
-  c.stroke();
-
-  c.fillStyle = sailShade;
-  c.beginPath();
-  c.moveTo(18, -49);
-  c.lineTo(36, -16);
-  c.lineTo(19, -18);
-  c.closePath();
-  c.fill();
-  c.fillStyle = sail;
-  c.beginPath();
-  c.moveTo(-13, -59);
-  c.quadraticCurveTo(3, -54, 9, -51);
-  c.lineTo(7, -20);
-  c.quadraticCurveTo(-1, -23, -15, -22);
-  c.closePath();
-  c.fill();
-  c.fillStyle = sailShade;
-  c.beginPath();
-  c.moveTo(-32, -42);
-  c.quadraticCurveTo(-24, -40, -20, -37);
-  c.lineTo(-21, -19);
-  c.lineTo(-34, -18);
-  c.closePath();
-  c.fill();
-  c.strokeStyle = "rgba(73, 61, 45, .7)";
-  c.lineWidth = 0.75;
-  c.beginPath();
-  c.moveTo(-15, -22);
-  c.lineTo(7, -20);
-  c.moveTo(-34, -18);
-  c.lineTo(-21, -19);
-  c.stroke();
-
-  c.strokeStyle = mast;
-  c.lineWidth = 2;
-  c.beginPath();
-  c.moveTo(-14, -5);
-  c.lineTo(-14, -66);
-  c.moveTo(18, -5);
-  c.lineTo(18, -53);
-  c.moveTo(-33, -5);
-  c.lineTo(-33, -45);
-  c.stroke();
-  c.fillStyle = raider ? "#8b392e" : "#a45434";
-  c.beginPath();
-  c.moveTo(-14, -65);
-  c.lineTo(-1, -62);
-  c.lineTo(-14, -59);
-  c.closePath();
-  c.fill();
-
-  c.fillStyle = hullShade;
-  c.beginPath();
-  c.moveTo(-52, -10);
-  c.quadraticCurveTo(-41, -7, 39, -9);
-  c.lineTo(49, -14);
-  c.quadraticCurveTo(49, -2, 32, 7);
-  c.quadraticCurveTo(-4, 11, -38, 5);
-  c.quadraticCurveTo(-49, 1, -52, -10);
-  c.fill();
-  c.fillStyle = hull;
-  c.beginPath();
-  c.moveTo(-48, -11);
-  c.quadraticCurveTo(-10, -9, 38, -11);
-  c.lineTo(47, -15);
-  c.quadraticCurveTo(42, -2, 30, 2);
-  c.quadraticCurveTo(-6, 5, -38, 1);
-  c.closePath();
-  c.fill();
-  c.strokeStyle = "#302922";
-  c.lineWidth = 1.5;
-  c.beginPath();
-  c.moveTo(-51, -11);
-  c.quadraticCurveTo(-1, -8, 38, -11);
-  c.lineTo(50, -17);
-  c.stroke();
-  c.fillStyle = hullShade;
-  c.fillRect(-43, -17, largeShip ? 19 : 15, 6);
-  c.strokeStyle = "rgba(232, 199, 141, .48)";
-  c.lineWidth = 1;
-  c.beginPath();
-  c.moveTo(-39, -4);
-  c.quadraticCurveTo(0, 0, 34, -4);
-  c.stroke();
-  c.restore();
-}
-
-function renderCombatScene(canvas, climate, enemyClass, seed, weatherName) {
-  const bounds = canvas.getBoundingClientRect();
-  if (!bounds.width || !bounds.height) return;
-  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(bounds.width * pixelRatio);
-  canvas.height = Math.round(bounds.height * pixelRatio);
-  const c = canvas.getContext("2d");
-  c.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-  const width = bounds.width;
-  const height = bounds.height;
-  const horizon = height * 0.43;
-  const random = combatSceneRandom(seed + weatherName.length * 37);
-
-  const sky = c.createLinearGradient(0, 0, 0, horizon + 20);
-  const stormy = climate === "storm" || /squall|gale|storm/i.test(weatherName);
-  sky.addColorStop(0, stormy ? "#64777b" : "#91b4b6");
-  sky.addColorStop(0.65, stormy ? "#9b927d" : "#d1bd91");
-  sky.addColorStop(1, "#d7c79e");
-  c.fillStyle = sky;
-  c.fillRect(0, 0, width, height);
-  const light = c.createRadialGradient(
-    width * 0.2,
-    height * 0.18,
-    2,
-    width * 0.2,
-    height * 0.18,
-    height * 0.44,
-  );
-  light.addColorStop(0, "rgba(247,226,173,.54)");
-  light.addColorStop(1, "rgba(247,226,173,0)");
-  c.fillStyle = light;
-  c.fillRect(0, 0, width, height);
-  const sea = c.createLinearGradient(0, horizon, 0, height);
-  sea.addColorStop(0, stormy ? "#52777b" : "#668c8a");
-  sea.addColorStop(0.42, stormy ? "#345f68" : "#3c7279");
-  sea.addColorStop(1, stormy ? "#203f4c" : "#244f59");
-  c.fillStyle = sea;
-  c.fillRect(0, horizon, width, height - horizon);
-  drawCombatCoastline(c, width, height, climate, seed);
-
-  // Receding, broken wave crests tighten toward the horizon and broaden nearby.
-  c.lineCap = "round";
-  for (let index = 0; index < 62; index++) {
-    const depth = (index + random() * 0.7) / 62;
-    const y = horizon + 10 + depth * depth * (height - horizon - 8);
-    const x = random() * width;
-    const span = 8 + depth * 45 + random() * 27;
-    c.beginPath();
-    c.moveTo(x - span * 0.5, y);
-    c.quadraticCurveTo(x, y - 1.5 - depth * 2, x + span * 0.5, y + 0.3);
-    c.strokeStyle =
-      index % 4 === 0
-        ? `rgba(219,220,190,${0.09 + depth * 0.16})`
-        : `rgba(19,51,55,${0.12 + depth * 0.13})`;
-    c.lineWidth = 0.6 + depth * 1.1;
-    c.stroke();
-  }
-  drawCombatCoastline(c, width, height, climate, seed);
-  // Pale wash and foam curl along the headland's shallow water.
-  c.beginPath();
-  c.moveTo(width * 0.755, horizon + 7);
-  c.bezierCurveTo(
-    width * 0.72,
-    height * 0.53,
-    width * 0.84,
-    height * 0.56,
-    width * 0.79,
-    height * 0.62,
-  );
-  c.bezierCurveTo(
-    width * 0.76,
-    height * 0.68,
-    width * 0.91,
-    height * 0.69,
-    width * 0.89,
-    height * 0.77,
-  );
-  c.strokeStyle = "rgba(225,224,196,.78)";
-  c.lineWidth = 2.4;
-  c.shadowColor = "rgba(235,229,200,.55)";
-  c.shadowBlur = 5;
-  c.stroke();
-  c.shadowBlur = 0;
-
-  const sceneScale = Math.min(width / 596, height / 290);
-  drawCombatShip(
-    c,
-    width * 0.32,
-    height * 0.76,
-    sceneScale * 0.84,
-    1,
-    false,
-    game.shipUpgrades.activeClass,
-  );
-  drawCombatShip(
-    c,
-    width * 0.61,
-    height * 0.62,
-    sceneScale * (enemyClass === "carrack" ? 0.68 : 0.62),
-    -1,
-    true,
-    enemyClass,
-  );
-}
-
-function combatBackdropClass() {
-  const weather = currentWeather(ship.angle);
-  const land = currentPort?.land || "open-sea";
-  const climate = land.toLowerCase().includes("rime")
-    ? "ice"
-    : land.toLowerCase().includes("mire")
-      ? "marsh"
-      : land.toLowerCase().includes("storm") || weather.roughness > 0.38
-        ? "storm"
-        : land.toLowerCase().includes("keys") ||
-            land.toLowerCase().includes("isle")
-          ? "isles"
-          : "coast";
-  return `combat-visual ${climate}`;
-}
-
 function openCombatEncounter(encounter, stats) {
   const seed =
     encounter.seed ?? game.day + (game.departedFromPort?.length || 0) + 31;
@@ -7512,41 +7053,9 @@ function openCombatEncounter(encounter, stats) {
   document.getElementById("combatEnemy").textContent =
     `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3 · ${profile.label}`;
   document.getElementById("combatPanel").style.display = "grid";
-  renderCombatVisual(strengthLabels[encounter.attackStrength], profile);
   renderCombatActions();
+  document.querySelector("[data-combat-action]").focus({ preventScroll: true });
 }
-
-function renderCombatVisual(enemyLabel, profile) {
-  const visual = document.getElementById("combatVisual");
-  const backdrop = combatBackdropClass();
-  visual.className = backdrop;
-  document.getElementById("combatLocation").textContent = currentPort
-    ? `${currentPort.land} waters`
-    : "Open sea";
-  const weatherName = currentWeather(ship.angle).name;
-  document.getElementById("combatWaters").textContent = weatherName;
-  document.getElementById("combatEnemyVisualLabel").textContent = enemyLabel;
-  document.getElementById("combatProfileLabel").textContent = profile.label;
-  const enemyClasses = ["cutter", "cutter", "brig", "carrack"];
-  renderCombatScene(
-    visual.querySelector(".combat-scene"),
-    backdrop.split(" ").at(-1),
-    enemyClasses[pendingCombat.encounter.attackStrength],
-    pendingCombat.seed,
-    weatherName,
-  );
-}
-
-addEventListener("resize", () => {
-  if (
-    !pendingCombat ||
-    document.getElementById("combatPanel").style.display !== "grid"
-  )
-    return;
-  const strength = pendingCombat.encounter.attackStrength;
-  const labels = ["", "Light raider", "Armed corsair", "Heavy boarding ship"];
-  renderCombatVisual(labels[strength], pendingCombat.profile);
-});
 
 function previewCombatAction(action) {
   return resolveCombatAction({
@@ -8099,7 +7608,6 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
   saveGameState();
 });
 document.getElementById("closePort").addEventListener("click", () => {
-  finishPortArrival(false);
   const leaving = currentPort;
   document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
@@ -8351,13 +7859,6 @@ function refreshDebugScene() {
   if (currentPort) renderHarborPresentation();
   if (selectedTown)
     drawMenuPort(document.getElementById("townIllustration"), selectedTown, 0);
-  if (pendingCombat) {
-    const labels = ["", "Light raider", "Armed corsair", "Heavy boarding ship"];
-    renderCombatVisual(
-      labels[pendingCombat.encounter.attackStrength],
-      pendingCombat.profile,
-    );
-  }
   render();
 }
 debugWeatherSelect.addEventListener("change", () => {
@@ -8447,7 +7948,7 @@ function previewEncounter(kind) {
           vesselClass: ["", "cutter", "brig", "carrack"][strength],
         }
       : {
-          ...creatureEncounter(kind === "whale" ? 0 : 2, [target.x, target.y], {
+          ...creatureEncounter(2, [target.x, target.y], {
             rise: 1,
           }),
           scale: 1.4,
