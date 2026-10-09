@@ -90,6 +90,40 @@ test("port activity skips unknown ports and distant miniatures", () => {
   assert.deepEqual(fills, []);
 });
 
+test("cached roof and dock accents follow the harbor heading and stay selective at night", () => {
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: () => ({ getContext: () => canvasContext().context }),
+  };
+  try {
+    const cache = createPortMiniatureCache();
+    const { context, coordinates } = canvasContext();
+    const strokes = [];
+    context.stroke = () => strokes.push(context.strokeStyle);
+    cache.drawLights(context, "Unknown", sceneLighting(0));
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.equal(strokes.length, 0);
+    cache.draw(context, PORT_NAMES.velquorin);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting());
+    assert.equal(strokes.length, 0);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.deepEqual(strokes, ["rgba(255,199,112,0.72)"]);
+    assert.ok(
+      coordinates.length > 4,
+      "both docks and selected roofs catch light",
+    );
+    assert.ok(coordinates.flat().every(Number.isFinite));
+    const originalEdges = structuredClone(coordinates);
+    coordinates.length = 0;
+    cache.draw(context, PORT_NAMES.velquorin, {}, Math.PI / 2);
+    cache.drawLights(context, PORT_NAMES.velquorin, sceneLighting(0));
+    assert.notDeepEqual(coordinates, originalEdges);
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
+});
+
 test("all harbor silhouettes and live activity render with finite coordinates", () => {
   for (const name of Object.values(PORT_NAMES)) {
     for (const heading of [-Math.PI, -0.34, Math.PI / 2]) {

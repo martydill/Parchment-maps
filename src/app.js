@@ -33,6 +33,7 @@ import {
   normalizeGraphicsSetting,
 } from "./core/graphics-quality.js";
 import { createMistRendering } from "./mist-rendering.js";
+import { createDepthRendering } from "./depth-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
 import { createExplorationSampler } from "./exploration-mask.js";
 import { updateElementProperty } from "./ui/dom.js";
@@ -5311,6 +5312,17 @@ function drawHarborLights(c, lighting, z, time, roughness) {
   for (const port of ports) {
     if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
     if (!pointCurrentlyVisible(port.x, port.y)) continue;
+    const placement = portMiniaturePlacements.get(port.name);
+    if (placement && isWorldPointExplored(placement.x, placement.y)) {
+      c.save();
+      c.translate(nearestWrappedX(placement.x, camera.x), placement.y);
+      c.scale(placement.scale, placement.scale);
+      // A known harbor's practical lights remain visible through the coastal
+      // haze, while its architecture keeps the softer underlying pigments.
+      c.globalAlpha = baseAlpha * 0.62;
+      chartPortArt.drawLights(c, port.name, lighting);
+      c.restore();
+    }
     c.save();
     c.translate(nearestWrappedX(port.x, camera.x), port.y);
     c.globalAlpha = baseAlpha * strength * 0.42;
@@ -5427,6 +5439,7 @@ function portLabelWidth(c, name) {
   return portLabelWidths.get(name);
 }
 const shipScreen = { x: 0, y: 0, angle: 0 };
+const depthRendering = createDepthRendering();
 const activeLighthouses = [];
 const siteMarkerRendering = createSiteMarkerRendering();
 
@@ -5595,6 +5608,17 @@ function render() {
   ctx.restore();
   ctx.restore(); // Restore world transform
 
+  shipScreen.x = vw / 2 + (nearestWrappedX(ship.x, camera.x) - camera.x) * z;
+  shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
+  shipScreen.angle = ship.angle;
+  depthRendering.draw(ctx, {
+    width: vw,
+    height: vh,
+    ship: shipScreen,
+    zoom: z,
+    lighting,
+    maskScale: graphics.maskScale,
+  });
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
   activeLighthouses.length = 0;
@@ -5616,9 +5640,6 @@ function render() {
       }
     }
   }
-  shipScreen.x = vw / 2 + (ship.x - camera.x) * z;
-  shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
-  shipScreen.angle = ship.angle;
   drawNightAtmosphere(ctx, {
     lighting,
     width: vw,
@@ -5629,6 +5650,7 @@ function render() {
     reducedMotion: reducedMotion.matches,
     particleScale: graphics.particleScale,
     maskScale: graphics.maskScale,
+    zoom: z,
   });
 
   // The ship and immediate docking cue remain readable above the fog layer.
