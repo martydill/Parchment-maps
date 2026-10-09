@@ -5,7 +5,8 @@ import {
   seasonAtDay,
 } from "./core/seasons.js";
 import { terrainBiome } from "./core/terrain.js";
-import { drawHarborPlate } from "./harbor-plate.js?v=3";
+import { drawHarborPlate } from "./harbor-plate.js?v=4";
+import { getHarborLayout } from "./harbor-layouts.js";
 import {
   openPortWorkspace,
   refreshPortWorkspaces,
@@ -358,7 +359,7 @@ import {
   createPortMiniatureCache,
   drawPortActivity,
   hasPortMiniature,
-} from "./port-miniatures.js?v=5";
+} from "./port-miniatures.js?v=6";
 import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
 import { renderChartPanel } from "./ui/chart-panel.js?v=5";
@@ -4023,7 +4024,13 @@ function renderHarborPresentation() {
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
   const harbor = document.getElementById("portHarborIllustration");
-  harbor.setAttribute("aria-label", `Your ship berthed at ${currentPort.name}`);
+  const landmark = getHarborLayout(currentPort.name)?.composition.title;
+  harbor.setAttribute(
+    "aria-label",
+    `Your ship berthed at ${currentPort.name}${landmark ? `, beside ${landmark}` : ""}`,
+  );
+  document.querySelector(".dock-harbor-caption").textContent =
+    landmark ?? "Alongside the quay";
   drawMenuPort(harbor, currentPort, performance.now());
   renderDepartureReadiness();
 }
