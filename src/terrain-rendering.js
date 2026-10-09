@@ -1,5 +1,6 @@
 import { LIGHT_DIRECTION } from "./core/lighting.js";
 import { mixSeasonColor } from "./core/seasons.js";
+import { drawSculptedRidge } from "./sculpted-terrain-rendering.js";
 
 const palettes = {
   temperate: {
@@ -82,12 +83,13 @@ export function terrainPalette(biome, season) {
   };
 }
 
-function drawRidge(c, { a, b, width }) {
+function drawRidge(c, { a, b, width, layers }, palette) {
   const dx = b.x - a.x,
     dy = b.y - a.y;
   const length = Math.hypot(dx, dy) || 1;
   const nx = -dy / length,
     ny = dx / length;
+  if (layers) drawSculptedRidge(c, { layers }, palette);
   // Parallel engraved contours tie individual summits into one landform.
   for (const side of [-1, 1]) {
     for (const level of [1, 1.55, 2.1]) {
@@ -167,6 +169,15 @@ function drawTree(c, tree, biome, season) {
   c.moveTo(0, s * 0.24);
   c.lineTo(s * 0.1, -s * 0.9);
   c.stroke();
+  const foliage = c.createLinearGradient(
+    -s * 0.55,
+    -s * 1.3,
+    s * 0.55,
+    -s * 0.15,
+  );
+  foliage.addColorStop(0, palette.leafLight);
+  foliage.addColorStop(0.38, palette.leaf);
+  foliage.addColorStop(1, hexFromRgb(palette.ground));
   if (biome === "tropical") {
     const top = -s * (0.85 + variant * 0.2);
     for (let side = -2; side <= 2; side++) {
@@ -193,7 +204,7 @@ function drawTree(c, tree, biome, season) {
       c.lineTo(s * 0.09, yy + s * 0.22);
       c.lineTo(-half, yy + s * 0.34);
       c.closePath();
-      c.fillStyle = palette.leaf;
+      c.fillStyle = foliage;
       c.fill();
       c.stroke();
       c.beginPath();
@@ -217,7 +228,7 @@ function drawTree(c, tree, biome, season) {
     );
     c.bezierCurveTo(s, -s * 0.84, s * 0.95, -s * 0.25, s * 0.4, -s * 0.18);
     c.closePath();
-    c.fillStyle = palette.leaf;
+    c.fillStyle = foliage;
     c.fill();
     c.stroke();
     c.beginPath();
@@ -413,7 +424,7 @@ export function drawTerrainIllustration(c, terrain, season) {
   c.save();
   c.lineJoin = "round";
   const palette = terrainPalette(terrain.biome, season);
-  for (const ridge of terrain.ridges) drawRidge(c, ridge);
+  for (const ridge of terrain.ridges) drawRidge(c, ridge, palette);
   for (const plain of terrain.plains) {
     terrainWash(c, plain.x, plain.y, 60, 35, plain.angle, palette.wash, 0.22);
     c.save();
@@ -578,7 +589,7 @@ export function drawTerrainIllustration(c, terrain, season) {
       grove.radius * 0.85,
       -0.15,
       palette.ground,
-      0.2,
+      0.3,
     );
   }
   const silhouettes = [

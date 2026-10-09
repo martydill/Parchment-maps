@@ -41,7 +41,8 @@ import {
   drawTerrainIllustration,
   terrainPalette,
   seasonalLandColor,
-} from "./terrain-rendering.js?v=4";
+} from "./terrain-rendering.js?v=5";
+import { createTerrainDetailRendering } from "./sculpted-terrain-rendering.js";
 export {
   drawMerchantShip,
   drawShip,
@@ -969,8 +970,15 @@ export function createMapRendering({
   const m = mapLayer.getContext("2d");
   const riverPaths = [];
   const terrainPlans = new Map();
+  const terrainIslands = [];
   let seasonDay = game.day;
   let seasonKey = seasonAtDay(seasonDay).key;
+  const terrainDetailRendering = createTerrainDetailRendering({
+    world: WORLD,
+    islands: terrainIslands,
+    paletteFor: (biome) =>
+      terrainPalette(biome, seasonalAppearance(seasonDay, biome)),
+  });
 
   // A lower-resolution persistent exploration mask keeps fog rendering fast on
   // mobile while retaining a soft, hand-painted edge on the parchment chart.
@@ -2162,6 +2170,8 @@ export function createMapRendering({
           clearings,
         });
       terrainPlans.set(li, terrain);
+      if (!terrainIslands[li])
+        terrainIslands[li] = { poly: l.poly, terrain, depth: coastDepth };
       riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
       m.save();
       wrappedClipPath(m, l.poly);
@@ -2456,6 +2466,7 @@ export function createMapRendering({
     fogCanvas,
     fogCtx,
     mapLayer,
+    drawTerrainDetails: (c, options) => terrainDetailRendering.draw(c, options),
     riverPaths,
     minimapFog,
     minimapFogCtx,
@@ -2466,6 +2477,7 @@ export function createMapRendering({
       const key = seasonAtDay(day).key;
       if (seasonKey === key) return false;
       seasonKey = key;
+      terrainDetailRendering.invalidate();
       buildMapLayer();
       return true;
     },
