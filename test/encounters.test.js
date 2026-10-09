@@ -18,7 +18,7 @@ const raider = {
   x: 10,
   y: 240,
 };
-const whale = { ...raider, id: "whale:1", kind: "whale" };
+const monster = { ...raider, id: "monster:1", kind: "monster" };
 
 test("encounters reject invalid subjects and copy their camera origin", () => {
   const state = createEncounterState();
@@ -42,14 +42,14 @@ test("encounters reject invalid subjects and copy their camera origin", () => {
     beginEncounter(state, { ...raider, id: "other" }, camera),
     false,
   );
-  assert.equal(beginEncounter(state, whale, camera), false);
+  assert.equal(beginEncounter(state, monster, camera), false);
 });
 
 test("danger preempts a sighting and bypasses its cooldown; sightings wait", () => {
   const state = createEncounterState();
-  assert.equal(beginEncounter(state, whale, camera), true);
+  assert.equal(beginEncounter(state, monster, camera), true);
   assert.equal(
-    beginEncounter(state, { ...whale, id: "whale:2" }, camera),
+    beginEncounter(state, { ...monster, id: "monster:2" }, camera),
     false,
   );
   assert.equal(beginEncounter(state, raider, camera), true);
@@ -57,13 +57,13 @@ test("danger preempts a sighting and bypasses its cooldown; sightings wait", () 
   advanceEncounter(state, ENCOUNTER_DURATION);
   assert.equal(state.active, null);
   assert.equal(
-    beginEncounter(state, { ...whale, id: "whale:2" }, camera),
+    beginEncounter(state, { ...monster, id: "monster:2" }, camera),
     false,
   );
   advanceEncounter(state, 45);
   assert.equal(state.cooldown, 0);
   assert.equal(
-    beginEncounter(state, { ...whale, id: "whale:2" }, camera),
+    beginEncounter(state, { ...monster, id: "monster:2" }, camera),
     true,
   );
 });
@@ -94,11 +94,11 @@ test("timeline opens bars, punches in, slows play, and restores the frame", () =
 test("debug previews bypass sighting cooldowns and repeat without consuming real encounters", () => {
   const state = createEncounterState();
   state.cooldown = 30;
-  state.seen.add(whale.id);
-  const preview = { ...whale, preview: true };
+  state.seen.add(monster.id);
+  const preview = { ...monster, preview: true };
   assert.equal(beginEncounter(state, preview, camera), true);
   assert.equal(state.cooldown, 30);
-  assert.deepEqual([...state.seen], [whale.id]);
+  assert.deepEqual([...state.seen], [monster.id]);
   assert.equal(beginEncounter(state, preview, camera), false);
   advanceEncounter(state, ENCOUNTER_DURATION);
   assert.equal(beginEncounter(state, preview, camera), true);
@@ -167,14 +167,30 @@ test("bad deltas cannot reverse time and dropped frames finish the intro", () =>
   assert.equal(state.active, null);
 });
 
-test("only surfaced whales and leviathans become encounter subjects", () => {
-  assert.equal(creatureEncounter(0, [10, 20], { rise: 0.64 }), null);
-  assert.equal(creatureEncounter(1, [10, 20], { rise: 1 }), null);
-  const whale = creatureEncounter(3, [10, 20], { rise: 0.65 });
-  assert.equal(whale.kind, "whale");
-  assert.equal(whale.name, "The great whale");
-  assert.deepEqual([whale.x, whale.y, whale.index], [10, 20, 3]);
-  const monster = creatureEncounter(2, [10, 20], { rise: 1 });
+test("whales and dolphins stay ambient while surfaced leviathans trigger encounters", () => {
+  for (const index of [0, 1, 3, 4, 6, 7]) {
+    for (const rise of [0, 0.64, 0.65, 1])
+      assert.equal(creatureEncounter(index, [10, 20], { rise }), null);
+  }
+  assert.equal(creatureEncounter(2, [10, 20], { rise: 0.64 }), null);
+  const monster = creatureEncounter(2, [10, 20], { rise: 0.65 });
   assert.equal(monster.kind, "monster");
   assert.equal(monster.name, "The deepwater leviathan");
+  assert.deepEqual([monster.x, monster.y, monster.index], [10, 20, 2]);
+});
+
+test("removed whale cinematics cannot start or consume cooldown, including previews", () => {
+  const state = createEncounterState();
+  const before = structuredClone(state);
+  for (const preview of [false, true]) {
+    assert.equal(
+      beginEncounter(
+        state,
+        { ...raider, id: "whale:1", kind: "whale", preview },
+        camera,
+      ),
+      false,
+    );
+    assert.deepEqual(state, before);
+  }
 });

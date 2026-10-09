@@ -174,9 +174,6 @@
           <button type="button" data-debug-encounter="raider">
             Raider intro
           </button>
-          <button type="button" data-debug-encounter="whale">
-            Whale sighting
-          </button>
           <button type="button" data-debug-encounter="monster">
             Sea monster
           </button>
@@ -407,30 +404,6 @@
         <svg class="main-icon" viewBox="0 0 24 24" aria-hidden="true">
           <use href="#ui-explore" /></svg
         ><span>Explore</span>
-      </button>
-    </div>
-
-    <div
-      id="portArrival"
-      class="port-arrival"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="portArrivalName"
-      hidden
-    >
-      <canvas
-        id="portArrivalScene"
-        width="1440"
-        height="760"
-        aria-hidden="true"
-      ></canvas>
-      <div class="port-arrival-caption">
-        <span>Making harbor</span>
-        <h2 id="portArrivalName"></h2>
-        <p>Your crew brings the ship alongside.</p>
-      </div>
-      <button id="skipPortArrival" type="button" class="parchment">
-        Skip arrival
       </button>
     </div>
 
@@ -1315,20 +1288,6 @@
         <div class="town-kicker">Hostile sail intercepted</div>
         <h2 id="combatTitle">Raiders close from windward</h2>
         <p id="combatDescription"></p>
-        <div id="combatVisual" class="combat-visual coast">
-          <canvas class="combat-scene" aria-hidden="true"></canvas>
-          <span class="combat-ship-label player-ship-label">Your ship</span>
-          <span
-            class="combat-ship-label enemy-ship-label"
-            id="combatEnemyVisualLabel"
-            >Raider</span
-          >
-          <div class="combat-location">
-            <span id="combatLocation">Coastal waters</span>
-            <b id="combatWaters">Weather</b>
-          </div>
-          <div class="combat-profile" id="combatProfileLabel">Raiders</div>
-        </div>
         <div class="combat-balance">
           <div><b>Your vessel</b><span id="combatPlayer"></span></div>
           <div><b>Hostile force</b><span id="combatEnemy"></span></div>
