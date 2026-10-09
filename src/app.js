@@ -1539,6 +1539,7 @@ const {
   fogCanvas,
   fogCtx,
   mapLayer,
+  drawTerrainDetails,
   riverPaths,
   minimapFog,
   minimapFogCtx,
@@ -5501,6 +5502,14 @@ function render() {
       ctx.drawImage(mapLayer, sx, sy, sw, sh, offset + sx, sy, sw, sh);
     }
   }
+  drawTerrainDetails(ctx, {
+    camera,
+    vw,
+    vh,
+    detail: effectDetail(),
+    time,
+    reducedMotion: reducedMotion.matches,
+  });
   seaRendering.drawSurface(ctx, {
     bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
     deferLighting: true,

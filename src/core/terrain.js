@@ -1,5 +1,6 @@
 import { pointInPolygon } from "./geometry.js";
 import { LAND_NAMES } from "../names.js";
+import { sculptedRidgeLayers } from "./terrain-detail.js";
 
 const regionalBiomes = new Map([
   ...[
@@ -249,8 +250,31 @@ export function planTerrainIllustration(
         x: a.x + ((b.x - a.x) * j) / steps,
         y: a.y + ((b.y - a.y) * j) / steps,
       }));
-      if (spine.every((point) => inland(point, width)))
-        result.ridges.push({ a, b, width });
+      if (spine.every((point) => inland(point, width))) {
+        const ridge = { a, b, width };
+        ridge.layers = sculptedRidgeLayers(ridge).filter((layer) => {
+          const points = [...layer.spine, ...layer.foot];
+          return points.every((a, index) => {
+            const b = points[(index + 1) % points.length];
+            const steps = Math.max(
+              1,
+              Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4),
+            );
+            for (let step = 0; step <= steps; step++) {
+              const t = step / steps;
+              if (
+                !inland(
+                  { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t },
+                  3,
+                )
+              )
+                return false;
+            }
+            return true;
+          });
+        });
+        result.ridges.push(ridge);
+      }
     }
   }
 
