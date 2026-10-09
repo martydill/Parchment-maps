@@ -8,7 +8,7 @@ import test from "node:test";
 
 const run = promisify(execFile);
 
-test("single-file packaging embeds cinematic materials and vessel art, and escapes script endings", async () => {
+test("single-file packaging embeds cinematic/HUD materials and vessel art, and escapes script endings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "parchment-package-"));
   try {
     const bundle = join(directory, "game.js");
@@ -42,6 +42,11 @@ test("single-file packaging embeds cinematic materials and vessel art, and escap
       assert.ok(!html.includes(`./${path}`));
     }
     assert.ok(html.includes('const ending = "<\\/script>";'));
+    const stylesheet = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const paper = await readFile("assets/map-opening/parchment-weathered.jpg");
+    assert.ok(
+      stylesheet.includes(`data:image/jpeg;base64,${paper.toString("base64")}`),
+    );
     assert.ok(!html.includes('src="./src/app.js'));
     assert.ok(!html.includes('href="./styles.css'));
   } finally {

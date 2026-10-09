@@ -24,8 +24,9 @@ if (!stylesheetTag.test(html) || !moduleTag.test(html)) {
   throw new Error("Could not find the expected stylesheet and module tags");
 }
 
-// Embed the cinematic materials and vessel paintings in the downloadable game.
+// Embed the cinematic/HUD materials and vessel paintings in the downloadable game.
 let embeddedJavascript = javascript;
+let embeddedCss = css;
 for (const path of [
   "assets/map-opening/table-weathered.jpg",
   "assets/map-opening/parchment-weathered.jpg",
@@ -38,17 +39,16 @@ for (const path of [
 ]) {
   const data = await readFile(path);
   const mime = path.endsWith(".png") ? "image/png" : "image/jpeg";
-  embeddedJavascript = embeddedJavascript.replaceAll(
-    `./${path}`,
-    `data:${mime};base64,${data.toString("base64")}`,
-  );
+  const dataUrl = `data:${mime};base64,${data.toString("base64")}`;
+  embeddedJavascript = embeddedJavascript.replaceAll(`./${path}`, dataUrl);
+  embeddedCss = embeddedCss.replaceAll(`./${path}`, dataUrl);
 }
 
 const packagedHtml = html
   .replace(
     stylesheetTag,
     (_, indentation) =>
-      `${indentation}<style>\n${css.replaceAll("</style", "<\\/style")}\n${indentation}</style>`,
+      `${indentation}<style>\n${embeddedCss.replaceAll("</style", "<\\/style")}\n${indentation}</style>`,
   )
   .replace(
     moduleTag,
