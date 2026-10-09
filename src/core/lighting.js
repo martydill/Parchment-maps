@@ -67,11 +67,12 @@ export function litPigment(color, normal, lighting = sceneLighting()) {
             length,
         )
       : 0;
-  const light = 0.68 + diffuse * 0.62 * lighting.strength;
+  const light =
+    0.68 - lighting.night * 0.16 + diffuse * 0.62 * lighting.strength;
   const tint = [
-    1 + lighting.dusk * 0.08 - lighting.storm * 0.08,
+    1 + lighting.dusk * 0.08 - lighting.storm * 0.08 - lighting.night * 0.08,
     1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
-    1 - lighting.dusk * 0.09 + lighting.storm * 0.06,
+    1 - lighting.dusk * 0.09 + lighting.storm * 0.06 + lighting.night * 0.08,
   ];
   const channels = [1, 3, 5].map((offset, index) =>
     Math.min(
@@ -91,6 +92,21 @@ export function nightSightLimit(lighting, weatherVisibilityKm) {
     weather,
     weather * lighting.daylight + nocturnal * lighting.night,
   );
+}
+
+// Screen-space falloff follows the ship's world-space surroundings, with a
+// readable minimum at chart zoom. Weather compresses the middle distance.
+export function lightingHierarchy(zoom = 1, lighting = sceneLighting()) {
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const sharpRadius = Math.max(110, 230 * scale);
+  const washRadius = Math.max(300, 680 * scale) * (1 - lighting.storm * 0.16);
+  return {
+    sharpRadius,
+    washRadius: Math.max(sharpRadius + 100, washRadius),
+    washOpacity: 0.76 + lighting.storm * 0.12,
+    pigmentOpacity: 0.16 + lighting.storm * 0.08,
+    amber: lighting.night * (1 - lighting.storm * 0.25),
+  };
 }
 
 export function timeOfDayLabel(lighting) {

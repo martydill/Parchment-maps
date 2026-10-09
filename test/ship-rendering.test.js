@@ -11,6 +11,7 @@ import {
 } from "../src/core/ship-models.js";
 import { MAP_TILT_TAN } from "../src/core/projection.js";
 import { sampleWaterReflection } from "../src/core/seascape.js";
+import { sceneLighting } from "../src/core/lighting.js";
 
 function canvasContext() {
   const calls = [];
@@ -96,6 +97,34 @@ test("the player vessel uses the same detailed renderer and wind-driven sails", 
   drawShip(context, 50, 60, 0.4, 1.2, 0.8, "brig", 1);
   assert.ok(context.calls.some(([method]) => method === "fill"));
   assert.ok(context.calls.some(([method]) => method === "stroke"));
+});
+
+test("night accents follow each rig's sail edges and disappear in daylight", () => {
+  for (const vesselClass of SHIP_MODEL_IDS) {
+    const draw = (lighting) => {
+      const context = canvasContext();
+      drawShip(context, 50, 60, 0.4, 1.2, 0.8, vesselClass, 1, {
+        lighting,
+        reducedMotion: true,
+        damage: { tear: 0.6, heel: 0.12, settle: 1 },
+      });
+      return context.calls;
+    };
+    const accentCount = (calls) =>
+      calls.filter(
+        ([property, style]) =>
+          property === "strokeStyle" && style.startsWith("rgba(255,218,144,"),
+      ).length;
+    const night = draw(sceneLighting(0));
+    assert.ok(accentCount(night) > 0, vesselClass);
+    assert.equal(accentCount(draw(sceneLighting(0.5))), 0, vesselClass);
+    assert.ok(
+      night
+        .flat()
+        .filter((value) => typeof value === "number")
+        .every(Number.isFinite),
+    );
+  }
 });
 
 test("cloth is lightly translucent with stitched seams and opaque timber", () => {

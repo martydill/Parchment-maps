@@ -5,7 +5,11 @@ import { drawHarborSkyline } from "./harbor-skyline-rendering.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
-import { LIGHT_DIRECTION, sceneLighting } from "./core/lighting.js";
+import {
+  LIGHT_DIRECTION,
+  lightingHierarchy,
+  sceneLighting,
+} from "./core/lighting.js";
 import { harborDevelopment, harborProfile } from "./core/harbors.js";
 
 import {
@@ -15,6 +19,7 @@ import {
 } from "./core/port-scene.js";
 
 let miniatureLighting = sceneLighting();
+let capturedLightEdges = null;
 
 const foundryGlowStyle = createAlphaPalette("249,148,68", 0.26, 0.38, 128);
 const foundrySparkStyle = createAlphaPalette("255,183,86", 0, 0.7, 128);
@@ -214,7 +219,21 @@ export function createPortMiniatureCache(resolution = 2) {
         const art = canvas.getContext("2d");
         art.scale(resolution, resolution);
         art.translate(112, 136);
-        drawPortMiniature(art, name, evolution, heading, plateLighting, season);
+        const lightEdges = [];
+        const previousCapture = capturedLightEdges;
+        capturedLightEdges = lightEdges;
+        try {
+          drawPortMiniature(
+            art,
+            name,
+            evolution,
+            heading,
+            plateLighting,
+            season,
+          );
+        } finally {
+          capturedLightEdges = previousCapture;
+        }
         art.save();
         art.globalCompositeOperation = "source-atop";
         art.fillStyle = `rgba(12,24,48,${plateLighting.night * 0.48})`;
@@ -224,11 +243,32 @@ export function createPortMiniatureCache(resolution = 2) {
         art.fillStyle = `rgba(63,96,128,${plateLighting.storm * 0.15})`;
         art.fillRect(-112, -136, 224, 224);
         art.restore();
-        plate = { key, canvas };
+        plate = { key, canvas, lightEdges };
         plates.set(name, plate);
       }
       c.drawImage(plate.canvas, -112, -136, 224, 224);
       return true;
+    },
+    // Reuse the exact projected architecture edges above the night/weather
+    // wash. Only currently visible ports receive these practical highlights.
+    drawLights(c, name, lighting) {
+      const plate = plates.get(name);
+      const { amber } = lightingHierarchy(1, lighting);
+      if (!plate || amber < 0.01) return;
+      c.save();
+      const scale = SCENES.get(name).layout.scale;
+      c.scale(scale, scale);
+      c.globalCompositeOperation = "screen";
+      c.strokeStyle = `rgba(255,199,112,${amber * 0.72})`;
+      c.lineWidth = 0.85;
+      c.lineCap = "round";
+      c.beginPath();
+      for (const [a, b] of plate.lightEdges) {
+        c.moveTo(...a);
+        c.lineTo(...b);
+      }
+      c.stroke();
+      c.restore();
     },
   };
 }
@@ -303,6 +343,13 @@ function line(c, a, b, color = "rgba(76,53,33,.5)", width = 0.55) {
   const bend = (variation(ax, by) - 0.5) * 0.45;
   c.quadraticCurveTo((ax + bx) / 2 + bend, (ay + by) / 2 - bend, bx, by);
   c.stroke();
+}
+
+function amberEdge(c, a, b) {
+  capturedLightEdges?.push([point(...a), point(...b)]);
+  const { amber } = lightingHierarchy(1, miniatureLighting);
+  if (amber < 0.01) return;
+  line(c, a, b, `rgba(255,199,112,${amber * 0.72})`, 0.85);
 }
 
 function terrace(c, u, v, w, d, base, top, color, edge = "#67523d") {
@@ -421,7 +468,7 @@ function windowFront(c, u, v, z, size = 2.6, lit = false) {
       [u + size / 2, v, z + size * 1.45],
       [u - size / 2, v, z + size * 1.45],
     ],
-    miniatureLighting.night > 0.4
+    miniatureLighting.night > 0.4 && (lit || variation(u, v + z) > 0.68)
       ? "rgba(255,199,108,.95)"
       : lit
         ? "#bc965b"
@@ -584,6 +631,8 @@ function drawBuilding(c, scene, spec) {
       scene.roof,
     );
     line(c, [a, front, top + 2], [b, front, top + 2], "#514135", 1.3);
+    if (character > 0.58)
+      amberEdge(c, [a, front, top + 2.2], [u, front, top + 2.2]);
     if (scene.snow) {
       c.save();
       c.globalAlpha *= scene.snow;
@@ -647,6 +696,8 @@ function drawBuilding(c, scene, spec) {
       "rgba(255,231,179,.56)",
       0.9,
     );
+    if (character > 0.58)
+      amberEdge(c, [a, front, top + 0.4], [u, front, ridge + 0.4]);
   }
 
   if (windows && w > 10) {
@@ -915,6 +966,8 @@ function pier(c, u, v, w = 12, d = 23, color = "#816143") {
     line(c, [u - w / 2 + 2, y, 3], [u - w / 2 + 2, y, 10], "#493728", 1.6);
     line(c, [u - w / 2 + 2, y, 10], [u - w / 2 + 4, y, 10], "#b99b6c", 1.1);
   }
+  amberEdge(c, [u - w / 2, v, 3.4], [u - w / 2, v + d / 2, 3.4]);
+  amberEdge(c, [u - w / 2, v + d / 2, 3.4], [u + w / 2, v + d / 2, 3.4]);
 }
 
 function crane(c, u, v, h = 40, working = false) {

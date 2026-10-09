@@ -6,7 +6,12 @@ import {
 import { getShipModelProfile } from "./core/ship-models.js";
 import { sailStitchLines } from "./core/ship-materials.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
-import { LIGHT_DIRECTION, litPigment, sceneLighting } from "./core/lighting.js";
+import {
+  LIGHT_DIRECTION,
+  lightingHierarchy,
+  litPigment,
+  sceneLighting,
+} from "./core/lighting.js";
 import {
   SAIL_TEAR_GRID,
   damageNoise,
@@ -440,9 +445,18 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
   const faces = [];
   const fringes = [];
   const seams = [];
+  const rims = [];
   const baseY = mast.y;
   const sails = Math.max(1, mast.sails);
   const addCloth = (vertices, panel = 0) => {
+    // Only one cloth edge catches the warm practical light. The rest of the
+    // sail keeps its cool ambient shading and dark rigging.
+    const edges = vertices.map((a, index) => [
+      a,
+      vertices[(index + 1) % vertices.length],
+    ]);
+    edges.sort((a, b) => b[0][2] + b[1][2] - (a[0][2] + a[1][2]));
+    rims.push(edges[0]);
     let panelIndex = panel;
     const center = vertices.reduce(
       (sum, vertex) =>
@@ -511,7 +525,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
     const forward = [-yard * 0.28, baseY - 4, mast.height * 0.9];
     const aft = [yard * 0.9, baseY + 11, lower];
     addCloth([peak, forward, aft], mastIndex);
-    return { faces, fringes, seams };
+    return { faces, fringes, seams, rims };
   }
 
   if (profile.rig === "gaff" || (profile.rig === "barque" && mastIndex === 2)) {
@@ -521,7 +535,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
     const clew = [mast.yard * 0.72, baseY + 12, low];
     const tack = [-mast.yard * 0.22, baseY + 7, low];
     addCloth([top, peak, clew, tack], mastIndex);
-    return { faces, fringes, seams };
+    return { faces, fringes, seams, rims };
   }
 
   for (let tier = 0; tier < sails; tier++) {
@@ -536,7 +550,7 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
     ];
     addCloth(vertices, tier + mastIndex);
   }
-  return { faces, fringes, seams };
+  return { faces, fringes, seams, rims };
 }
 
 // Deck hands scramble as the storm arc builds: tiny ink figures hurry between
@@ -1180,6 +1194,36 @@ function drawShipModel(
     .map((face, order) => worldFace(face, heading, order, motion, lighting))
     .filter(Boolean);
   paintFaces(c, faces, z);
+
+  const { amber } = lightingHierarchy(1, lighting);
+  if (amber > 0.01) {
+    c.save();
+    for (const sail of sails) {
+      for (const [a, b] of sail.rims) {
+        drawLine3d(
+          c,
+          a,
+          b,
+          heading,
+          `rgba(255,178,78,${amber * 0.32})`,
+          2.2,
+          z,
+          motion,
+        );
+        drawLine3d(
+          c,
+          a,
+          b,
+          heading,
+          `rgba(255,218,144,${amber * 0.8})`,
+          0.75,
+          z,
+          motion,
+        );
+      }
+    }
+    c.restore();
+  }
 
   // Ragged cloth threads hang off every tear, and the surviving panels keep
   // their outline so a shredded sail still reads as canvas, not noise.
