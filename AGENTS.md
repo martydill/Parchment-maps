@@ -2,8 +2,10 @@
 
 ## Project overview
 
-Parchment Maps is a dependency-free, browser-based merchant sailing game. It is implemented with HTML, CSS, JavaScript ES modules, and the Canvas
-2D API. The application does not use a build step or a front-end framework.
+Parchment Maps is a dependency-free, browser-based merchant sailing game. It is implemented with HTML, CSS, JavaScript ES modules, the WebGL2 API for
+the 3D world view, and the Canvas 2D API for the chart layer, panels, and the
+ink annotation overlay. The application does not use a build step or a
+front-end framework.
 
 ## Important paths
 
@@ -12,7 +14,11 @@ Parchment Maps is a dependency-free, browser-based merchant sailing game. It is 
 - `src/app.js` owns browser integration, rendering, input, world data, and the
   main game loop.
 - `src/core/` contains reusable game-domain modules. Keep logic here when it
-  can be independent of the DOM and Canvas APIs.
+  can be independent of the DOM and Canvas APIs. This includes the orbit
+  camera math (`camera3d.js`), the deterministic terrain heightfield
+  (`terrain-heights.js`), and the low-poly mesh builders (`ship-mesh.js`).
+- `src/gl/` contains the WebGL2 renderer. It draws in a mirrored world space
+  (x east, y north, z up); chart-space data is converted at the boundary.
 - `test/` contains Node.js tests for the matching modules in `src/core/`.
 - `eslint.config.js` contains the JavaScript lint configuration.
 

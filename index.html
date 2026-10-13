@@ -145,6 +145,17 @@
       </defs>
     </svg>
     <canvas id="game"></canvas>
+    <div id="webglFallback" role="alert" hidden>
+      <div class="menu-paper debug-paper">
+        <div class="debug-content">
+          <h2>The chart needs WebGL</h2>
+          <p>
+            This voyage renders in 3D and your browser blocked or lacks WebGL2.
+            Enable hardware acceleration or try another browser.
+          </p>
+        </div>
+      </div>
+    </div>
     <button
       id="debugButton"
       type="button"
