@@ -225,3 +225,73 @@ test("detail cache releases the oldest distant plate when its pixel budget is ex
     else globalThis.document = previous;
   }
 });
+
+test("all visible islands share a bounded cache without repainting or evicting one another", () => {
+  const previous = globalThis.document;
+  const canvases = [];
+  globalThis.document = {
+    createElement() {
+      const { c, calls } = recorder();
+      const canvas = { getContext: () => c, calls };
+      canvases.push(canvas);
+      return canvas;
+    },
+  };
+  try {
+    const terrain = { biome: "temperate", ridges: [], ranges: [], groves: [] };
+    const islands = [0, 1350, 2700].map((offset) => ({
+      poly: [
+        [offset, 0],
+        [offset + 1300, 0],
+        [offset + 1300, 1400],
+        [offset, 1400],
+      ],
+      terrain,
+      depth: 20,
+    }));
+    const renderer = createTerrainDetailRendering({
+      world: { w: 8000, h: 4000 },
+      islands,
+      paletteFor: terrainPalette,
+    });
+    const { c } = recorder();
+    const frame = {
+      camera: { x: 2000, y: 700, zoom: 1.5 },
+      vw: 6000,
+      vh: 2200,
+      reducedMotion: true,
+    };
+    renderer.draw(c, frame);
+    assert.equal(canvases.length, 6);
+    assert.ok(
+      canvases.reduce((sum, canvas) => sum + canvas.width * canvas.height, 0) <=
+        8_000_000,
+    );
+    const counts = canvases.map((canvas) => canvas.calls.length);
+    for (let i = 0; i < 5; i++) renderer.draw(c, frame);
+    assert.deepEqual(
+      canvases.map((canvas) => canvas.calls.length),
+      counts,
+      "stationary views reuse every visible plate",
+    );
+    assert.ok(canvases.every((canvas) => canvas.width > 0));
+    renderer.draw(c, { ...frame, camera: { ...frame.camera, x: 10000 } });
+    assert.deepEqual(
+      canvases.map((canvas) => canvas.calls.length),
+      counts,
+      "wrapped views reuse the same plates",
+    );
+    renderer.invalidate();
+    renderer.draw(c, frame);
+    assert.ok(canvases.every((canvas, i) => canvas.calls.length > counts[i]));
+    const seasonal = canvases.map((canvas) => canvas.calls.length);
+    renderer.draw(c, frame);
+    assert.deepEqual(
+      canvases.map((canvas) => canvas.calls.length),
+      seasonal,
+    );
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
+});

@@ -1,6 +1,7 @@
 import { LIGHT_DIRECTION } from "./core/lighting.js";
 import { mixSeasonColor } from "./core/seasons.js";
 import { drawSculptedRidge } from "./sculpted-terrain-rendering.js";
+import { drawPigmentGranulation } from "./shoreline-rendering.js";
 
 const palettes = {
   temperate: {
@@ -131,6 +132,26 @@ function drawRidge(c, { a, b, width, layers }, palette) {
   }
 }
 
+function granulateTree(c, size, variant, palette) {
+  c.save();
+  // The active crown path excludes gaps between fronds and fir tiers.
+  c.clip();
+  drawPigmentGranulation(
+    c,
+    [
+      [-size, -size * 1.5],
+      [size, -size * 1.5],
+      [size, 0],
+      [-size, 0],
+    ],
+    Math.floor(variant * 65535),
+    `rgb(${palette.ground})`,
+    palette.leafLight,
+    65,
+  );
+  c.restore();
+}
+
 function drawTree(c, tree, biome, season) {
   const { x, y, size: s, variant } = tree;
   const palette = terrainPalette(biome, season);
@@ -193,6 +214,7 @@ function drawTree(c, tree, biome, season) {
       c.fillStyle = side < 0 ? palette.leafLight : palette.leaf;
       c.fill();
       c.stroke();
+      granulateTree(c, s, variant, palette);
     }
   } else if (biome === "alpine" || variant < 0.22) {
     for (let tier = 2; tier >= 0; tier--) {
@@ -207,6 +229,7 @@ function drawTree(c, tree, biome, season) {
       c.fillStyle = foliage;
       c.fill();
       c.stroke();
+      granulateTree(c, s, variant, palette);
       c.beginPath();
       c.moveTo(0, yy - s * 0.22);
       c.lineTo(-half * 0.75, yy + s * 0.23);
@@ -231,6 +254,7 @@ function drawTree(c, tree, biome, season) {
     c.fillStyle = foliage;
     c.fill();
     c.stroke();
+    granulateTree(c, s, variant, palette);
     c.beginPath();
     c.moveTo(-s * 0.5, -s * 0.4);
     c.bezierCurveTo(-s * 0.75, -s * 0.65, -s * 0.32, -s * 0.92, 0, -s * 0.9);
@@ -319,6 +343,21 @@ function drawMountain(c, x, y, s, biome, season) {
   c.lineTo(s * 0.08, s * 0.58);
   c.closePath();
   c.fill();
+  drawPigmentGranulation(
+    c,
+    [
+      [-s, s * 0.58],
+      [-s * 0.61, s * 0.03],
+      [-s * 0.4, -s * 0.24],
+      [summit, -s],
+      [s * 0.13, -s * 0.08],
+      [s * 0.08, s * 0.58],
+    ],
+    Math.floor(s * 931),
+    "#726947",
+    "#f7e6b4",
+    125,
+  );
   const shadedFace = c.createLinearGradient(0, -s, s, s * 0.6);
   shadedFace.addColorStop(0, "rgba(88,76,53,.56)");
   shadedFace.addColorStop(1, "rgba(45,40,30,.68)");
@@ -332,6 +371,21 @@ function drawMountain(c, x, y, s, biome, season) {
   c.lineTo(s * 0.13, -s * 0.08);
   c.closePath();
   c.fill();
+  drawPigmentGranulation(
+    c,
+    [
+      [summit, -s],
+      [s * 0.4, -s * 0.25],
+      [s * 0.52, -s * 0.33],
+      [s, s * 0.58],
+      [s * 0.08, s * 0.58],
+      [s * 0.13, -s * 0.08],
+    ],
+    Math.floor(s * 1499),
+    "#253b35",
+    "#b7b397",
+    150,
+  );
   c.strokeStyle = "rgba(43,33,21,.72)";
   c.lineWidth = Math.max(1.2, s * 0.045);
   c.beginPath();
@@ -590,6 +644,23 @@ export function drawTerrainIllustration(c, terrain, season) {
       -0.15,
       palette.ground,
       0.3,
+    );
+  }
+  for (const grove of terrain.groves) {
+    const boundary = Array.from({ length: 16 }, (_, i) => {
+      const angle = (i / 16) * Math.PI * 2;
+      return [
+        grove.x + Math.cos(angle) * grove.radius * 0.8,
+        grove.y + Math.sin(angle) * grove.radius * 0.6,
+      ];
+    });
+    drawPigmentGranulation(
+      c,
+      boundary,
+      Math.floor(grove.radius * 2311),
+      `rgb(${palette.ground})`,
+      palette.leafLight,
+      220,
     );
   }
   const silhouettes = [

@@ -1,18 +1,27 @@
 import { MAP_TILT_COS } from "./core/projection.js";
 import { nearestWrapped } from "./core/math.js";
-import { causticPoint, shallowLightStrength } from "./core/sea-optics.js";
+import { shallowLightStrength } from "./core/sea-optics.js";
+import { causticContours } from "./core/caustics.js";
 import { createRenderCadence } from "./core/render-quality.js";
 import { createRadialStamp } from "./radial-stamp.js";
 
-// Two bounded surfaces let the entire lace meet the depth mask in one blend.
-// Coast strokes feather offshore; shoals use their actual chart silhouettes.
+// Bounded light and depth plates meet in one composite. The depth mask stays
+// cached while the light animates; shoals use their actual chart silhouettes.
 export function createShallowCausticsRendering({
   WORLD,
   visibleCoasts,
   clipWater,
 }) {
   const cadence = createRenderCadence(1000 / 30, 48);
-  let layer, mask, lace, web, feather, anchor;
+  const maskCadence = createRenderCadence(Infinity, 48);
+  let layer, composite, depthLayer, mask, lace, web, feather, anchor;
+  let maskRevision = 0;
+  const shapeIds = new WeakMap();
+  let nextShapeId = 0;
+  function shapeId(shape) {
+    if (!shapeIds.has(shape)) shapeIds.set(shape, ++nextShapeId);
+    return shapeIds.get(shape);
+  }
   const scale = 0.75;
   const padding = 64;
   return {
@@ -22,33 +31,51 @@ export function createShallowCausticsRendering({
       if (strength < 0.015) return;
       const time = options.reducedMotion ? 0 : options.time;
       const z = camera.zoom;
-      const width = Math.ceil((vw + padding * 2) * scale);
-      const height = Math.ceil((vh + padding * 2) * scale);
+      const radius = (options.focus?.radius ?? 480) + 160;
+      const width = Math.ceil(
+        (Math.min(vw, options.focus ? radius * 2 * z : vw) + padding * 2) *
+          scale,
+      );
+      const height = Math.ceil(
+        (Math.min(vh, options.focus ? radius * 2 * z * MAP_TILT_COS : vh) +
+          padding * 2) *
+          scale,
+      );
+      const center = options.focus
+        ? {
+            ...camera,
+            x: nearestWrapped(options.focus.x, camera.x, WORLD.w),
+            y: options.focus.y,
+          }
+        : camera;
       const halfW = width / (2 * z * scale);
       const halfH = height / (2 * z * MAP_TILT_COS * scale);
-      const coasts = visibleCoasts(camera, width / scale, height / scale);
+      const coasts = visibleCoasts(center, width / scale, height / scale);
       if (
         !coasts.length &&
         !shoals.some(
           ({ sx, sy, rx, ry }) =>
-            Math.abs(nearestWrapped(sx, camera.x, WORLD.w) - camera.x) <=
-              halfW + rx && Math.abs(sy - camera.y) <= halfH + ry,
+            Math.abs(nearestWrapped(sx, center.x, WORLD.w) - center.x) <=
+              halfW + rx && Math.abs(sy - center.y) <= halfH + ry,
         )
       )
         return;
-      const key = `${z}:${detail}:${strength.toFixed(3)}:${c.globalAlpha}:${lighting?.daylight ?? 1}`;
-      if (
-        cadence.shouldRender(time, {
-          x: camera.x * z,
-          y: camera.y * z * MAP_TILT_COS,
-          width,
-          height,
-          key,
-        })
-      ) {
+      const maskKey = `${z}:${coasts.map((coast) => `${coast.index}:${coast.offset}`).join(";")}:${shoals.map((shoal) => `${shoal.sx},${shoal.sy},${shoal.rx},${shoal.ry},${shapeId(shoal.shelf)}`).join(";")}`;
+      const maskChanged = maskCadence.shouldRender(0, {
+        x: center.x * z,
+        y: center.y * z * MAP_TILT_COS,
+        width,
+        height,
+        key: maskKey,
+      });
+      if (maskChanged) {
+        anchor = { ...center };
+        maskRevision++;
         layer ||= document.createElement("canvas");
+        depthLayer ||= document.createElement("canvas");
         lace ||= document.createElement("canvas");
-        mask ||= layer.getContext("2d");
+        composite ||= layer.getContext("2d");
+        mask ||= depthLayer.getContext("2d");
         web ||= lace.getContext("2d");
         feather ||= createRadialStamp({
           stops: [
@@ -58,7 +85,7 @@ export function createShallowCausticsRendering({
           ],
         });
         for (const [canvas, context] of [
-          [layer, mask],
+          [depthLayer, mask],
           [lace, web],
         ]) {
           if (canvas.width !== width || canvas.height !== height) {
@@ -74,8 +101,8 @@ export function createShallowCausticsRendering({
             0,
             0,
             z * MAP_TILT_COS * scale,
-            width / 2 - camera.x * z * scale,
-            height / 2 - camera.y * z * MAP_TILT_COS * scale,
+            width / 2 - anchor.x * z * scale,
+            height / 2 - anchor.y * z * MAP_TILT_COS * scale,
           );
         }
         mask.save();
@@ -96,11 +123,11 @@ export function createShallowCausticsRendering({
           mask.restore();
         }
         for (const { sx, sy, rx, ry, shelf } of shoals) {
-          const base = nearestWrapped(sx, camera.x, WORLD.w);
+          const base = nearestWrapped(sx, anchor.x, WORLD.w);
           for (const x of [base - WORLD.w, base, base + WORLD.w]) {
             if (
-              Math.abs(x - camera.x) > halfW + rx ||
-              Math.abs(sy - camera.y) > halfH + ry
+              Math.abs(x - anchor.x) > halfW + rx ||
+              Math.abs(sy - anchor.y) > halfH + ry
             )
               continue;
             mask.save();
@@ -111,74 +138,98 @@ export function createShallowCausticsRendering({
           }
         }
         mask.restore();
-
-        // An even number of flat-top hexagon columns closes the wrapping grid.
-        const columns = Math.max(
-          2,
-          Math.ceil(WORLD.w / (detail >= 0.9 ? 36 : 54) / 2) * 2,
+        // The static depth mask is reused for every light frame and feathered
+        // at bounded edges; neither island clipping nor coastal strokes animate.
+        mask.setTransform(1, 0, 0, 1, 0, 0);
+        mask.globalCompositeOperation = "destination-in";
+        for (const [extent, horizontal] of [
+          [width, true],
+          [height, false],
+        ]) {
+          if (extent >= (horizontal ? vw : vh) * scale + padding * 2 * scale)
+            continue;
+          const fade = mask.createLinearGradient(
+            0,
+            0,
+            horizontal ? extent : 0,
+            horizontal ? 0 : extent,
+          );
+          fade.addColorStop(0, "rgba(0,0,0,0)");
+          fade.addColorStop((padding * scale) / extent, "#000");
+          fade.addColorStop(1 - (padding * scale) / extent, "#000");
+          fade.addColorStop(1, "rgba(0,0,0,0)");
+          mask.fillStyle = fade;
+          mask.fillRect(0, 0, width, height);
+        }
+        mask.globalCompositeOperation = "source-over";
+      }
+      const key = `${z}:${detail}:${maskRevision}:${(lighting?.daylight ?? 1) < 0.3}`;
+      if (
+        cadence.shouldRender(time, {
+          x: anchor.x * z,
+          y: anchor.y * z * MAP_TILT_COS,
+          width,
+          height,
+          key,
+        })
+      ) {
+        web.setTransform(1, 0, 0, 1, 0, 0);
+        web.clearRect(0, 0, width, height);
+        web.setTransform(
+          z * scale,
+          0,
+          0,
+          z * MAP_TILT_COS * scale,
+          width / 2 - anchor.x * z * scale,
+          height / 2 - anchor.y * z * MAP_TILT_COS * scale,
         );
-        const spacing = WORLD.w / columns;
-        const radius = spacing / 1.5;
-        const rowHeight = Math.sqrt(3) * radius;
-        const first = Math.floor((camera.x - halfW - radius * 2) / spacing);
-        const last = Math.ceil((camera.x + halfW + radius * 2) / spacing);
-        const top = Math.floor((camera.y - halfH - rowHeight) / rowHeight);
-        const bottom = Math.ceil((camera.y + halfH + rowHeight) / rowHeight);
-        const t = time / 1000;
+        const ribbons = causticContours(
+          {
+            left: anchor.x - halfW,
+            right: anchor.x + halfW,
+            top: anchor.y - halfH,
+            bottom: anchor.y + halfH,
+          },
+          time / 1000,
+          WORLD.w,
+          detail,
+        );
         web.beginPath();
-        for (let column = first; column <= last; column++) {
-          const stagger = ((column % 2) + 2) % 2;
-          for (let row = top; row <= bottom; row++) {
-            const x = column * spacing;
-            const y = (row + stagger * 0.5) * rowHeight;
-            // Three edges per cell: each junction is shared, never overdrawn.
-            let previous;
-            for (let corner = 0; corner <= 3; corner++) {
-              const angle = (corner * Math.PI) / 3;
-              const point = causticPoint(
-                x + Math.cos(angle) * radius,
-                y + Math.sin(angle) * radius,
-                t,
-                WORLD.w,
-              );
-              if (corner === 0) web.moveTo(point.x, point.y);
-              else {
-                const before = ((corner - 1) * Math.PI) / 3;
-                const middle = causticPoint(
-                  x + ((Math.cos(before) + Math.cos(angle)) * radius) / 2,
-                  y + ((Math.sin(before) + Math.sin(angle)) * radius) / 2,
-                  t,
-                  WORLD.w,
-                );
-                web.quadraticCurveTo(
-                  middle.x * 2 - (previous.x + point.x) / 2,
-                  middle.y * 2 - (previous.y + point.y) / 2,
-                  point.x,
-                  point.y,
-                );
-              }
-              previous = point;
-            }
+        for (const points of ribbons) {
+          web.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length - 1; i++) {
+            web.quadraticCurveTo(
+              points[i].x,
+              points[i].y,
+              (points[i].x + points[i + 1].x) / 2,
+              (points[i].y + points[i + 1].y) / 2,
+            );
           }
+          web.lineTo(points.at(-1).x, points.at(-1).y);
         }
         web.lineJoin = "round";
         web.lineCap = "round";
         const moonlit = (lighting?.daylight ?? 1) < 0.3;
         web.strokeStyle = moonlit
-          ? "rgba(170,218,255,0.22)"
-          : "rgba(211,255,214,0.22)";
-        web.lineWidth = 5 / Math.sqrt(z);
+          ? "rgba(170,218,255,0.12)"
+          : "rgba(211,255,214,0.12)";
+        web.lineWidth = 4 / Math.sqrt(z);
         web.stroke();
         web.strokeStyle = moonlit
-          ? "rgba(225,244,255,0.86)"
-          : "rgba(250,255,218,0.9)";
-        web.lineWidth = 1.25 / Math.sqrt(z);
+          ? "rgba(225,244,255,0.48)"
+          : "rgba(250,255,218,0.5)";
+        web.lineWidth = 1.24 / Math.sqrt(z);
         web.stroke();
-        mask.setTransform(1, 0, 0, 1, 0, 0);
-        mask.globalCompositeOperation = "source-in";
-        mask.drawImage(lace, 0, 0);
-        mask.globalCompositeOperation = "source-over";
-        anchor = { ...camera };
+        if (layer.width !== width || layer.height !== height) {
+          layer.width = width;
+          layer.height = height;
+        }
+        composite.setTransform(1, 0, 0, 1, 0, 0);
+        composite.globalCompositeOperation = "copy";
+        composite.drawImage(depthLayer, 0, 0);
+        composite.globalCompositeOperation = "source-in";
+        composite.drawImage(lace, 0, 0);
+        composite.globalCompositeOperation = "source-over";
       }
       c.save();
       c.globalCompositeOperation = "overlay";

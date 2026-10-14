@@ -1,3 +1,6 @@
+import { planShoreline } from "./core/shoreline.js";
+import { terrainBiome } from "./core/terrain.js";
+import { drawShoreBreak } from "./shoreline-rendering.js";
 import { clamp, nearestWrapped } from "./core/math.js";
 import {
   BIOLUMINESCENT_RGB,
@@ -31,9 +34,6 @@ const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
 const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 128);
 const groupedGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 64);
 const groupedCrestStyle = createAlphaPalette("247,237,197", 0, 0.48, 32);
-const surfStyle = createAlphaPalette("248,237,195", 0, 0.35);
-const foamStrokeStyle = createAlphaPalette("255,244,206", 0, 0.62);
-const foamFillStyle = createAlphaPalette("255,247,213", 0, 0.52);
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
 const wakeBodyStyle = createAlphaPalette("26,87,86", 0, 0.14, 128);
@@ -112,7 +112,7 @@ export function createSeaRendering({
   let riverPaths = [];
   let cachedView = null;
   let cachedVisible = [];
-  const coasts = lands.map(({ poly, satellite }, index) => {
+  const coasts = lands.map(({ poly, satellite, name }, index) => {
     const depth = coastFaceDepth(index, satellite) * MAP_TILT_TAN;
     const xs = poly.map(([x]) => x);
     const ys = poly.map(([, y]) => y);
@@ -135,11 +135,14 @@ export function createSeaRendering({
     const land = new Path2D();
     poly.forEach(([x, y], i) => (i ? land.lineTo(x, y) : land.moveTo(x, y)));
     land.closePath();
+    const shoreline = planShoreline(poly, 811 + index * 59, terrainBiome(name));
+    // Caustic masks still need the submerged edge; marsh channels stay dark.
     const surf = new Path2D();
-    poly.forEach(([x, y], i) =>
-      i ? surf.lineTo(x, y + depth) : surf.moveTo(x, y + depth),
-    );
-    surf.closePath();
+    for (const segment of shoreline) {
+      if (segment.kind === "marsh") continue;
+      surf.moveTo(segment.a.x, segment.a.y + depth);
+      surf.lineTo(segment.b.x, segment.b.y + depth);
+    }
     let signedArea = 0;
     poly.forEach(([x, y], i) => {
       const [nextX, nextY] = poly[(i + 1) % poly.length];
@@ -196,7 +199,18 @@ export function createSeaRendering({
               : null;
           })
           .filter(Boolean);
-    return { bounds, masks, land, surf, foam, flocks, animals, index, poly };
+    return {
+      bounds,
+      masks,
+      land,
+      surf,
+      shoreline,
+      depth,
+      flocks,
+      animals,
+      index,
+      poly,
+    };
   });
   const surfaceMarks = [];
   const lightBandStamps = new Map();
@@ -1022,50 +1036,15 @@ export function createSeaRendering({
           encounterCreature === index ? 1 - index * 3.7 : t,
         );
     });
-    for (const { surf, offset } of visible) {
-      c.save();
-      c.translate(offset, 0);
-      c.lineJoin = "round";
-      for (let layer = 0; layer < 2; layer++) {
-        const pulse = (t * 0.16 + layer * 0.5) % 1;
-        c.strokeStyle = surfStyle(
-          Math.sin(pulse * Math.PI) * (0.27 + roughness * 0.08),
-        );
-        c.lineWidth = 4 + pulse * 16;
-        c.setLineDash([12, 9, 3, 17]);
-        c.lineDashOffset = -t * 2;
-        c.stroke(surf);
-      }
-      c.restore();
-    }
-    for (const { foam, offset } of visible) {
+    for (const { shoreline, depth, offset } of visible) {
       c.save();
       c.translate(offset, 0);
       c.lineCap = "round";
-      for (const mark of foam) {
-        if (!inView(mark.x + offset, mark.y, 36, detailView)) continue;
-        const pulse = (Math.sin(t * 2.3 + mark.phase) + 1) * 0.5;
-        if (pulse < 0.28) continue;
-        const reach = 3 + pulse * (8 + roughness * 6);
-        const x = mark.x + mark.nx * reach;
-        const y = mark.y + mark.ny * reach;
-        c.strokeStyle = foamStrokeStyle((pulse - 0.28) * 0.86);
-        c.lineWidth = (0.8 + pulse * 1.2) / z;
-        c.beginPath();
-        c.moveTo(x - mark.tx * 6, y - mark.ty * 6);
-        c.quadraticCurveTo(
-          x + mark.nx * 3,
-          y + mark.ny * 3,
-          x + mark.tx * 6,
-          y + mark.ty * 6,
-        );
-        c.stroke();
-        if (pulse > 0.8) {
-          c.fillStyle = foamFillStyle((pulse - 0.8) * 2.6);
-          c.beginPath();
-          c.arc(x + mark.nx * 5, y + mark.ny * 5, 1.2 / z, 0, Math.PI * 2);
-          c.fill();
-        }
+      for (const segment of shoreline) {
+        const x = (segment.a.x + segment.b.x) / 2 + offset;
+        const y = (segment.a.y + segment.b.y) / 2 + depth;
+        if (!inView(x, y, 36, detailView)) continue;
+        drawShoreBreak(c, segment, depth, t, roughness, z);
       }
       c.restore();
     }
