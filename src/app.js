@@ -36,6 +36,7 @@ import {
   graphicsQualityProfile,
   normalizeGraphicsSetting,
 } from "./core/graphics-quality.js";
+import { parseDebugSettings } from "./core/debug-settings.js";
 import { createMistRendering } from "./mist-rendering.js";
 import { createDepthRendering } from "./depth-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
@@ -571,8 +572,8 @@ let suppressSaving = false;
 const SAVE_KEY = "gilded-archipelago-save";
 
 // Visual-only ship damage presets for the debug menu. They never touch the
-// persisted operations state, so an override disappears on reload like the
-// other scene controls.
+// persisted operations state. Debug preferences are stored separately from
+// the game save.
 const DEBUG_DAMAGE_PRESETS = {
   sound: {
     label: "Sound · 100%",
@@ -7811,6 +7812,9 @@ updateGraphicsStatus();
 
 const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
+const debugRaiderStrengthSelect = document.getElementById(
+  "debugRaiderStrength",
+);
 const debugWeatherSelect = document.getElementById("debugWeather");
 const debugArcSelect = document.getElementById("debugArc");
 const debugTimeSelect = document.getElementById("debugTime");
@@ -7823,9 +7827,9 @@ const debugWeatherPatterns = [
   ).values(),
   { name: "Heavy storm", visibilityKm: 3, roughness: 0.9 },
 ];
-for (const [index, weather] of debugWeatherPatterns.entries()) {
+for (const weather of debugWeatherPatterns) {
   const option = document.createElement("option");
-  option.value = String(index);
+  option.value = weather.name;
   option.textContent = weather.name;
   debugWeatherSelect.append(option);
 }
@@ -7835,6 +7839,72 @@ for (const [id, preset] of Object.entries(DEBUG_DAMAGE_PRESETS)) {
   option.textContent = preset.label;
   debugDamageSelect.append(option);
 }
+
+const DEBUG_SETTINGS_KEY = "gilded-archipelago-debug-settings";
+const debugSelects = {
+  raiderStrength: debugRaiderStrengthSelect,
+  weather: debugWeatherSelect,
+  arc: debugArcSelect,
+  time: debugTimeSelect,
+  season: debugSeasonSelect,
+  damage: debugDamageSelect,
+};
+function readDebugSettings() {
+  return {
+    ...Object.fromEntries(
+      Object.entries(debugSelects).map(([field, select]) => [
+        field,
+        select.value,
+      ]),
+    ),
+    paused: debugPauseToggle.checked,
+  };
+}
+function saveDebugSettings() {
+  try {
+    localStorage.setItem(
+      DEBUG_SETTINGS_KEY,
+      JSON.stringify(readDebugSettings()),
+    );
+  } catch {
+    // Keep the controls usable if preference storage is unavailable or full.
+  }
+}
+function applyDebugSettings() {
+  const settings = readDebugSettings();
+  const pattern = debugWeatherPatterns.find(
+    (weather) => weather.name === settings.weather,
+  );
+  debugWeather = pattern
+    ? { ...pattern, front: sampleWeatherFront([pattern], 0) }
+    : null;
+  debugStormArc =
+    settings.arc === "auto" ? null : stormArcForStage(settings.arc);
+  debugTimeOfDay = settings.time === "auto" ? null : Number(settings.time);
+  debugSeasonDay = settings.season === "auto" ? null : Number(settings.season);
+  debugDamagePreset = DEBUG_DAMAGE_PRESETS[settings.damage] ?? null;
+  debugPaused = settings.paused;
+}
+let storedDebugSettings = null;
+try {
+  storedDebugSettings = localStorage.getItem(DEBUG_SETTINGS_KEY);
+} catch {
+  // Fall back to defaults when preference storage cannot be read.
+}
+const restoredDebugSettings = parseDebugSettings(
+  storedDebugSettings,
+  Object.fromEntries(
+    Object.entries(debugSelects).map(([field, select]) => [
+      field,
+      [...select.options].map((option) => option.value),
+    ]),
+  ),
+);
+for (const [field, select] of Object.entries(debugSelects)) {
+  select.value = restoredDebugSettings[field];
+}
+debugPauseToggle.checked = restoredDebugSettings.paused;
+applyDebugSettings();
 
 function closeDebugMenu(restoreFocus = true) {
   debugMenu.hidden = true;
@@ -7892,40 +7962,16 @@ function refreshDebugScene() {
     drawMenuPort(document.getElementById("townIllustration"), selectedTown, 0);
   render();
 }
-debugWeatherSelect.addEventListener("change", () => {
-  const pattern = debugWeatherPatterns[Number(debugWeatherSelect.value)];
-  debugWeather =
-    debugWeatherSelect.value === "auto"
-      ? null
-      : {
-          ...pattern,
-          front: sampleWeatherFront([pattern], 0),
-        };
-  refreshDebugScene();
-});
-debugArcSelect.addEventListener("change", () => {
-  debugStormArc =
-    debugArcSelect.value === "auto"
-      ? null
-      : stormArcForStage(debugArcSelect.value);
-  refreshDebugScene();
-});
-debugTimeSelect.addEventListener("change", () => {
-  debugTimeOfDay =
-    debugTimeSelect.value === "auto" ? null : Number(debugTimeSelect.value);
-  refreshDebugScene();
-});
-debugSeasonSelect.addEventListener("change", () => {
-  debugSeasonDay =
-    debugSeasonSelect.value === "auto" ? null : Number(debugSeasonSelect.value);
-  refreshDebugScene();
-});
-debugDamageSelect.addEventListener("change", () => {
-  debugDamagePreset = DEBUG_DAMAGE_PRESETS[debugDamageSelect.value] ?? null;
-  refreshDebugScene();
-});
+for (const select of Object.values(debugSelects)) {
+  select.addEventListener("change", () => {
+    applyDebugSettings();
+    saveDebugSettings();
+    refreshDebugScene();
+  });
+}
 debugPauseToggle.addEventListener("change", () => {
   debugPaused = debugPauseToggle.checked;
+  saveDebugSettings();
   keys.clear();
   input.x = input.y = input.power = 0;
 });
@@ -7943,6 +7989,7 @@ document.getElementById("resetDebug").addEventListener("click", () => {
     debugDamageSelect.value =
       "auto";
   debugPauseToggle.checked = false;
+  saveDebugSettings();
   refreshDebugScene();
 });
 
@@ -7964,7 +8011,7 @@ function previewEncounter(kind) {
       }
     }
   }
-  const strength = Number(document.getElementById("debugRaiderStrength").value);
+  const strength = Number(debugRaiderStrengthSelect.value);
   const subject =
     kind === "raider"
       ? {
