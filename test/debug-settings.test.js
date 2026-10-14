@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_DEBUG_SETTINGS,
   parseDebugSettings,
+  setDebugShipClass,
 } from "../src/core/debug-settings.js";
+
+import { createGameState } from "../src/core/state.js";
+import { calculateShipStats, SHIP_CLASSES } from "../src/core/upgrades.js";
 
 const choices = {
   raiderStrength: ["1", "2", "3"],
@@ -83,4 +87,62 @@ test("reset defaults round-trip without changing shared defaults or choices", ()
   reset.weather = "Heavy storm";
   assert.equal(DEFAULT_DEBUG_SETTINGS.weather, "auto");
   assert.deepEqual(choices, originalChoices);
+});
+
+test("debug ship swaps grant every class for free while preserving fitted gear", () => {
+  const game = createGameState();
+  game.coins = 0;
+  game.shipUpgrades.equipped.sails = "lateen-sails";
+  game.shipUpgrades.owned.push("lateen-sails");
+  const equipment = structuredClone(game.shipUpgrades.equipped);
+  const fittings = [...game.shipUpgrades.owned];
+  for (const shipClass of Object.values(SHIP_CLASSES)) {
+    assert.deepEqual(setDebugShipClass(game, shipClass.id), {
+      ok: true,
+      shipClass,
+    });
+    assert.equal(game.shipUpgrades.activeClass, shipClass.id);
+    assert.ok(game.shipUpgrades.ownedClasses.includes(shipClass.id));
+    assert.equal(game.coins, 0);
+    assert.deepEqual(game.shipUpgrades.equipped, equipment);
+    assert.deepEqual(game.shipUpgrades.owned, fittings);
+    setDebugShipClass(game, shipClass.id);
+    assert.equal(
+      game.shipUpgrades.ownedClasses.filter((id) => id === shipClass.id).length,
+      1,
+    );
+  }
+});
+
+test("debug ship swaps accept a full hold and reject excess cargo atomically", () => {
+  const game = createGameState();
+  setDebugShipClass(game, "carrack");
+  const capacity = calculateShipStats({
+    ...game.shipUpgrades,
+    activeClass: "sloop",
+  }).holdMax;
+  const before = structuredClone(game);
+  assert.deepEqual(setDebugShipClass(game, "sloop", capacity + 1), {
+    ok: false,
+    reason: "Unload cargo before changing to this ship class.",
+  });
+  assert.deepEqual(game, before);
+  assert.equal(setDebugShipClass(game, "sloop", capacity).ok, true);
+  assert.equal(game.shipUpgrades.activeClass, "sloop");
+});
+
+test("debug ship swaps reject unknown classes and normalize older upgrade state", () => {
+  const game = { coins: 12 };
+  for (const classId of ["missing", "toString", null, undefined]) {
+    assert.deepEqual(setDebugShipClass(game, classId), {
+      ok: false,
+      reason: "Unknown ship class.",
+    });
+    assert.deepEqual(game, { coins: 12 });
+  }
+  assert.equal(setDebugShipClass(game, "brig").ok, true);
+  assert.equal(game.shipUpgrades.activeClass, "brig");
+  assert.ok(game.shipUpgrades.ownedClasses.includes("brig"));
+  assert.ok(game.shipUpgrades.equipped.sails);
+  assert.equal(game.coins, 12);
 });

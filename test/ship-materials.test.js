@@ -86,3 +86,29 @@ test("narrow and edge-on cloth avoids duplicate or zero-length seams", () => {
     ],
   );
 });
+
+test("material seam stations carry the cloth's deformed surface coordinates", () => {
+  // First coordinate is the original seam station; the rest are live XYZ.
+  const lines = sailStitchLines([
+    [-6, -6, 0, 10],
+    [6, 6, 0, 10],
+    [0, 2, 4, 0],
+  ]);
+  assert.deepEqual(
+    lines.map((line) => line.map((point) => point.slice(1))),
+    [
+      [
+        [-3, 0, 10],
+        [-2, 2, 5],
+      ],
+      [
+        [0, 0, 10],
+        [2, 4, 0],
+      ],
+      [
+        [3, 0, 10],
+        [4, 2, 5],
+      ],
+    ],
+  );
+});

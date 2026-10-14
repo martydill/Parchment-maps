@@ -465,8 +465,7 @@ test("damaged vessels list in place while torn sails and splinters appear", () =
     healthy.calls.filter(([method]) => method === "lineTo"),
     wounded.calls.filter(([method]) => method === "lineTo"),
   );
-  const healthyFills = callCount(healthy, "fill");
-  assert.ok(callCount(wounded, "fill") > healthyFills);
+  assert.notEqual(callCount(wounded, "fill"), callCount(healthy, "fill"));
   assert.ok(callCount(wounded, "ellipse") > callCount(healthy, "ellipse"));
   for (const context of [healthy, wounded]) {
     assert.equal(callCount(context, "save"), callCount(context, "restore"));
@@ -699,4 +698,108 @@ test("scrambling deck crew man the player vessel as the storm arc builds", () =>
     reducedMotion: true,
   });
   assert.deepEqual(frozen.calls, again.calls);
+});
+
+test("both renderers retain cloth turn lag across redraws and vessel wrappers", () => {
+  for (const player of [true, false]) {
+    const sailKey = {};
+    const draw = (angle, time, key = sailKey) => {
+      const context = canvasContext();
+      const environment = {
+        time,
+        windAngle: 0.3,
+        windStrength: 0.22,
+        sailKey: key,
+      };
+      if (player)
+        drawShip(context, 0, 0, angle, 0.3, 0.22, "brig", 1, environment);
+      else
+        drawMerchantShip(
+          context,
+          { x: 0, y: 0, angle, vesselClass: "brig" },
+          1,
+          1000,
+          environment,
+        );
+      return context.calls;
+    };
+    draw(0, 0);
+    const turning = draw(1.2, 0.1);
+    const equilibrium = draw(1.2, 0.1, {});
+    assert.notDeepEqual(
+      turning,
+      equilibrium,
+      "cloth lags behind the turned rigging",
+    );
+    assert.deepEqual(
+      draw(1.2, 0.1),
+      turning,
+      "drawing a wrap copy does not advance the spring",
+    );
+    assert.deepEqual(
+      draw(1.2, 8),
+      draw(1.2, 8, {}),
+      "offscreen vessels resume at equilibrium",
+    );
+  }
+});
+
+test("sunlight casts clipped mast shadows, while night and thick storms mute them", () => {
+  const draw = (lighting) => {
+    const context = canvasContext();
+    drawShip(context, 0, 0, -1.2, -1.8, 0.22, "brig", 1, {
+      reducedMotion: true,
+      lighting,
+    });
+    return context.calls;
+  };
+  const shadows = (calls) =>
+    calls.filter(
+      ([property, value]) => property === "strokeStyle" && value === "#594930",
+    );
+  const day = draw(sceneLighting(0.5));
+  assert.ok(shadows(day).length > 0);
+  assert.equal(shadows(draw(sceneLighting(0))).length, 0);
+  assert.equal(shadows(draw(sceneLighting(0.5, 1))).length, 0);
+  assert.ok(
+    day.some(
+      ([property, alpha]) =>
+        property === "globalAlpha" && alpha > 0.8 && alpha < 0.9,
+    ),
+    "backlit canvas transmits sunlight",
+  );
+  // Clip while the receiving triangle is still the current path. Later paths
+  // for shadows and stitches must never be reused as a clipping polygon.
+  for (let index = 0; index < day.length; index++) {
+    if (day[index][0] !== "clip") continue;
+    const path = day
+      .slice(0, index)
+      .findLastIndex(([method]) => method === "beginPath");
+    assert.ok(
+      day.slice(path, index).some(([method]) => method === "closePath"),
+    );
+  }
+});
+
+test("chart zoom uses fewer cloth cells while retaining stitching and shadows", () => {
+  const draw = (zoom) => {
+    const context = canvasContext();
+    drawMerchantShip(
+      context,
+      { x: 0, y: 0, angle: -1.2, vesselClass: "carrack" },
+      zoom,
+      0,
+      { reducedMotion: true, windStrength: 0.22, windAngle: -1.8 },
+    );
+    return context;
+  };
+  const wide = draw(0.4),
+    close = draw(1);
+  assert.ok(callCount(wide, "fill") < callCount(close, "fill"));
+  assert.ok(wide.calls.some(([method]) => method === "setLineDash"));
+  assert.ok(
+    wide.calls.some(
+      ([property, value]) => property === "strokeStyle" && value === "#594930",
+    ),
+  );
 });

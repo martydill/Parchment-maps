@@ -36,7 +36,10 @@ import {
   graphicsQualityProfile,
   normalizeGraphicsSetting,
 } from "./core/graphics-quality.js";
-import { parseDebugSettings } from "./core/debug-settings.js";
+import {
+  parseDebugSettings,
+  setDebugShipClass,
+} from "./core/debug-settings.js";
 import { createMistRendering } from "./mist-rendering.js";
 import { createDepthRendering } from "./depth-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
@@ -379,7 +382,7 @@ import {
   updateHud,
 } from "./ui/panels.js?v=19";
 import { activateSectionTabs } from "./ui/tabs.js";
-import { configurePortPanels } from "./ui/port-panels.js?v=11";
+import { configurePortPanels, renderShipyard } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
 
 const canvas = document.getElementById("game");
@@ -4416,6 +4419,7 @@ function drawMenuPort(surface, port, time) {
         game.shipUpgrades.activeClass,
         2,
         {
+          sailKey: surface,
           time: clock / 1000,
           roughness: currentWeather().roughness * 0.2,
           speed: pose.speed,
@@ -5099,6 +5103,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       x,
       {
         time: reducedMotion.matches ? 0 : time / 1000,
+        sailKey: raider,
         roughness: currentWeather().roughness,
         windAngle: game.windAngle,
         windStrength: game.windStrength,
@@ -5646,6 +5651,7 @@ function render() {
       nearestWrappedX(raider.x, camera.x),
       {
         time: reducedMotion.matches ? 0 : time / 1000,
+        sailKey: raider,
         roughness: weather.roughness,
         windAngle: game.windAngle,
         windStrength: game.windStrength,
@@ -5699,6 +5705,7 @@ function render() {
     game.shipUpgrades.activeClass,
     z,
     {
+      sailKey: ship,
       time: visualTime / 1000,
       roughness: weather.roughness,
       swell: arc.swell,
@@ -7813,6 +7820,13 @@ updateGraphicsStatus();
 
 const debugButton = document.getElementById("debugButton");
 const debugMenu = document.getElementById("debugMenu");
+const debugShipTypeSelect = document.getElementById("debugShipType");
+for (const shipClass of Object.values(SHIP_CLASSES)) {
+  const option = document.createElement("option");
+  option.value = shipClass.id;
+  option.textContent = shipClass.name;
+  debugShipTypeSelect.append(option);
+}
 const debugRaiderStrengthSelect = document.getElementById(
   "debugRaiderStrength",
 );
@@ -7917,6 +7931,7 @@ debugButton.addEventListener("click", () => {
     closeDebugMenu();
     return;
   }
+  debugShipTypeSelect.value = game.shipUpgrades.activeClass;
   debugMenu.hidden = false;
   debugButton.setAttribute("aria-expanded", "true");
   document.getElementById("closeDebug").focus({ preventScroll: true });
@@ -7963,6 +7978,26 @@ function refreshDebugScene() {
     drawMenuPort(document.getElementById("townIllustration"), selectedTown, 0);
   render();
 }
+debugShipTypeSelect.addEventListener("change", () => {
+  const result = setDebugShipClass(
+    game,
+    debugShipTypeSelect.value,
+    cargoCount(),
+  );
+  if (!result.ok) {
+    debugShipTypeSelect.value = game.shipUpgrades.activeClass;
+    showMessage(result.reason);
+    return;
+  }
+  applyShipUpgrades();
+  ship.speed = Math.min(ship.speed, ship.maxSpeed);
+  if (currentPort) renderShipyard();
+  if (document.getElementById("shipPanel").style.display === "grid")
+    renderShipPanel();
+  refreshDebugScene();
+  saveGameState();
+  showMessage(`Now sailing ${result.shipClass.name}.`);
+});
 for (const select of Object.values(debugSelects)) {
   select.addEventListener("change", () => {
     applyDebugSettings();
