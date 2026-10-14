@@ -1975,10 +1975,6 @@ export function createMapRendering({
         l.poly,
         (poly) => {
           m.save();
-          m.shadowColor = "rgba(23,37,29,.58)";
-          m.shadowBlur = 14;
-          m.shadowOffsetX = -LIGHT_DIRECTION.x * coastDepth * 0.65;
-          m.shadowOffsetY = -LIGHT_DIRECTION.y * coastDepth * 0.65;
           m.translate(0, coastDepth);
           polyPath(m, poly);
           m.fillStyle = "#5e4629";
@@ -2323,6 +2319,10 @@ export function createMapRendering({
     lands,
     terrainPlans,
     ports,
+    shorePlans,
+    coastDepths: lands.map(
+      (land, index) => coastFaceDepth(index, land.satellite) * MAP_TILT_TAN,
+    ),
   });
   return {
     mountainShadows,

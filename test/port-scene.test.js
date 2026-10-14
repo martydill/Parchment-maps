@@ -35,15 +35,23 @@ test("lighting cache buckets are stable, bounded, and change across the cycle", 
     portPlateLighting(sceneLighting(0.5)),
     portPlateLighting(sceneLighting(0)),
   );
-  assert.deepEqual(
-    portPlateLighting({ strength: 2, dusk: -1, storm: NaN, night: Infinity }),
-    {
-      strength: 1,
-      dusk: 0,
-      storm: 0,
-      night: 0,
-    },
-  );
+  const invalid = portPlateLighting({
+    strength: 2,
+    dusk: -1,
+    storm: NaN,
+    night: Infinity,
+  });
+  assert.equal(invalid.strength, 1);
+  assert.equal(invalid.dusk, 0);
+  assert.equal(invalid.storm, 0);
+  assert.equal(invalid.night, 0);
+  assert.deepEqual(invalid.sunDirection, portPlateLighting().sunDirection);
+  // Equally bright morning/afternoon scenes still require different plates.
+  const morning = portPlateLighting(sceneLighting(0.42));
+  const afternoon = portPlateLighting(sceneLighting(0.58));
+  assert.equal(morning.strength, afternoon.strength);
+  assert.notDeepEqual(morning.sunDirection, afternoon.sunDirection);
+  assert.notDeepEqual(morning.shadow, afternoon.shadow);
 });
 
 test("seasonal harbor pigments retain night and storm lighting through every season", () => {

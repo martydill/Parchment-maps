@@ -1,4 +1,8 @@
-import { sceneLighting } from "./lighting.js";
+import {
+  normalizeTimeOfDay,
+  sceneLighting,
+  solarGeometry,
+} from "./lighting.js";
 import { mixSeasonColor } from "./seasons.js";
 
 export const PORT_ARRIVAL_DURATION = 3200;
@@ -20,12 +24,23 @@ function blend(first, second, amount) {
 // Keep cached masonry in small lighting steps rather than repainting its paths
 // on every frame of the day/night cycle.
 export function portPlateLighting(lighting = sceneLighting()) {
-  return Object.fromEntries(
+  const pigment = Object.fromEntries(
     ["strength", "dusk", "storm", "night"].map((key) => [
       key,
       Math.round(clamp(lighting[key]) * 16) / 16,
     ]),
   );
+  const solar = solarGeometry(
+    Math.round(normalizeTimeOfDay(lighting.time) * 64) / 64,
+  );
+  return {
+    ...pigment,
+    sunDirection: solar.sunDirection,
+    shadow: {
+      ...solar.shadow,
+      strength: (1 - pigment.night) * (1 - pigment.storm * 0.85),
+    },
+  };
 }
 
 export function portScenePalette(lighting = sceneLighting(), season) {

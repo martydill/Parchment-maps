@@ -7,7 +7,6 @@ import { getShipModelProfile } from "./core/ship-models.js";
 import { sailStitchLines } from "./core/ship-materials.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import {
-  LIGHT_DIRECTION,
   lightingHierarchy,
   litPigment,
   sceneLighting,
@@ -1142,21 +1141,26 @@ function drawShipModel(
   c.translate(x, y);
   drawHullWater(c, profile, motion, heading, z, bioluminescence, windX, windY);
   // Soft contact shadow stays on the water as the hull rises and falls.
-  // The contact shadow falls southeast of the shared northwest light.
+  const shadow = lighting.shadow ?? sceneLighting().shadow;
+  c.save();
+  c.globalAlpha =
+    (Number.isFinite(c.globalAlpha) ? c.globalAlpha : 1) *
+    (0.35 + shadow.strength * 0.65);
   for (const [spread, style] of CONTACT_SHADOWS) {
     c.fillStyle = style;
     c.beginPath();
     c.ellipse(
-      -LIGHT_DIRECTION.x * 5,
-      -LIGHT_DIRECTION.y * 8,
+      shadow.x * shadow.length * 5,
+      shadow.y * shadow.length * 8,
       profile.beam * spread,
-      profile.length * 0.43 * spread,
+      profile.length * (0.43 + shadow.length * 0.035) * spread,
       heading,
       0,
       Math.PI * 2,
     );
     c.fill();
   }
+  c.restore();
   if (damage?.splinters > 0)
     drawSplinterFlecks(c, profile, heading, z, motion, damage, time, seed);
 

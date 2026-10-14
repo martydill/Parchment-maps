@@ -381,6 +381,7 @@ import {
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
+import { createCloudShadowRendering } from "./sunlight-rendering.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -1519,6 +1520,7 @@ const seaIce = createSeaIceRendering({
   ports,
   biomeAt: (x, y) => seasonalWorldRendering.biomeAt(x, y),
 });
+const cloudShadows = createCloudShadowRendering(WORLD);
 let seaIceTime = 0;
 const localSeaIce = (position) =>
   seaIce.at(position, debugSeasonDay ?? game.day, seaIceTime);
@@ -5536,6 +5538,16 @@ function render() {
     time: visualTime,
     reducedMotion: reducedMotion.matches,
     windAngle: game.windAngle,
+  });
+  cloudShadows.draw(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    lighting,
+    cloud: weather.front?.cloud ?? 0,
+    detail: effectDetail(),
+    reducedMotion: reducedMotion.matches,
   });
 
   // Batch trail and wind rendering
