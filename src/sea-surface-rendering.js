@@ -1,6 +1,7 @@
 import { MAP_TILT_COS } from "./core/projection.js";
 import { nearestWrapped } from "./core/math.js";
 import { createRenderCadence } from "./core/render-quality.js?v=1";
+import { seasonAtDay } from "./core/seasons.js";
 
 // Ocean ripples move by fractions of a pixel between display frames. Keep a
 // padded world-anchored image at 30 Hz while the camera and vessels run at 60 Hz.
@@ -45,6 +46,7 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
       const key = [
         z,
         detail,
+        seasonAtDay(options.day).key,
         c.globalAlpha,
         options.focus?.radius,
         Math.round(roughness * 100),

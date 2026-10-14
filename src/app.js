@@ -15,7 +15,7 @@ import {
   refreshPortWorkspaces,
   readingPages,
 } from "./ui/port-workspace.js?v=5";
-import { createSeaRendering } from "./sea-rendering.js?v=9";
+import { createSeaRendering } from "./sea-rendering.js?v=10";
 import {
   advanceEncounter,
   beginEncounter,
@@ -5466,6 +5466,7 @@ function render() {
     vw,
     vh,
     time: visualTime,
+    day: debugSeasonDay ?? game.day,
     roughness: weather.roughness,
     windAngle: game.windAngle,
     reducedMotion: reducedMotion.matches,

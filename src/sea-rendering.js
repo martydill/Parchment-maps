@@ -28,12 +28,13 @@ import {
 } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { drawHullReflection } from "./ship-rendering.js";
+import {
+  createRegionalWaterSampler,
+  regionalWaveProfile,
+  regionalWaterInk,
+} from "./core/regional-water.js";
+import { seasonAtDay } from "./core/seasons.js";
 
-const surfaceShadowStyle = createAlphaPalette("37,81,78", 0.035, 0.1);
-// Finer opacity steps preserve the subtle response to daylight and storms.
-const surfaceGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 128);
-const groupedGlintStyle = createAlphaPalette("247,237,197", 0, 0.48, 64);
-const groupedCrestStyle = createAlphaPalette("247,237,197", 0, 0.48, 32);
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
 const wakeBodyStyle = createAlphaPalette("26,87,86", 0, 0.14, 128);
@@ -59,8 +60,19 @@ const currentFoamStyles = Array.from(
 const shadowCurve = [-1, 3, -0.3, -2, 0.4, 7, 1, 1];
 const glintCurve = [-0.8, 0, -0.35, -3, 0.25, 3, 0.72, -1];
 const crestLine = [-0.2, 5, 0.45, 6];
+const channelHatch = [-0.75, -4, -0.35, -7];
 
-function appendWaveMark(batches, style, shape, x, y, length) {
+function appendWaveMark(
+  batches,
+  style,
+  shape,
+  x,
+  y,
+  length,
+  amplitude = 1,
+  cos = 1,
+  sin = 0,
+) {
   let batch = batches.get(style);
   if (!batch) {
     batch = { points: [], count: 0 };
@@ -69,9 +81,51 @@ function appendWaveMark(batches, style, shape, x, y, length) {
   // Retain the numeric buffers between frames instead of allocating a path
   // or point object for each mark. Each curve starts its own subpath.
   for (let index = 0; index < shape.length; index += 2) {
-    batch.points[batch.count++] = x + shape[index] * length;
-    batch.points[batch.count++] = y + shape[index + 1];
+    const dx = shape[index] * length,
+      dy = shape[index + 1] * amplitude;
+    batch.points[batch.count++] = x + dx * cos - dy * sin;
+    batch.points[batch.count++] = y + dx * sin + dy * cos;
   }
+}
+
+function appendWaterHighlight(
+  batches,
+  warm,
+  silver,
+  alpha,
+  north,
+  shape,
+  x,
+  y,
+  length,
+  amplitude,
+  cos,
+  sin,
+) {
+  if (north < 0.99)
+    appendWaveMark(
+      batches,
+      warm(alpha * (1 - north)),
+      shape,
+      x,
+      y,
+      length,
+      amplitude,
+      cos,
+      sin,
+    );
+  if (north >= 0.01)
+    appendWaveMark(
+      batches,
+      silver(alpha * north),
+      shape,
+      x,
+      y,
+      length,
+      amplitude,
+      cos,
+      sin,
+    );
 }
 
 function strokeWaveBatches(c, batches, stride) {
@@ -213,6 +267,14 @@ export function createSeaRendering({
     };
   });
   const surfaceMarks = [];
+  const sampleRegion = createRegionalWaterSampler({
+    world: WORLD,
+    lands,
+    currents,
+  });
+  let surfaceSeasonKey;
+  let surfaceInk;
+  const rhythms = new Map();
   const lightBandStamps = new Map();
   const glitterBatches = new Map();
   const causticsRendering = createShallowCausticsRendering({
@@ -263,10 +325,10 @@ export function createSeaRendering({
       const center = (bounds.left + bounds.right) / 2;
       const offset = Math.round((x - center) / WORLD.w) * WORLD.w;
       const box = {
-        left: x - offset - 64,
-        right: x - offset + 64,
-        top: y - 24,
-        bottom: y + 24,
+        left: x - offset - 110,
+        right: x - offset + 110,
+        top: y - 110,
+        bottom: y + 110,
       };
       if (
         box.left < bounds.left ||
@@ -284,6 +346,8 @@ export function createSeaRendering({
       y,
       length: 18 + (Math.sin(phase) + 1) * 15,
       hidden,
+      region: sampleRegion(x, y),
+      grain: wakeNoise(key, 91),
     };
     surfaceMarks[key] = mark;
     return mark;
@@ -853,6 +917,7 @@ export function createSeaRendering({
       lighting,
       front,
       arc,
+      day = 1,
       detail = 1,
       focus,
       encounterCreature,
@@ -900,6 +965,23 @@ export function createSeaRendering({
           detail,
         });
     }
+    const seasonKey = seasonAtDay(day).key;
+    if (surfaceSeasonKey !== seasonKey) {
+      surfaceSeasonKey = seasonKey;
+      const ink = regionalWaterInk(day);
+      surfaceInk = {
+        shadow: createAlphaPalette(ink.shadow, 0.035, 0.1),
+        glint: createAlphaPalette(ink.glint, 0, 0.48, 128),
+        groupedGlint: createAlphaPalette(ink.glint, 0, 0.48, 64),
+        groupedCrest: createAlphaPalette(ink.glint, 0, 0.48, 32),
+        silver: createAlphaPalette(ink.silver, 0, 0.48, 128),
+        groupedSilver: createAlphaPalette(ink.silver, 0, 0.48, 64),
+        silverCrest: createAlphaPalette(ink.silver, 0, 0.48, 32),
+      };
+      // Old pigment batches must not accumulate over successive sailing years.
+      for (const batches of [waveShadows, waveGlints, waveCrests])
+        batches.clear();
+    }
     // Periodic longitude coordinates keep phase and spacing continuous at the
     // world seam. Broad swells carry finer broken ivory glints.
     const columns = Math.ceil(WORLD.w / 95);
@@ -924,8 +1006,14 @@ export function createSeaRendering({
     const stride = detail >= 0.9 ? 1 : detail >= 0.7 ? 2 : 3;
     // Each opacity batch repeats the water clip on the GPU. Under load, group
     // near-identical shades more closely without changing any wave geometry.
-    const glintStyle = detail >= 0.9 ? surfaceGlintStyle : groupedGlintStyle;
-    const crestStyle = detail >= 0.9 ? surfaceGlintStyle : groupedCrestStyle;
+    const glintStyle =
+      detail >= 0.9 ? surfaceInk.glint : surfaceInk.groupedGlint;
+    const crestStyle =
+      detail >= 0.9 ? surfaceInk.glint : surfaceInk.groupedCrest;
+    const silverStyle =
+      detail >= 0.9 ? surfaceInk.silver : surfaceInk.groupedSilver;
+    const silverCrestStyle =
+      detail >= 0.9 ? surfaceInk.silver : surfaceInk.silverCrest;
     const focusX = focus?.x ?? camera.x;
     const focusY = focus?.y ?? camera.y;
     const focusRadius = focus?.radius ?? 480;
@@ -939,13 +1027,9 @@ export function createSeaRendering({
             top: Math.max(view.top, focusY - focusRadius - 80),
             bottom: Math.min(view.bottom, focusY + focusRadius + 80),
           };
-    const pulseTime = t * (0.6 + roughness * 0.4 + swell * 0.45);
-    const pulseSin = Math.sin(pulseTime),
-      pulseCos = Math.cos(pulseTime);
-    const driftCos = Math.cos(t * 0.28),
-      driftSin = Math.sin(t * 0.28);
-    const swaySin = Math.sin(t * 0.48),
-      swayCos = Math.cos(t * 0.48);
+    // A handful of tempo bands share trigonometry; no new per-wave paths,
+    // gradients, or coastline queries are needed on subsequent frames.
+    rhythms.clear();
     for (let row = top; row <= bottom; row++) {
       const rowOffset = Math.sin(row * 12.7) * 25;
       for (let column = left; column <= right; column++) {
@@ -959,51 +1043,123 @@ export function createSeaRendering({
         }
         const mark = surfaceMark(row, canonical, columns, spacing, rowOffset);
         if (mark.hidden && z >= 0.7) continue;
+        if (mark.seasonKey !== seasonKey) {
+          mark.profile = regionalWaveProfile(mark.region, day);
+          mark.seasonKey = seasonKey;
+          mark.speed = Math.round(mark.profile.speed * 8) / 8;
+          mark.directionCos = Math.cos(mark.region.angle);
+          mark.directionSin = Math.sin(mark.region.angle);
+          // Wave crests are axes: opposite bearings describe the same lane.
+          // Keep the axis in the right half-plane before blending with swell.
+          if (mark.directionCos < 0) {
+            mark.directionCos *= -1;
+            mark.directionSin *= -1;
+          }
+        }
+        const profile = mark.profile;
+        if (mark.grain > profile.density) continue;
+        if (!rhythms.has(mark.speed)) {
+          const clock = t * mark.speed;
+          const pulseTime = clock * (0.6 + roughness * 0.4 + swell * 0.45);
+          rhythms.set(mark.speed, {
+            pulseSin: Math.sin(pulseTime),
+            pulseCos: Math.cos(pulseTime),
+            driftCos: Math.cos(clock * 0.28),
+            driftSin: Math.sin(clock * 0.28),
+            swaySin: Math.sin(clock * 0.48),
+            swayCos: Math.cos(clock * 0.48),
+          });
+        }
+        const { pulseSin, pulseCos, driftCos, driftSin, swaySin, swayCos } =
+          rhythms.get(mark.speed);
         const { sin, cos } = mark;
         // A building arc stretches the wave marks into long rolling swells.
-        const length = mark.length * (1 + swell * 0.3);
+        const length = mark.length * profile.length * (1 + swell * 0.3);
         const pulse = (pulseSin * cos + pulseCos * sin + 1) / 2;
         const x =
-          column * spacing + rowOffset + (driftCos * cos - driftSin * sin) * 5;
-        const y = mark.y + (swaySin * cos + swayCos * sin) * 3;
+          column * spacing +
+          rowOffset +
+          (driftCos * cos - driftSin * sin) * 5 * profile.amplitude;
+        const y =
+          mark.y + (swaySin * cos + swayCos * sin) * 3 * profile.amplitude;
         // Counter-rotate each center so one shared layer rotation preserves
         // the original translate(x, y) / rotate(rotation) geometry.
         const centerX = x * rotationCos + y * rotationSin;
         const centerY = y * rotationCos - x * rotationSin;
+        // Sharper marks follow the local current or channel axis.
+        const direction = mark.region.channel;
+        const dx = 1 - direction + mark.directionCos * direction;
+        const dy = mark.directionSin * direction;
+        const magnitude = Math.hypot(dx, dy) || 1;
+        const localCos = dx / magnitude,
+          localSin = dy / magnitude;
         appendWaveMark(
           waveShadows,
-          surfaceShadowStyle(0.035 + pulse * 0.065),
+          surfaceInk.shadow(0.035 + pulse * 0.065 * profile.contrast),
           shadowCurve,
           centerX,
           centerY,
           length,
+          profile.amplitude,
+          localCos,
+          localSin,
         );
         const glintAlpha =
           (0.055 + pulse ** 3 * (0.27 + roughness * 0.15)) *
-          (0.32 + light * 0.68);
-        appendWaveMark(
+          (0.32 + light * 0.68) *
+          profile.contrast;
+        const north = mark.region.north;
+        appendWaterHighlight(
           waveGlints,
-          glintStyle(glintAlpha),
+          glintStyle,
+          silverStyle,
+          glintAlpha,
+          north,
           glintCurve,
           centerX,
           centerY,
           length,
+          profile.amplitude,
+          localCos,
+          localSin,
         );
         // Broken crests appear on the swells before the roughness arrives.
-        const crestThreshold = 0.65 - swell * 0.12;
+        const crestThreshold = profile.crestThreshold - swell * 0.12;
         if (pulse > crestThreshold) {
           const quantizedGlint =
             (Math.max(0, Math.min(127, Math.round((glintAlpha / 0.48) * 127))) /
               127) *
             0.48;
-          appendWaveMark(
+          appendWaterHighlight(
             waveCrests,
-            crestStyle(quantizedGlint * (pulse - crestThreshold) * 1.8),
+            crestStyle,
+            silverCrestStyle,
+            quantizedGlint * (pulse - crestThreshold) * 1.8,
+            north,
             crestLine,
             centerX,
             centerY,
             length,
+            profile.amplitude,
+            localCos,
+            localSin,
           );
+          // Split, directional dry-brush hatching on exposed channel crests.
+          if (direction > 0.15)
+            appendWaterHighlight(
+              waveCrests,
+              crestStyle,
+              silverCrestStyle,
+              glintAlpha * direction * 0.3,
+              north,
+              channelHatch,
+              centerX,
+              centerY,
+              length,
+              profile.amplitude,
+              localCos,
+              localSin,
+            );
         }
       }
     }
