@@ -329,6 +329,7 @@ import {
   createMapRendering,
   createRoughSeaParticles,
   drawShip,
+  drawWeatherEffects,
   portAccentColor,
 } from "./rendering.js?v=9";
 import {
@@ -620,7 +621,6 @@ function bakeTerrainDetailTexture() {
   terrainDetailCanvas.height = WORLD.h;
   c.drawImage(mapLayer, 0, 0);
   bakeSeaDetail(c);
-  bakeWaveGlyphs(c);
   bakeMountainShadows(c);
   bakePortMiniatures(c);
   world3d.updateMapTexture(terrainDetailCanvas);
@@ -685,35 +685,65 @@ function bakeSeaDetail(c) {
 
 // The engraved double-arc wave marks, on the same 95 x 48 grid the old sea
 // surface renderer used, skipping land and hugging the same phase offsets.
-function bakeWaveGlyphs(c) {
+// The engraved wave marks breathe: each glyph fades in and out on its own
+// phase while the whole field leans with the wind, like the old sea surface.
+function collectWaveGlyphs(time) {
   const field = world3d.terrainField;
+  if (!field || !viewBounds) return [];
+  const sprites = [];
   const columns = Math.ceil(WORLD.w / 95);
   const spacing = WORLD.w / columns;
-  c.lineCap = "round";
-  for (let row = 1; row < Math.floor(WORLD.h / 48); row++) {
+  const lean = Math.sin(game.windAngle) * 0.12;
+  const firstRow = Math.max(1, Math.floor(viewBounds.top / 48));
+  const lastRow = Math.min(
+    Math.floor(WORLD.h / 48) - 1,
+    Math.ceil(viewBounds.bottom / 48),
+  );
+  const firstCol = Math.max(0, Math.floor((viewBounds.left - 40) / spacing));
+  const lastCol = Math.min(
+    columns - 1,
+    Math.ceil((viewBounds.right + 40) / spacing),
+  );
+  for (let row = firstRow; row <= lastRow; row++) {
     const rowOffset = Math.sin(row * 12.7) * 25;
-    for (let column = 0; column < columns; column++) {
+    for (let column = firstCol; column <= lastCol; column++) {
       const phase = column * 2.39 + row * 1.73;
-      const x = column * spacing + rowOffset;
+      const x =
+        (((column * spacing + rowOffset) % WORLD.w) + WORLD.w) % WORLD.w;
       const y = row * 48 + Math.sin(phase * 3) * 16;
       if (sampleTerrainLandness(field, x, y) > 0.12) continue;
-      c.strokeStyle = `rgba(48, 58, 49, ${0.07 + (Math.sin(phase) + 1) * 0.038})`;
-      c.lineWidth = 1.2;
-      c.beginPath();
-      c.arc(x - 7, y, 7, Math.PI * 0.08, Math.PI * 0.92);
-      c.arc(x + 7, y, 7, Math.PI * 0.08, Math.PI * 0.92);
-      c.stroke();
-      // Sparse pale glints sit just above a few of the marks.
+      const pulse = (Math.sin(time * 0.0009 + phase) + 1) / 2;
+      const inkAlpha = 0.06 + pulse * 0.1;
+      sprites.push({
+        x,
+        y,
+        z: 0.5,
+        sprite: "waveInk",
+        width: 32,
+        height: 20,
+        rotation: lean,
+        flat: true,
+        alpha: inkAlpha,
+        color: [1, 1, 1],
+      });
       if ((column * 5 + row * 3) % 11 === 0) {
-        c.strokeStyle = "rgba(248, 237, 195, 0.22)";
-        c.lineWidth = 1.6;
-        c.beginPath();
-        c.arc(x - 5, y - 4, 5, Math.PI * 0.15, Math.PI * 0.85);
-        c.arc(x + 5, y - 4, 5, Math.PI * 0.15, Math.PI * 0.85);
-        c.stroke();
+        const glint = (Math.sin(time * 0.0012 + phase * 1.7) + 1) / 2;
+        sprites.push({
+          x,
+          y: y - 4,
+          z: 0.6,
+          sprite: "waveGlint",
+          width: 24,
+          height: 15,
+          rotation: lean,
+          flat: true,
+          alpha: glint * 0.2,
+          color: [1, 1, 1],
+        });
       }
     }
   }
+  return sprites;
 }
 
 // Soft directional shadows cast by the displaced peaks, ray-marched through
@@ -4993,54 +5023,6 @@ function collectRoughSeaCrests(time) {
   }
 }
 
-function collectClouds(time, weather, lighting) {
-  const sprites = [];
-  if (reducedMotion.matches || !viewBounds) return sprites;
-  const storm = lighting.storm;
-  const spanX = Math.max(1400, viewBounds.right - viewBounds.left);
-  const spanY = Math.max(1000, viewBounds.bottom - viewBounds.top);
-  const drift = (time * 0.008 * (1 + weather.roughness)) % (spanX + 700);
-  const count = Math.round(11 * graphics.particleScale) + 3;
-  const windX = Math.cos(game.windAngle);
-  const windY = Math.sin(game.windAngle);
-  for (let i = 0; i < count; i++) {
-    const seedA = Math.sin(i * 127.1) * 43758.5453;
-    const seedB = Math.sin(i * 311.7) * 43758.5453;
-    const rx = seedA - Math.floor(seedA);
-    const ry = seedB - Math.floor(seedB);
-    const x =
-      viewBounds.left +
-      ((rx * spanX + drift * (0.6 + ry * 0.5) + windX * 140 * ry) % spanX);
-    const y = viewBounds.top + ((ry * spanY + windY * drift * 0.35) % spanY);
-    const layer = i % 3;
-    const altitude = 210 + layer * 110 + rx * 60;
-    const puffs = 3 + (i % 2);
-    const dark = storm > 0.35;
-    for (let puff = 0; puff < puffs; puff++) {
-      const puffSeed = Math.sin((i * 7 + puff) * 91.3) * 43758.5453;
-      const rp = puffSeed - Math.floor(puffSeed);
-      const spreadX = (puff - (puffs - 1) / 2) * 90 + (rp - 0.5) * 50;
-      const spreadY = (rp - 0.5) * 46;
-      const size = 80 + rp * 60 + layer * 14;
-      sprites.push({
-        x: x + spreadX,
-        y: y + spreadY,
-        z: altitude + (puff % 2) * 14,
-        sprite: dark ? "cloudDark" : "cloudLight",
-        width: size,
-        alpha:
-          (dark ? 0.5 : 0.34) *
-          (0.55 + lighting.daylight * 0.45) *
-          (0.7 + rp * 0.3) *
-          (weather.cloud ?? 0.3),
-        color: [1, 1, 1],
-      });
-    }
-  }
-  return sprites;
-}
-
-// Drifting fog banks over unsurveyed water, laid out like the old mist layer.
 function collectFogBanks(time) {
   const sprites = [];
   if (reducedMotion.matches || !viewBounds) return sprites;
@@ -5064,62 +5046,11 @@ function collectFogBanks(time) {
         z: 6,
         sprite: "mist",
         width: 300,
-        height: 120,
-        alpha: 0.3 + Math.sin(phase) * 0.12,
+        height: 110,
+        alpha: 0.38 + Math.sin(phase) * 0.15,
         color: [1, 1, 1],
       });
     }
-  }
-  return sprites;
-}
-
-function collectRain(weather) {
-  const sprites = [];
-  const strength = weather.rain ?? 0;
-  if (strength <= 0.02 || reducedMotion.matches) return sprites;
-  const count = Math.round(90 * strength * graphics.particleScale);
-  const now = performance.now();
-  for (let i = 0; i < count; i++) {
-    const seedA = Math.sin(i * 91.7) * 43758.5453;
-    const seedB = Math.sin(i * 173.3) * 43758.5453;
-    const rx = seedA - Math.floor(seedA);
-    const ry = seedB - Math.floor(seedB);
-    const x = (((rx * vw + now * (0.14 + ry * 0.1)) % vw) + vw) % vw;
-    const y = (((ry * vh - now * (0.5 + rx * 0.35)) % vh) + vh) % vh;
-    sprites.push({
-      x,
-      y,
-      width: 2.1 + rx * 1.4,
-      height: 15 + ry * 13 + strength * 12,
-      color: [0.86, 0.92, 0.93],
-      alpha: 0.16 + strength * 0.2,
-      uvSpanX: 0.25,
-      uvSpanY: 0.25,
-    });
-  }
-  return sprites;
-}
-
-function collectChartSpray(weather) {
-  const sprites = [];
-  const strength = Math.max(0, weather.roughness - 0.45);
-  if (strength <= 0.05 || reducedMotion.matches) return sprites;
-  const count = Math.round(26 * strength * graphics.particleScale);
-  const now = performance.now();
-  for (let i = 0; i < count; i++) {
-    const seedA = Math.sin(i * 57.3) * 43758.5453;
-    const seedB = Math.sin(i * 211.1) * 43758.5453;
-    const rx = seedA - Math.floor(seedA);
-    const ry = seedB - Math.floor(seedB);
-    sprites.push({
-      x: rx * vw,
-      y: vh - ry * vh * 0.4 - 20 + Math.sin(now * 0.004 + i) * 12,
-      width: 3 + rx * 4,
-      color: [0.96, 0.97, 0.94],
-      alpha: 0.1 + ry * 0.16 * strength,
-      uvSpanX: 0.25,
-      uvSpanY: 0.25,
-    });
   }
   return sprites;
 }
@@ -5422,13 +5353,14 @@ function projectToScreen(x, y, z = 0) {
   return projectWorldPoint(camera, vw, vh, x, y, z);
 }
 
-function drawOverlay(time, weather) {
+function drawOverlay(time, weather, arc) {
   overlayCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   overlayCtx.clearRect(0, 0, vw, vh);
   const c = overlayCtx;
   const z = camera.zoom;
   const px = seaPixelsPerUnit(camera, vh);
   if (!gameStarted) return;
+  drawOverlayWeather(time, weather, arc);
 
   // Wind streaks stay crisp ink lines above the world.
   if (!reducedMotion.matches && viewBounds) {
@@ -5589,33 +5521,6 @@ function drawOverlay(time, weather) {
   drawEdgeRecoveryGlow(c);
 }
 
-function stormRandom(n, salt = 0) {
-  const x = Math.sin(n * 127.1 + salt * 311.7) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-function drawLightningBolt(c, weather, time) {
-  const boltX = vw * (0.12 + stormRandom(time | 0, 31) * 0.76);
-  const seed = (time | 0) & 0xffff;
-  const flicker = 0.55 + 0.45 * Math.sin(time * 0.04);
-  c.save();
-  c.strokeStyle = `rgba(240, 244, 248, ${Math.min(0.9, (weather.lightning ?? 0) * flicker)})`;
-  c.lineWidth = 2.4;
-  c.shadowColor = "rgba(220, 232, 245, .9)";
-  c.shadowBlur = 12;
-  c.beginPath();
-  let x = boltX;
-  let y = 0;
-  c.moveTo(x, y);
-  for (let segment = 0; segment < 6; segment++) {
-    x += Math.sin(segment * 7.7 + seed) * 18;
-    y += vh / 7;
-    c.lineTo(x, y);
-  }
-  c.stroke();
-  c.restore();
-}
-
 function drawPortLabelsOverlay(c) {
   c.save();
   c.font = "700 14px Georgia";
@@ -5750,7 +5655,8 @@ function sceneEnvironment(time, lighting, weather, arc) {
     fogMid: seasonFogColor(season, dayF, 0.55),
     fogBottom: seasonFogColor(season, dayF, 1),
     fogAlpha: 0.86 - dayF * 0.07,
-    grainAlpha: (graphics.grainAlpha ?? 0) * 0.5,
+    grainAlpha: graphics.grainAlpha ?? 0,
+    seaDarkness: weather.front?.seaDarkness ?? 0,
     hasFog: gameStarted ? 1 : 0,
     worldSize: [WORLD.w, WORLD.h],
     shipPos: [ship.x, ship.y],
@@ -5763,12 +5669,28 @@ function sceneEnvironment(time, lighting, weather, arc) {
 }
 
 function seasonFogColor(season, sun, stop) {
+  // The exact 2D fog-wash gradient stops, sampled by screen height.
   const autumn = season.autumn ?? 0;
   const snow = season.snow ?? 0;
-  const r = 104 + sun * 99 + autumn * 8 - snow * 8 - (stop === 1 ? 9 : 0);
-  const g = 111 + sun * 87 + snow * 9 - (stop === 1 ? 8 : 0);
-  const b = 99 + sun * 61 + snow * 43 - autumn * 12 - (stop === 1 ? 11 : 0);
-  return [r / 255, g / 255, b / 255];
+  if (stop === 0) {
+    return [
+      (104 + sun * 99 + autumn * 8 - snow * 8) / 255,
+      (111 + sun * 87 + snow * 9) / 255,
+      (99 + sun * 61 + snow * 43 - autumn * 12) / 255,
+    ];
+  }
+  if (stop === 0.55) {
+    return [
+      (118 + sun * 95 + autumn * 8 - snow * 8) / 255,
+      (119 + sun * 81 + snow * 9) / 255,
+      (99 + sun * 62 + snow * 43 - autumn * 12) / 255,
+    ];
+  }
+  return [
+    (95 + sun * 98 + autumn * 8 - snow * 8) / 255,
+    (103 + sun * 81 + snow * 9) / 255,
+    (88 + sun * 58 + snow * 43 - autumn * 12) / 255,
+  ];
 }
 
 function seaIceCover() {
@@ -5854,11 +5776,13 @@ function render() {
       color: [1, 1, 1],
     });
   }
+  for (const sprite of collectWaveGlyphs(reducedMotion.matches ? 0 : time))
+    flatSprites.push(sprite);
   for (const sprite of collectWake(time, weather, lighting))
     flatSprites.push(sprite);
   for (const sprite of harbor.beams) flatSprites.push(sprite);
 
-  world3d.frame({
+  const frameScene = {
     camera,
     viewport: { width: vw, height: vh },
     math: { cameraViewMatrix, perspectiveMatrix },
@@ -5889,27 +5813,46 @@ function render() {
           ]
         : []),
     ],
-    weatherSprites: collectClouds(time, weather, lighting),
+    weatherSprites: [],
     fogSprites: collectFogBanks(time),
-    screenSprites: [...collectRain(weather), ...collectChartSpray(weather)],
-    screenGlows:
-      (weather.lightning ?? 0) > 0.05
-        ? [
-            {
-              x: 0,
-              y: 0,
-              width: vw,
-              height: vh,
-              color: [0.88, 0.92, 1],
-              alpha: (weather.lightning ?? 0) * 0.22,
-              uvSpanX: 0.25,
-              uvSpanY: 0.25,
-            },
-          ]
-        : [],
-  });
+  };
+  if (typeof window !== "undefined") window.__lastScene = frameScene;
+  world3d.frame(frameScene);
 
-  drawOverlay(time, weather);
+  drawOverlay(time, weather, arc);
+}
+
+// The original 2D weather stack — cloud banks, storm fronts and grades,
+// fog washes, rain, sunbreaks, rainbows, and lightning — paints directly
+// onto the overlay so the 3D world shares its atmosphere pixel for pixel.
+function drawOverlayWeather(time, weather, arc) {
+  const visualTime = reducedMotion.matches ? 0 : time;
+  drawWeatherEffects(overlayCtx, {
+    name: weather.name,
+    softLayerScale: graphics.maskScale,
+    particleScale: graphics.particleScale,
+    lightning: graphics.lightning,
+    front: weather.front,
+    arc,
+    daylight: sceneLighting(sceneTimeOfDay(), weather.roughness, game.day)
+      .daylight,
+    roughness: weather.roughness,
+    visibilityKm: weather.visibilityKm,
+    aheadVisibilityKm: currentWeather(ship.angle).visibilityKm,
+    asternVisibilityKm: currentWeather(ship.angle + Math.PI).visibilityKm,
+    headingAngle: ship.angle,
+    windAngle: game.windAngle,
+    windStrength: game.windStrength,
+    vw,
+    vh,
+    time: visualTime,
+    reducedMotion: reducedMotion.matches,
+  });
+  chartSpray.draw(overlayCtx, {
+    vw,
+    vh,
+    particleScale: graphics.particleScale,
+  });
 }
 
 const portLabelWidths = new Map();

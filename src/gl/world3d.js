@@ -44,18 +44,25 @@ in vec3 v_world;
 in vec2 v_normal;
 uniform sampler2D u_map;
 uniform sampler2D u_explored;
+uniform sampler2D u_grain;
 uniform vec3 u_lightDir;
 uniform vec2 u_windDir;
 uniform vec2 u_worldSize;
 uniform vec2 u_shipPos;
+uniform vec2 u_viewport;
 uniform float u_time;
 uniform float u_daylight;
 uniform float u_storm;
+uniform float u_seaDarkness;
 uniform float u_ice;
 uniform float u_relief;
 uniform float u_sightRadius;
-uniform vec3 u_fogColor;
+uniform vec3 u_fogTop;
+uniform vec3 u_fogMid;
+uniform vec3 u_fogBottom;
+uniform float u_fogAlpha;
 uniform float u_hasFog;
+uniform float u_grainAlpha;
 uniform vec4 u_biolum[3];
 uniform float u_biolumGlow;
 out vec4 frag;
@@ -67,14 +74,21 @@ float hash21(vec2 p) {
 void main() {
   vec3 color = texture(u_map, v_uv).rgb;
   if (v_land < 0.5) {
-    // Painted water gains a shallow wash near shores and slow light bands
-    // that travel downwind, echoing the old sea surface renderer.
+    // Squall fronts drag a cold veil over open water.
+    color = mix(color, vec3(0.086, 0.192, 0.263), u_seaDarkness * 0.22);
+    // Painted water gains a shallow wash near shores and broad light
+    // corridors that drift downwind, flecked with twinkling glints — the
+    // old sea-light renderer's recipe.
     float shallow = smoothstep(0.42, 0.02, v_land);
     color = mix(color, color * vec3(0.93, 1.0, 0.99), shallow * 0.3);
-    float stripe = sin(dot(v_world.xy, u_windDir) * 0.028 - u_time * 0.4);
-    float crest = smoothstep(0.78, 1.0, stripe);
-    color += crest * 0.034 * u_daylight * (1.0 - u_storm * 0.7);
-    color = mix(color, color * vec3(0.96, 0.99, 1.0), crest * 0.15);
+    float corridor = sin(dot(v_world.xy, u_windDir) * 0.016 - u_time * 0.16);
+    float band = smoothstep(0.25, 0.95, corridor);
+    color += band * 0.042 * u_daylight * (1.0 - u_storm * 0.7);
+    vec2 glintCell = floor(v_world.xy / 9.0);
+    float twinkle = hash21(glintCell);
+    float spark =
+      smoothstep(0.982, 1.0, sin(u_time * (1.5 + twinkle * 2.0) + twinkle * 40.0));
+    color += spark * band * 0.1 * u_daylight;
     // Caustic net in the shallows: two crossing ripples brighten the sandy
     // water the way the old shallow-caustics pass did.
     float causticA = sin(v_world.x * 0.34 + u_time * 1.15 + sin(v_world.y * 0.21) * 2.0);
@@ -119,16 +133,25 @@ void main() {
     color = mix(color, color * 0.82, crack * u_ice * 0.7);
     color = mix(color, vec3(0.96, 0.97, 0.96), smoothstep(0.75, 1.0, hash21(cell * 1.7)) * u_ice * 0.35);
   }
-  // Exploration fog in world space: surveyed water fades back in through the
-  // explored mask, and the sight radius lifts the fog around the vessel.
+  // Exploration fog in world space, tinted by the same vertical wash the 2D
+  // fog pass filled the screen with and flecked with its paper-grain stipple.
+  // Surveyed water fades back in through the explored mask at the original
+  // 78% punch, and the sight radius lifts the fog around the vessel.
   if (u_hasFog > 0.5) {
     vec2 worldUv = vec2(v_world.x / u_worldSize.x, -v_world.y / u_worldSize.y);
     float surveyed = texture(u_explored, worldUv).a;
     float sight = 1.0 - smoothstep(u_sightRadius * 0.5, u_sightRadius * 1.05, distance(v_world.xy, u_shipPos));
     float reveal = clamp(max(surveyed * 0.78, sight), 0.0, 1.0);
-    float grain = texture(u_explored, worldUv * 7.0).r;
-    vec3 fogged = u_fogColor + (grain - 0.5) * 0.05;
-    color = mix(color, fogged, (1.0 - reveal) * 0.86);
+    float hidden = 1.0 - reveal;
+    if (hidden > 0.001) {
+      float washY = clamp(gl_FragCoord.y / u_viewport.y, 0.0, 1.0);
+      vec3 fogColor = washY < 0.55
+        ? mix(u_fogMid, u_fogTop, smoothstep(0.55, 0.0, washY))
+        : mix(u_fogMid, u_fogBottom, smoothstep(0.55, 1.0, washY));
+      vec4 speck = texture(u_grain, gl_FragCoord.xy / 128.0);
+      fogColor = mix(fogColor, speck.rgb, speck.a * u_grainAlpha);
+      color = mix(color, fogColor, hidden * u_fogAlpha);
+    }
   }
   frag = vec4(color, 1.0);
 }`;
@@ -376,9 +399,6 @@ void main() {
   float radius = length((v_uv - 0.5) * vec2(1.35, 1.0));
   color *= 1.0 - smoothstep(0.32, 0.85, radius) * 0.32;
 
-  if (u_grainAlpha > 0.0) {
-    color += (texture(u_grain, v_uv * 5.0).g - 0.5) * u_grainAlpha;
-  }
   frag = vec4(color, 1.0);
 }`;
 
@@ -534,8 +554,28 @@ const ATLAS_CELLS = {
   moon: [2, 1],
   foam: [3, 1],
   beam: [0, 2],
+  waveInk: [1, 2],
+  waveGlint: [2, 2],
 };
 const CELL = 1 / 4; // 4x4 atlas grid
+
+// The engraved double-arc wave mark from the chart's sea field, as a sprite
+// the renderer can pulse per glyph phase.
+function waveGlyphSprite(size, color, lineWidth) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const c = canvas.getContext("2d");
+  c.translate(size / 2, size / 2);
+  c.scale(size / 30, size / 30);
+  c.strokeStyle = color;
+  c.lineWidth = lineWidth;
+  c.lineCap = "round";
+  c.beginPath();
+  c.arc(-7, 0, 7, Math.PI * 0.08, Math.PI * 0.92);
+  c.arc(7, 0, 7, Math.PI * 0.08, Math.PI * 0.92);
+  c.stroke();
+  return canvas;
+}
 
 function buildAtlas() {
   const canvas = document.createElement("canvas");
@@ -603,27 +643,31 @@ function buildAtlas() {
     0.8,
   );
   stamp(ATLAS_CELLS.beam, beamSprite(128));
+  stamp(
+    ATLAS_CELLS.waveInk,
+    waveGlyphSprite(128, "rgba(48, 58, 49, 0.9)", 1.2),
+  );
+  stamp(
+    ATLAS_CELLS.waveGlint,
+    waveGlyphSprite(128, "rgba(248, 237, 195, 0.8)", 1.6),
+  );
   return canvas;
 }
 
+// The engraved paper-grain stipple for the fog wash, reproduced mark for
+// mark from the 2D renderer's tile: cream and ink specks on transparency.
 function buildGrainTile() {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 128;
   const c = canvas.getContext("2d");
-  const imageData = c.createImageData(128, 128);
-  for (let i = 0; i < 128 * 128; i++) {
-    const x = i % 128;
-    const y = (i / 128) | 0;
-    const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-    const value = n - Math.floor(n);
-    const dark = value > 0.88 ? 1 : 0;
-    const light = value < 0.09 ? 1 : 0;
-    imageData.data[i * 4] = 70 + light * 160;
-    imageData.data[i * 4 + 1] = Math.floor(110 + value * 40);
-    imageData.data[i * 4 + 2] = 52 + light * 110;
-    imageData.data[i * 4 + 3] = dark ? 90 : light ? 120 : 30;
+  for (let index = 0; index < 480; index++) {
+    const x = (index * 73.31 + Math.sin(index * 17.7) * 31 + 128) % 128;
+    const y = (index * 47.83 + Math.sin(index * 9.3) * 23 + 128) % 128;
+    c.fillStyle = index % 6 === 0 ? "#f8e8bb" : "#4d4739";
+    c.globalAlpha = index % 6 === 0 ? 0.4 : 0.22;
+    c.fillRect(x, y, index % 7 === 0 ? 2.2 : 1, 0.7);
   }
-  c.putImageData(imageData, 0, 0);
+  c.globalAlpha = 1;
   return canvas;
 }
 
@@ -1125,7 +1169,21 @@ export function createWorldRenderer({ canvas }) {
       -env.shipPos[1],
     );
     gl.uniform1f(terrainProgram.uniform("u_sightRadius"), env.sightRadius);
-    gl.uniform3fv(terrainProgram.uniform("u_fogColor"), env.fogMid);
+    gl.uniform3fv(terrainProgram.uniform("u_fogTop"), env.fogTop);
+    gl.uniform3fv(terrainProgram.uniform("u_fogMid"), env.fogMid);
+    gl.uniform3fv(terrainProgram.uniform("u_fogBottom"), env.fogBottom);
+    gl.uniform1f(terrainProgram.uniform("u_fogAlpha"), env.fogAlpha);
+    gl.uniform1f(terrainProgram.uniform("u_grainAlpha"), env.grainAlpha);
+    gl.uniform2f(
+      terrainProgram.uniform("u_viewport"),
+      canvas.width,
+      canvas.height,
+    );
+    gl.uniform1f(terrainProgram.uniform("u_seaDarkness"), env.seaDarkness ?? 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, grainTexture);
+    gl.uniform1i(terrainProgram.uniform("u_grain"), 2);
+    gl.activeTexture(gl.TEXTURE0);
     if (env.biolumRegions) {
       gl.uniform4fv(
         terrainProgram.uniform("u_biolum"),
