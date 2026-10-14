@@ -6,13 +6,14 @@
 // 3D view keeps the hand-painted presentation of the flat chart.
 
 const VERTEX_STRIDE = 10; // pos(3) normal(3) color(3) sway(1)
-const TERRAIN_STRIDE = 6; // pos(3) uv(2) landness(1)
+const TERRAIN_STRIDE = 8; // pos(3) uv(2) landness(1) normal(2)
 
 const TERRAIN_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec2 a_uv;
 layout(location = 2) in float a_land;
+layout(location = 3) in vec2 a_normal;
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform float u_offsetX;
@@ -21,6 +22,7 @@ uniform float u_waveAmp;
 out vec2 v_uv;
 out float v_land;
 out vec3 v_world;
+out vec2 v_normal;
 void main() {
   float sea = 1.0 - a_land;
   float wave =
@@ -30,6 +32,7 @@ void main() {
   v_world = world;
   v_uv = a_uv;
   v_land = a_land;
+  v_normal = a_normal;
   gl_Position = u_proj * u_view * vec4(world, 1.0);
 }`;
 
@@ -38,6 +41,7 @@ precision highp float;
 in vec2 v_uv;
 in float v_land;
 in vec3 v_world;
+in vec2 v_normal;
 uniform sampler2D u_map;
 uniform sampler2D u_explored;
 uniform vec3 u_lightDir;
@@ -52,7 +56,14 @@ uniform float u_relief;
 uniform float u_sightRadius;
 uniform vec3 u_fogColor;
 uniform float u_hasFog;
+uniform vec4 u_biolum[3];
+uniform float u_biolumGlow;
 out vec4 frag;
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
 void main() {
   vec3 color = texture(u_map, v_uv).rgb;
   if (v_land < 0.5) {
@@ -60,35 +71,64 @@ void main() {
     // that travel downwind, echoing the old sea surface renderer.
     float shallow = smoothstep(0.42, 0.02, v_land);
     color = mix(color, color * vec3(0.93, 1.0, 0.99), shallow * 0.3);
-    float stripe = sin(dot(v_world.xy, u_windDir) * 0.055 - u_time * 0.4);
-    float crest = smoothstep(0.72, 1.0, stripe);
-    color += crest * 0.055 * u_daylight * (1.0 - u_storm * 0.7);
+    float stripe = sin(dot(v_world.xy, u_windDir) * 0.028 - u_time * 0.4);
+    float crest = smoothstep(0.78, 1.0, stripe);
+    color += crest * 0.034 * u_daylight * (1.0 - u_storm * 0.7);
     color = mix(color, color * vec3(0.96, 0.99, 1.0), crest * 0.15);
+    // Caustic net in the shallows: two crossing ripples brighten the sandy
+    // water the way the old shallow-caustics pass did.
+    float causticA = sin(v_world.x * 0.34 + u_time * 1.15 + sin(v_world.y * 0.21) * 2.0);
+    float causticB = sin(v_world.y * 0.29 - u_time * 0.9 + sin(v_world.x * 0.17) * 2.2);
+    float caustic = smoothstep(0.86, 1.0, causticA * causticB);
+    color += caustic * shallow * 0.09 * (0.35 + u_daylight * 0.65);
+    // Bioluminescent bays glow through the night with a slow shimmer.
+    for (int i = 0; i < 3; i++) {
+      vec2 region = u_biolum[i].xy;
+      vec2 radii = u_biolum[i].zw;
+      vec2 delta = v_world.xy - region;
+      delta.x = min(delta.x, u_worldSize.x - delta.x);
+      float d = length(delta / max(radii, vec2(1.0)));
+      float falloff = 1.0 - smoothstep(0.55, 1.0, d);
+      if (falloff > 0.001) {
+        float shimmer = 0.62 + 0.38 * sin(u_time * 0.7 + v_world.x * 0.05 + v_world.y * 0.031);
+        color += vec3(0.3, 0.85, 0.72) * falloff * shimmer * u_biolumGlow * (0.22 + shallow * 0.1);
+      }
+    }
   } else {
-    // Relief lighting straight from the displaced geometry, softened so the
-    // painted pigments keep their watercolor character.
-    vec3 normal = normalize(cross(dFdx(v_world), dFdy(v_world)));
-    if (normal.z < 0.0) normal = -normal;
+    // Relief lighting from the smooth vertex normals, softened so the painted
+    // pigments keep their watercolor character.
+    vec3 normal = normalize(
+      vec3(v_normal, sqrt(max(0.05, 1.0 - dot(v_normal, v_normal))))
+    );
     float diffuse = max(0.0, dot(normal, u_lightDir));
-    float shade = mix(1.0, 0.62 + diffuse * 0.55, u_relief * smoothstep(0.5, 0.95, v_land));
+    float shade = mix(1.0, 0.74 + diffuse * 0.42, u_relief * smoothstep(0.5, 0.95, v_land));
     color *= shade;
     // Sea cliffs read darker just above the waterline.
     float cliff = (1.0 - smoothstep(0.0, 9.0, v_world.z)) * smoothstep(0.5, 0.8, v_land);
-    color *= mix(1.0, 0.78, cliff);
+    color *= mix(1.0, 0.8, cliff);
   }
-  // Winter sea ice: cold latitudes whiten the water and the shore shelf.
+  // Winter sea ice: cold latitudes whiten the water, then cracked floe veins
+  // break the sheet into shelves.
   float iceMask = u_ice * (0.4 + 0.45 * (1.0 - v_land));
   color = mix(color, vec3(0.9, 0.92, 0.9) * (color.g + 0.32), iceMask);
+  if (u_ice > 0.02 && v_land < 0.5) {
+    vec2 cell = floor(v_world.xy / 26.0);
+    vec2 within = fract(v_world.xy / 26.0) - 0.5;
+    float vein = hash21(cell + floor(hash21(cell) * 7.0));
+    float crack = smoothstep(0.05, 0.0, abs(within.x - (vein - 0.5) * 0.7 - within.y * (vein - 0.5)));
+    color = mix(color, color * 0.82, crack * u_ice * 0.7);
+    color = mix(color, vec3(0.96, 0.97, 0.96), smoothstep(0.75, 1.0, hash21(cell * 1.7)) * u_ice * 0.35);
+  }
   // Exploration fog in world space: surveyed water fades back in through the
   // explored mask, and the sight radius lifts the fog around the vessel.
   if (u_hasFog > 0.5) {
     vec2 worldUv = vec2(v_world.x / u_worldSize.x, -v_world.y / u_worldSize.y);
     float surveyed = texture(u_explored, worldUv).a;
-    float sight = 1.0 - smoothstep(u_sightRadius * 0.6, u_sightRadius, distance(v_world.xy, u_shipPos));
-    float reveal = clamp(max(surveyed, sight), 0.0, 1.0);
+    float sight = 1.0 - smoothstep(u_sightRadius * 0.5, u_sightRadius * 1.05, distance(v_world.xy, u_shipPos));
+    float reveal = clamp(max(surveyed * 0.78, sight), 0.0, 1.0);
     float grain = texture(u_explored, worldUv * 7.0).r;
     vec3 fogged = u_fogColor + (grain - 0.5) * 0.05;
-    color = mix(color, fogged, (1.0 - reveal) * 0.88);
+    color = mix(color, fogged, (1.0 - reveal) * 0.86);
   }
   frag = vec4(color, 1.0);
 }`;
@@ -768,6 +808,8 @@ export function createWorldRenderer({ canvas }) {
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, TERRAIN_STRIDE * 4, 12);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 1, gl.FLOAT, false, TERRAIN_STRIDE * 4, 20);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 2, gl.FLOAT, false, TERRAIN_STRIDE * 4, 24);
     gl.bindVertexArray(null);
     meshes.set("terrain", {
       vao,
@@ -845,6 +887,19 @@ export function createWorldRenderer({ canvas }) {
       gl.LINEAR_MIPMAP_LINEAR,
     );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // Oblique views smear mip levels without anisotropy; the painted chart's
+    // fine hatching depends on keeping those samples sharp.
+    const anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
+    if (anisotropy) {
+      const maxAnisotropy = gl.getParameter(
+        anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT,
+      );
+      gl.texParameterf(
+        gl.TEXTURE_2D,
+        anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,
+        Math.min(8, maxAnisotropy),
+      );
+    }
     gl.generateMipmap(gl.TEXTURE_2D);
     mapTextureReady = true;
   }
@@ -1071,6 +1126,13 @@ export function createWorldRenderer({ canvas }) {
     );
     gl.uniform1f(terrainProgram.uniform("u_sightRadius"), env.sightRadius);
     gl.uniform3fv(terrainProgram.uniform("u_fogColor"), env.fogMid);
+    if (env.biolumRegions) {
+      gl.uniform4fv(
+        terrainProgram.uniform("u_biolum"),
+        env.biolumRegions.flat(),
+      );
+      gl.uniform1f(terrainProgram.uniform("u_biolumGlow"), env.biolumGlow ?? 0);
+    }
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, mapTexture);
     gl.uniform1i(terrainProgram.uniform("u_map"), 0);

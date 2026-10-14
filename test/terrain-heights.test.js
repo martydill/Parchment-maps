@@ -154,18 +154,18 @@ test("degenerate inputs are rejected", () => {
   assert.throws(() => buildTerrainField({ width: 100, height: -1 }));
 });
 
-test("mesh interleaves six floats per vertex and duplicates the seam", () => {
+test("mesh interleaves eight floats per vertex and duplicates the seam", () => {
   const field = buildSmall();
   const mesh = buildTerrainMesh(field);
   const gridVerts = (field.cols + 1) * field.rows;
-  assert.equal(mesh.positions.length % 6, 0);
-  assert.equal(mesh.positions.length / 6, mesh.vertexCount);
+  assert.equal(mesh.positions.length % 8, 0);
+  assert.equal(mesh.positions.length / 8, mesh.vertexCount);
   assert.equal(mesh.vertexCount, gridVerts + 2 * 2 * (field.cols + 1));
   assert.equal(mesh.indices.length % 6, 0);
   // Seam column copies the first column's heights with u = 1.
   const first = 0;
   const seam = field.cols;
-  const stride = 6;
+  const stride = 8;
   assert.equal(
     mesh.positions[seam * stride + 2],
     mesh.positions[first * stride + 2],

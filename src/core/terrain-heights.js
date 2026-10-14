@@ -257,6 +257,11 @@ export function buildTerrainField({
     cellH,
     heights,
     landness,
+    // Wrapped cell distances: from land to open water (shore) and from sea
+    // to the nearest coast (inland). Detail passes key coastal halos, depth
+    // washes, and snow lines off these instead of re-scanning polygons.
+    shore: distToLand,
+    inland: distToSea,
     options,
   };
 }
@@ -292,15 +297,31 @@ export function sampleTerrainLandness(field, x, y) {
 }
 
 // Interleave the lattice into a triangle mesh for the GPU. Vertex layout per
-// float: x, y, z, u, v, landness. The seam column is duplicated with u = 1 so
+// float: x, y, z, u, v, landness, normal x, normal y. The seam column is duplicated with u = 1 so
 // the texture wraps without a visible tear, and a skirt drops the slab's
 // paper edge at the rigid north and south borders.
 export function buildTerrainMesh(field, { skirtDepth = 34 } = {}) {
   const { height, cols, rows, heights, landness } = field;
-  const stride = 6;
+  const stride = 8;
   const gridVerts = (cols + 1) * rows;
   const skirtCols = 4 * (cols + 1);
   const positions = new Float32Array((gridVerts + skirtCols) * stride);
+  // Smooth surface normals from central differences of the height lattice.
+  // Interpolated per-fragment, they shade rolling relief without the flat
+  // triangle facets that screen-space derivatives produce at grazing views.
+  const normalXY = (col, row) => {
+    const west = heights[row * cols + ((col - 1 + cols) % cols)];
+    const east = heights[row * cols + ((col + 1) % cols)];
+    const south = heights[Math.min(rows - 1, row + 1) * cols + col];
+    const north = heights[Math.max(0, row - 1) * cols + col];
+    const dhx = (east - west) / (2 * field.cellW);
+    const dhz = (south - north) / (2 * field.cellH);
+    // GL space mirrors chart y, so the chart-space gradient flips with it.
+    let nx = -dhx;
+    let ny = dhz;
+    const length = Math.hypot(nx, ny, 1);
+    return [nx / length, ny / length];
+  };
   let out = 0;
   for (let row = 0; row < rows; row++) {
     const y = row * field.cellH;
@@ -311,12 +332,15 @@ export function buildTerrainMesh(field, { skirtDepth = 34 } = {}) {
       const x = col * field.cellW;
       const u = col / cols;
       const z = heights[index];
+      const [nx, ny] = normalXY(source, row);
       positions[out++] = x;
       positions[out++] = -y;
       positions[out++] = z;
       positions[out++] = u;
       positions[out++] = v;
       positions[out++] = landness[index];
+      positions[out++] = nx;
+      positions[out++] = ny;
     }
   }
   // Skirt: front and back walls hanging from the northern and southern rims.
@@ -327,6 +351,7 @@ export function buildTerrainMesh(field, { skirtDepth = 34 } = {}) {
       const source = col % cols;
       const index = edgeRow * cols + source;
       const x = col * field.cellW;
+      const [nx, ny] = normalXY(source, edgeRow);
       for (const drop of [0, -skirtDepth]) {
         positions[out++] = x;
         positions[out++] = -y;
@@ -334,6 +359,8 @@ export function buildTerrainMesh(field, { skirtDepth = 34 } = {}) {
         positions[out++] = col / cols;
         positions[out++] = v;
         positions[out++] = landness[index];
+        positions[out++] = nx;
+        positions[out++] = ny;
       }
     }
   }

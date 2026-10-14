@@ -379,11 +379,11 @@ import {
   buildTerrainField,
   buildTerrainMesh,
   sampleTerrainHeight,
+  sampleTerrainLandness,
 } from "./core/terrain-heights.js";
 import {
   buildCreatureHumpsMesh,
   buildLighthouseMesh,
-  buildPortClusterMesh,
   buildRowboatMesh,
   buildVesselMesh,
 } from "./core/ship-mesh.js";
@@ -567,6 +567,10 @@ function merchantTint(name) {
   return vesselTints.get(name);
 }
 
+// World-view harbor miniatures bake into the terrain texture (see
+// bakePortMiniatures); the menu cache renders at higher resolution.
+const chartPortArt = createPortMiniatureCache();
+
 function initWorld3D() {
   if (world3d || world3dFailed) return;
   try {
@@ -583,18 +587,12 @@ function initWorld3D() {
     });
     world3d.setTerrainMesh(buildTerrainMesh(terrainField));
     world3d.terrainField = terrainField;
-    world3d.updateMapTexture(mapLayer);
+    bakeTerrainDetailTexture();
     for (const [name, profile] of Object.entries(SHIP_MODEL_PROFILES)) {
       world3d.setMesh(`vessel:${name}`, buildVesselMesh(profile));
     }
     world3d.setMesh("boat", buildRowboatMesh({}));
     world3d.setMesh("lighthouse", buildLighthouseMesh({}));
-    for (let seed = 0; seed < 4; seed++) {
-      world3d.setMesh(
-        `port:${seed}`,
-        buildPortClusterMesh({ seed: seed * 17 + 3, houses: 5 + (seed % 3) }),
-      );
-    }
     world3d.setMesh(
       "creature",
       buildCreatureHumpsMesh({ count: 4, radius: 10 }),
@@ -604,6 +602,195 @@ function initWorld3D() {
     console.error("3D renderer unavailable", error);
     const fallback = document.getElementById("webglFallback");
     if (fallback) fallback.hidden = false;
+  }
+}
+
+// --- Terrain texture detail bake --------------------------------------------
+// The old 2D renderer composed its richest details every frame: coastal surf
+// halos, a deepening sea wash, engraved wave glyphs, mountain drop shadows,
+// and the painted port miniatures. All of them are static in world space, so
+// they bake straight into a copy of the chart that becomes the terrain
+// texture. The result drapes every detail over the 3D relief for free.
+const terrainDetailCanvas = document.createElement("canvas");
+
+function bakeTerrainDetailTexture() {
+  if (!world3d || !world3d.terrainField) return;
+  const c = terrainDetailCanvas.getContext("2d");
+  terrainDetailCanvas.width = WORLD.w;
+  terrainDetailCanvas.height = WORLD.h;
+  c.drawImage(mapLayer, 0, 0);
+  bakeSeaDetail(c);
+  bakeWaveGlyphs(c);
+  bakeMountainShadows(c);
+  bakePortMiniatures(c);
+  world3d.updateMapTexture(terrainDetailCanvas);
+}
+
+// Coastal surf halos and the deepening wash, rasterized at field resolution
+// and upscaled with smoothing so the bands stay soft like watercolor.
+function bakeSeaDetail(c) {
+  const field = world3d.terrainField;
+  const { cols, rows, cellW, cellH, shore, landness } = field;
+  const coarse = document.createElement("canvas");
+  coarse.width = cols;
+  coarse.height = rows;
+  const cc = coarse.getContext("2d");
+  const image = cc.createImageData(cols, rows);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      const offset = index * 4;
+      if (landness[index] > 0.5) continue;
+      const d = shore[index];
+      // Surf halo hugging the coast, then a pale ring, then the sea deepens
+      // steadily away from land until it reaches the open-water pigment.
+      const surf = Math.max(0, 1 - d / 2.6);
+      const ring = Math.max(0, 1 - Math.abs(d - 4.2) / 2.6) * 0.55;
+      const deep = Math.min(1, d / 42);
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      if (surf > 0) {
+        r += 214 * surf;
+        g += 233 * surf;
+        b += 224 * surf;
+        a += 0.5 * surf;
+      }
+      if (ring > 0) {
+        r += 196 * ring;
+        g += 219 * ring;
+        b += 211 * ring;
+        a += 0.3 * ring;
+      }
+      if (deep > 0) {
+        r += 74 * deep;
+        g += 124 * deep;
+        b += 122 * deep;
+        a += 0.34 * deep;
+      }
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
+      image.data[offset + 3] = Math.round(Math.min(0.62, a) * 255);
+    }
+  }
+  cc.putImageData(image, 0, 0);
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = "high";
+  c.filter = "blur(3px)";
+  c.drawImage(coarse, 0, 0, cols * cellW, rows * cellH);
+  c.filter = "none";
+}
+
+// The engraved double-arc wave marks, on the same 95 x 48 grid the old sea
+// surface renderer used, skipping land and hugging the same phase offsets.
+function bakeWaveGlyphs(c) {
+  const field = world3d.terrainField;
+  const columns = Math.ceil(WORLD.w / 95);
+  const spacing = WORLD.w / columns;
+  c.lineCap = "round";
+  for (let row = 1; row < Math.floor(WORLD.h / 48); row++) {
+    const rowOffset = Math.sin(row * 12.7) * 25;
+    for (let column = 0; column < columns; column++) {
+      const phase = column * 2.39 + row * 1.73;
+      const x = column * spacing + rowOffset;
+      const y = row * 48 + Math.sin(phase * 3) * 16;
+      if (sampleTerrainLandness(field, x, y) > 0.12) continue;
+      c.strokeStyle = `rgba(48, 58, 49, ${0.07 + (Math.sin(phase) + 1) * 0.038})`;
+      c.lineWidth = 1.2;
+      c.beginPath();
+      c.arc(x - 7, y, 7, Math.PI * 0.08, Math.PI * 0.92);
+      c.arc(x + 7, y, 7, Math.PI * 0.08, Math.PI * 0.92);
+      c.stroke();
+      // Sparse pale glints sit just above a few of the marks.
+      if ((column * 5 + row * 3) % 11 === 0) {
+        c.strokeStyle = "rgba(248, 237, 195, 0.22)";
+        c.lineWidth = 1.6;
+        c.beginPath();
+        c.arc(x - 5, y - 4, 5, Math.PI * 0.15, Math.PI * 0.85);
+        c.arc(x + 5, y - 4, 5, Math.PI * 0.15, Math.PI * 0.85);
+        c.stroke();
+      }
+    }
+  }
+}
+
+// Soft directional shadows cast by the displaced peaks, ray-marched through
+// the heightfield along the shared light direction and multiplied over the
+// land so the relief reads as raised paper even before the shader lights it.
+function bakeMountainShadows(c) {
+  const field = world3d.terrainField;
+  const { cols, rows, cellW, cellH, heights, landness } = field;
+  const lightX = -0.55;
+  const lightY = -0.45;
+  const horizontal = Math.hypot(lightX, lightY);
+  const dirX = lightX / horizontal;
+  const dirY = lightY / horizontal;
+  const slope = horizontal / 0.7;
+  const coarse = document.createElement("canvas");
+  coarse.width = cols;
+  coarse.height = rows;
+  const cc = coarse.getContext("2d");
+  const image = cc.createImageData(cols, rows);
+  const sampleHeight = (col, row) => {
+    const c0 = Math.max(0, Math.min(cols - 1, col));
+    const r0 = Math.max(0, Math.min(rows - 1, row));
+    return heights[r0 * cols + c0];
+  };
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      if (landness[index] < 0.6) continue;
+      const ground = heights[index];
+      let shadow = 0;
+      for (let step = 2; step <= 26 && shadow < 0.85; step += 2) {
+        const wrappedCol =
+          ((Math.round(col + dirX * step) % cols) + cols) % cols;
+        const h =
+          sampleHeight(wrappedCol, Math.round(row + dirY * step)) - ground;
+        const blocked = h - step * cellW * slope;
+        if (blocked > 0) {
+          shadow = Math.max(
+            shadow,
+            Math.min(1, blocked / 16) * Math.exp(-step / 26),
+          );
+        }
+      }
+      if (shadow <= 0.02) continue;
+      const offset = index * 4;
+      image.data[offset] = 24;
+      image.data[offset + 1] = 20;
+      image.data[offset + 2] = 26;
+      image.data[offset + 3] = Math.round(shadow * 0.34 * 255);
+    }
+  }
+  cc.putImageData(image, 0, 0);
+  c.imageSmoothingEnabled = true;
+  c.filter = "blur(3px)";
+  c.drawImage(coarse, 0, 0, cols * cellW, rows * cellH);
+  c.filter = "none";
+}
+
+// The painted harbor miniatures the old world composed dynamically. They are
+// static in world space, so they bake at their placements, letting the 3D
+// lighthouse tower and its night lamps stand in for the dynamic lights.
+function bakePortMiniatures(c) {
+  for (const port of ports) {
+    const placement = portMiniaturePlacements.get(port.name);
+    if (!placement) continue;
+    c.save();
+    c.translate(placement.x, placement.y);
+    c.scale(placement.scale, placement.scale);
+    chartPortArt.draw(
+      c,
+      port.name,
+      {},
+      placement.heading,
+      sceneLighting(),
+      portSeason(port),
+    );
+    c.restore();
   }
 }
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1659,7 +1846,7 @@ loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
     if (!texture) return;
     setParchmentTexture(texture);
     minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
-    world3d?.updateMapTexture(mapLayer);
+    bakeTerrainDetailTexture();
   },
 );
 seaRendering.setRivers(riverPaths);
@@ -4799,8 +4986,8 @@ function collectRoughSeaCrests(time) {
           particle.baseY +
           Math.sin(phase * 1.35) * particle.swell * 0.45,
         rotation: Math.atan2(particle.sinScale, particle.cosScale),
-        size: 26,
-        alpha: 0.2 + (Math.sin(phase) + 1) * 0.14,
+        size: 38,
+        alpha: 0.24 + (Math.sin(phase) + 1) * 0.17,
       });
     }
   }
@@ -5108,25 +5295,11 @@ function collectPorts(lighting, time) {
   for (const port of ports) {
     if (!isWorldCircleInViewport(port.x, port.y, 160)) continue;
     if (!isWorldPointExplored(port.x, port.y)) continue;
-    const seed = Math.abs(Math.floor(port.x * 0.13 + port.y * 0.07)) % 4;
-    const key = `port:${seed}`;
-    const mesh = groups[key] || (groups[key] = []);
-    const ground = world3d?.terrainField
-      ? sampleTerrainHeight(world3d.terrainField, port.x, port.y)
-      : 0;
     const placement = portMiniaturePlacements.get(port.name);
     const heading = Math.atan2(
       port.y - (placement?.y ?? port.y - 30),
       port.x - (placement?.x ?? port.x),
     );
-    mesh.push({
-      x: nearestWrappedX(port.x, camera.x),
-      y: port.y,
-      z: Math.max(0, ground - 1.5),
-      angle: heading + Math.PI / 2,
-      scale: 1,
-      tint: [1, 1, 1],
-    });
     const towerX = nearestWrappedX(port.x + 26, camera.x);
     const towerY = port.y - 18;
     const towerGround = world3d?.terrainField
@@ -5582,6 +5755,10 @@ function sceneEnvironment(time, lighting, weather, arc) {
     worldSize: [WORLD.w, WORLD.h],
     shipPos: [ship.x, ship.y],
     sightRadius: Math.max(60, visibility.radius),
+    biolumRegions: bioluminescentSeas
+      .slice(0, 3)
+      .map((sea) => [sea.x, sea.y, sea.rx, sea.ry]),
+    biolumGlow: lighting.night * (1 - lighting.storm * 0.6),
   };
 }
 
@@ -5607,7 +5784,7 @@ function render() {
   if (!world3d) return;
   refreshViewBounds();
   if (updateSeason(debugSeasonDay ?? game.day)) {
-    world3d.updateMapTexture(mapLayer);
+    bakeTerrainDetailTexture();
     if (minimapWrap.style.display === "grid") renderChart();
     else minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
   }
@@ -5692,7 +5869,7 @@ function render() {
     })(),
     sharpRadius: Math.max(110, 230 * z),
     washRadius: Math.max(300, 680 * z),
-    fog: { has: gameStarted, alpha: env.fogAlpha },
+    fog: { has: false, alpha: env.fogAlpha },
     vessels: { ...vesselGroups, ...harbor.groups },
     flatSprites,
     lightSprites: [
