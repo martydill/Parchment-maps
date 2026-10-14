@@ -5,6 +5,12 @@ import {
 } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
 import { sailStitchLines } from "./core/ship-materials.js";
+import {
+  updateSailResponse,
+  sampleSailPoint,
+  sailBacklight,
+  sailShadowSegment,
+} from "./core/sail-cloth.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
 import {
   lightingHierarchy,
@@ -15,6 +21,7 @@ import {
   SAIL_TEAR_GRID,
   damageNoise,
   sailTearLayout,
+  sailClothCells,
   smokePuffRender,
   splinterFlecks,
   createSmokeTrail,
@@ -49,6 +56,16 @@ const CONTACT_SHADOWS = [
 // Presentation-only per-vessel state: smoke trails and the one-shot patch
 // spawn animation. Keys are the persistent vessel objects the callers pass.
 const smokeTrails = new WeakMap();
+const sailResponses = new WeakMap();
+const clothCells = new Map(
+  [2, 3, 4].map((grid) => [grid, sailClothCells(grid)]),
+);
+
+function vesselSailResponse(key, options) {
+  const response = updateSailResponse(sailResponses.get(key), options);
+  sailResponses.set(key, response);
+  return response;
+}
 const patchSpawns = new WeakMap();
 let smokeStamp = null;
 function getSmokeStamp() {
@@ -343,7 +360,7 @@ function boxFaces(x1, x2, y1, y2, z1, z2, colors = {}) {
   ];
 }
 
-function worldFace(face, heading, order, motion, lighting) {
+function worldFace(face, heading, order, motion, lighting, spars) {
   const vertices = face.vertices.map((vertex) =>
     rotatePoint(vertex, heading, motion),
   );
@@ -368,9 +385,45 @@ function worldFace(face, heading, order, motion, lighting) {
       (total, point) => total + point.y * MAP_TILT_SIN + point.z * MAP_TILT_COS,
       0,
     ) / vertices.length;
+  let fill = litPigment(face.fill, normal, lighting);
+  let opacity = 1;
+  let shadows;
+  let transmission = 0;
+  if (face.cloth) {
+    ({ opacity, transmission } = sailBacklight(normal, facing, lighting));
+    const visibleNormal = normal.map((value) => value * (facing < 0 ? -1 : 1));
+    fill = litPigment(face.fill, visibleNormal, lighting);
+    const channels = fill.match(/\d+/g).map(Number);
+    const glow = [255, 237, 188];
+    fill = `rgb(${channels.map((value, axis) => Math.round(value + (glow[axis] - value) * transmission * 0.65)).join(",")})`;
+    if (lighting.daylight > 0.02 && lighting.storm < 0.95) {
+      const plane = vertices.map(({ x, y, z }) => [x, y, z]);
+      const projected = vertices.map((point) => [
+        point.x,
+        point.y - point.z * MAP_TILT_TAN,
+      ]);
+      const left = Math.min(...projected.map(([x]) => x)) - 1.5;
+      const right = Math.max(...projected.map(([x]) => x)) + 1.5;
+      const top = Math.min(...projected.map(([, y]) => y)) - 1.5;
+      const bottom = Math.max(...projected.map(([, y]) => y)) + 1.5;
+      shadows = spars.flatMap(([a, b]) => {
+        const segment = sailShadowSegment(plane, normal, a, b);
+        if (!segment) return [];
+        const points = segment.map(([x, y, z]) => [x, y - z * MAP_TILT_TAN]);
+        if (
+          Math.max(...points.map(([x]) => x)) < left ||
+          Math.min(...points.map(([x]) => x)) > right ||
+          Math.max(...points.map(([, y]) => y)) < top ||
+          Math.min(...points.map(([, y]) => y)) > bottom
+        )
+          return [];
+        return [points];
+      });
+    }
+  }
   return {
     ...face,
-    fill: litPigment(face.fill, normal, lighting),
+    fill,
     projected: vertices.map((point) => [
       point.x,
       point.y - point.z * MAP_TILT_TAN,
@@ -379,7 +432,12 @@ function worldFace(face, heading, order, motion, lighting) {
     stitches: face.stitches?.map((line) =>
       line.map((point) => projectedPoint(point, heading, motion)),
     ),
-    opacity: face.cloth ? 0.98 - lighting.daylight * 0.045 : 1,
+    opacity,
+    shadows,
+    shadowAlpha:
+      lighting.daylight *
+      (1 - lighting.storm * 0.85) *
+      (0.2 + transmission * 0.16),
     depth,
     order,
   };
@@ -405,8 +463,24 @@ function paintFaces(c, faces, z) {
       c.lineJoin = "round";
       c.stroke();
     }
+    if (face.shadows?.length || face.grain || face.stitches?.length) c.clip();
+    if (face.shadows?.length) {
+      c.lineCap = "round";
+      c.beginPath();
+      for (const [a, b] of face.shadows) {
+        c.moveTo(...a);
+        c.lineTo(...b);
+      }
+      c.strokeStyle = "#594930";
+      c.globalAlpha = face.shadowAlpha * 0.3;
+      c.lineWidth = 1.8 + 0.8 / z;
+      c.stroke();
+      c.globalAlpha = face.shadowAlpha;
+      c.lineWidth = 0.8 + 0.4 / z;
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     if (face.grain || face.stitches?.length) {
-      c.clip();
       c.strokeStyle = face.grain ? "rgba(48,31,19,.2)" : "rgba(104,81,48,.32)";
       c.lineWidth = (face.grain ? 0.35 : 0.45) / z;
       c.beginPath();
@@ -440,7 +514,16 @@ function drawLine3d(c, a, b, heading, color, width, z, motion, alpha = 1) {
   c.restore();
 }
 
-function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
+function sailFaces(
+  mast,
+  profile,
+  response,
+  motion,
+  mastIndex,
+  tear = 0,
+  seed = 0,
+  grid = 3,
+) {
   const faces = [];
   const fringes = [];
   const seams = [];
@@ -456,65 +539,64 @@ function sailFaces(mast, profile, windX, windY, mastIndex, tear = 0, seed = 0) {
     ]);
     edges.sort((a, b) => b[0][2] + b[1][2] - (a[0][2] + a[1][2]));
     rims.push(edges[0]);
-    let panelIndex = panel;
     const center = vertices.reduce(
       (sum, vertex) =>
         sum.map((value, index) => value + vertex[index] / vertices.length),
       [0, 0, 0],
     );
-    const bowed = [center[0] + windX, center[1] + windY, center[2]];
-    const emit = (triangle, outline) =>
-      faces.push({
-        vertices: triangle,
-        fill: panelIndex % 2 ? "#dfcda5" : "#eadbb8",
-        outline: outline ? "rgba(105,82,49,.22)" : undefined,
-        cloth: true,
-        stitches: sailStitchLines(triangle),
-        doubleSided: true,
-        order: 20 + mastIndex * 10 + panelIndex,
-      });
     const layout =
       tear > 0
         ? sailTearLayout(seed * 7 + mastIndex * 131 + panel * 29, tear)
         : null;
-    if (!layout || !layout.torn.size) {
-      for (let index = 0; index < vertices.length; index++) {
-        const next = (index + 1) % vertices.length;
-        emit([vertices[index], vertices[next], bowed], true);
-        panelIndex++;
-      }
-      return center;
-    }
-    // Torn cloth: the intact lattice cells of each fan triangle stay up while
-    // the ripped ones leave genuine gaps that the sky and sea show through.
+    const size = layout ? SAIL_TEAR_GRID : grid;
+    const cells = layout ? layout.cells : clothCells.get(size);
+    const top = Math.max(...vertices.map((point) => point[2]));
     for (let index = 0; index < vertices.length; index++) {
-      const next = (index + 1) % vertices.length;
       const a = vertices[index];
-      const b = vertices[next];
-      const corner = (u, v) => [
-        a[0] + (b[0] - a[0]) * u + (bowed[0] - a[0]) * v,
-        a[1] + (b[1] - a[1]) * u + (bowed[1] - a[1]) * v,
-        a[2] + (b[2] - a[2]) * u + (bowed[2] - a[2]) * v,
-      ];
-      layout.cells.forEach((cell, cellIndex) => {
-        if (layout.torn.has(cellIndex)) return;
-        emit(
-          cell.points.map(([u, v]) =>
-            corner(u / SAIL_TEAR_GRID, v / SAIL_TEAR_GRID),
-          ),
-          false,
-        );
-        panelIndex++;
-      });
-      // The remaining cloth keeps its panel outline along the fan edges.
-      seams.push([a, b], [a, bowed], [b, bowed]);
-      for (const [start, end] of layout.fringes)
-        fringes.push([
-          corner(start[0] / SAIL_TEAR_GRID, start[1] / SAIL_TEAR_GRID),
-          corner(end[0] / SAIL_TEAR_GRID, end[1] / SAIL_TEAR_GRID),
+      const b = vertices[(index + 1) % vertices.length];
+      const corner = (u, v) =>
+        sampleSailPoint(a, b, center, u, v, {
+          ...response,
+          x: response.x * (1 + motion.gust * 0.14),
+          y: response.y * (1 + motion.gust * 0.14),
+          time: motion.time,
+          seed,
+          panel,
+          freeEdge: index > 0 && Math.min(a[2], b[2]) < top - 1,
+          reducedMotion: motion.reducedMotion,
+        });
+      cells.forEach((cell, cellIndex) => {
+        if (layout?.torn.has(cellIndex)) return;
+        // Carry the undeformed cloth's seam station as a vertex attribute.
+        // Interpolating it keeps stitches sewn to the fabric as it billows.
+        const material = cell.points.map(([u, v]) => [
+          a[0] + (b[0] - a[0]) * (u / size) + (center[0] - a[0]) * (v / size),
+          ...corner(u / size, v / size),
         ]);
+        faces.push({
+          vertices: material.map((point) => point.slice(1)),
+          fill: index % 2 ? "#e6d5b0" : "#eadbb8",
+          cloth: true,
+          stitches: sailStitchLines(material).map((line) =>
+            line.map((point) => point.slice(1)),
+          ),
+          doubleSided: true,
+        });
+      });
+      // A segmented hem follows the moving foot without exposing mesh edges.
+      for (let station = 0; station < size; station++)
+        seams.push([
+          corner(station / size, 0),
+          corner((station + 1) / size, 0),
+        ]);
+      if (layout) {
+        for (const [start, end] of layout.fringes)
+          fringes.push([
+            corner(start[0] / size, start[1] / size),
+            corner(end[0] / size, end[1] / size),
+          ]);
+      }
     }
-    return center;
   };
 
   if (profile.rig === "lateen") {
@@ -1128,6 +1210,7 @@ function drawShipModel(
   time = 0,
   crew = 0,
   bioluminescence = null,
+  sailResponse = { x: windX, y: windY },
 ) {
   const profile = getShipModelProfile(vesselClass, seed);
   // A holed hull lists to one side and settles lower into the water.
@@ -1192,10 +1275,43 @@ function drawShipModel(
     },
   );
   const sails = profile.masts.map((mast, index) =>
-    sailFaces(mast, profile, windX, windY, index, damage?.tear ?? 0, seed),
+    sailFaces(
+      mast,
+      profile,
+      sailResponse,
+      motion,
+      index,
+      damage?.tear ?? 0,
+      seed,
+      z < 0.55 ? 2 : 3,
+    ),
   );
+  const spars = profile.masts.flatMap((mast) => {
+    const lines = [
+      [
+        [0, mast.y, profile.deckHeight],
+        [0, mast.y, mast.height],
+      ],
+    ];
+    for (let tier = 0; tier < mast.sails; tier++) {
+      const yard = mast.yard * (1 - tier * 0.08);
+      const height = mast.height * (0.72 - tier * 0.21);
+      lines.push([
+        [-yard * 0.55, mast.y, height],
+        [yard * 0.55, mast.y, height],
+      ]);
+    }
+    return lines.map((line) =>
+      line.map((point) => {
+        const world = rotatePoint(point, heading, motion);
+        return [world.x, world.y, world.z];
+      }),
+    );
+  });
   const faces = [...hull, ...structures, ...sails.flatMap((sail) => sail.faces)]
-    .map((face, order) => worldFace(face, heading, order, motion, lighting))
+    .map((face, order) =>
+      worldFace(face, heading, order, motion, lighting, spars),
+    )
     .filter(Boolean);
   paintFaces(c, faces, z);
 
@@ -1229,12 +1345,12 @@ function drawShipModel(
     c.restore();
   }
 
-  // Ragged cloth threads hang off every tear, and the surviving panels keep
-  // their outline so a shredded sail still reads as canvas, not noise.
-  if (damage?.tear > 0) {
+  // Moving hems hold the silhouette together; ragged threads border the real
+  // gaps in damaged cloth without filling those holes back in.
+  {
     for (const sail of sails) {
       for (const [a, b] of sail.seams)
-        drawLine3d(c, a, b, heading, "rgba(70,49,29,.75)", 0.85, z, motion);
+        drawLine3d(c, a, b, heading, "rgba(70,49,29,.75)", 0.65, z, motion);
       for (const [a, b] of sail.fringes)
         drawLine3d(
           c,
@@ -1330,7 +1446,7 @@ function drawShipModel(
   drawHullDetails(c, profile, heading, z, motion, lighting);
 
   // Standing rigging and bowsprit give the model a readable three dimensional
-  // silhouette. Sails are faceted cloth panels with seams and a wind belly.
+  // silhouette. Cloth and its seams share a curved, wind-driven surface.
   const mastHeads = [];
   for (const mast of profile.masts) {
     const base = deckHeight(profile, mast.y / profile.length) + 0.6;
@@ -1519,8 +1635,18 @@ export function drawMerchantShip(
     ...environment,
     seed: merchant.idNum || 0,
   });
+  motion.time = environment.reducedMotion ? 0 : (environment.time ?? 0);
+  motion.reducedMotion = environment.reducedMotion;
+  const response = vesselSailResponse(
+    environment.sailKey || damageKey || merchant,
+    {
+      ...environment,
+      angle,
+      time: environment.time ?? 0,
+    },
+  );
   const relativeWind = (environment.windAngle || 0) - angle;
-  const lighting = environment.lighting || sceneLighting();
+  const lighting = { ...sceneLighting(), ...environment.lighting };
   drawShipModel(
     c,
     merchant.vesselClass,
@@ -1540,6 +1666,7 @@ export function drawMerchantShip(
     environment.time ?? 0,
     0,
     hullBioluminescence({ ...environment, seed: merchant.idNum || 0 }),
+    response,
   );
   // Smoke climbs from the deck and drifts astern, so it renders above the
   // hull while the oldest puffs fall away behind it.
@@ -1578,8 +1705,16 @@ export function drawShip(
     }),
     // Deck hands sample the same frozen clock the hull does.
     time: environment.reducedMotion ? 0 : clock,
+    reducedMotion: environment.reducedMotion,
   };
-  const lighting = environment.lighting || sceneLighting();
+  const response = vesselSailResponse(environment.sailKey || damageKey || c, {
+    ...environment,
+    angle,
+    windAngle,
+    windStrength,
+    time: clock,
+  });
+  const lighting = { ...sceneLighting(), ...environment.lighting };
   c.save();
   c.translate(x, y);
   const playerScale = 1.82;
@@ -1603,6 +1738,7 @@ export function drawShip(
     environment.time ?? 0,
     environment.crew || 0,
     hullBioluminescence(environment),
+    response,
   );
   c.restore();
   // Smoke climbs from the deck and drifts astern, drawn in the caller's
