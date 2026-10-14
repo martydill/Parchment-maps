@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { createSeaRendering } from "../src/sea-rendering.js";
+import { createSeaSurfaceRendering } from "../src/sea-surface-rendering.js";
+import { regionalWaterInk } from "../src/core/regional-water.js";
 
 function recordingContext() {
   const calls = [];
@@ -99,6 +101,155 @@ const options = {
   reducedMotion: false,
   lighting: { daylight: 1, storm: 0 },
 };
+
+test("northern water paints sparse silver while seasonal ink follows the saved day", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 2000, h: 2000 },
+    lands: [],
+  });
+  const render = (y, day = 1) => {
+    const target = recordingContext();
+    renderer.drawSurface(target.context, {
+      ...options,
+      camera: { x: 500, y, zoom: 1 },
+      lighting: { daylight: 0 },
+      day,
+    });
+    return target.strokes;
+  };
+  const count = (strokes, ink) =>
+    strokes
+      .filter(({ style }) => style.startsWith(`rgba(${ink.shadow},`))
+      .reduce((sum, { path }) => sum + path.length / 2, 0);
+  const north = render(160),
+    south = render(1000);
+  const spring = regionalWaterInk();
+  assert.ok(
+    north.some(({ style }) => style.startsWith(`rgba(${spring.silver},`)),
+  );
+  assert.ok(
+    !south.some(({ style }) => style.startsWith(`rgba(${spring.silver},`)),
+  );
+  assert.ok(count(north, spring) < count(south, spring) * 0.7);
+  const winter = regionalWaterInk(73);
+  assert.ok(
+    render(160, 73).some(({ style }) =>
+      style.startsWith(`rgba(${winter.silver},`),
+    ),
+  );
+  assert.ok(
+    render(1000, 73).some(({ style }) =>
+      style.startsWith(`rgba(${winter.glint},`),
+    ),
+  );
+  assert.deepEqual(
+    render(1000, 97)
+      .map((stroke) => JSON.stringify(stroke))
+      .sort(),
+    south.map((stroke) => JSON.stringify(stroke)).sort(),
+    "returning to spring discards winter pigment batches",
+  );
+});
+
+test("exposed current lanes turn regional strokes along their axis", () => {
+  const render = (currents) => {
+    const renderer = createSeaRendering({
+      WORLD: { w: 2000, h: 2000 },
+      lands: [],
+      currents,
+    });
+    const target = recordingContext();
+    renderer.drawSurface(target.context, {
+      ...options,
+      camera: { x: 500, y: 1000, zoom: 1 },
+      time: 3400,
+      lighting: { daylight: 0 },
+    });
+    return target.strokes.filter(({ style }) =>
+      style.startsWith("rgba(37,81,78,"),
+    );
+  };
+  const vertical = (strokes) =>
+    strokes
+      .flatMap(({ path }) => {
+        const result = [];
+        for (let i = 0; i < path.length; i += 2) {
+          const start = path[i],
+            end = path[i + 1];
+          const dx = Math.abs(end[5] - start[1]),
+            dy = Math.abs(end[6] - start[2]);
+          result.push(dy > dx);
+        }
+        return result;
+      })
+      .filter(Boolean).length;
+  assert.equal(vertical(render([])), 0);
+  assert.ok(vertical(render([[500, 1000, Math.PI / 2]])) > 10);
+});
+
+test("buffered water repaints seasonal changes even when reduced motion freezes time", () => {
+  const days = [];
+  const renderer = createSeaSurfaceRendering(
+    (_c, frame) => days.push(frame.day),
+    1000,
+  );
+  const target = recordingContext();
+  for (const day of [1, 73, 74, 49, 145])
+    renderer.draw(target.context, {
+      ...options,
+      time: 0,
+      reducedMotion: true,
+      day,
+    });
+  assert.deepEqual(days, [1, 73, 49]);
+});
+
+test("regional coastal water remains still under reduced motion in every season", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    rect() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+  };
+  try {
+    const renderer = createSeaRendering({
+      WORLD: { w: 2000, h: 2000 },
+      lands: [
+        {
+          poly: [
+            [200, 700],
+            [420, 700],
+            [420, 1080],
+            [580, 1080],
+            [580, 700],
+            [800, 700],
+            [800, 1250],
+            [200, 1250],
+          ],
+        },
+      ],
+      currents: [[500, 1000, -0.7]],
+    });
+    for (const day of [1, 25, 49, 73]) {
+      const render = (time) => {
+        const target = recordingContext();
+        renderer.drawSurface(target.context, {
+          ...options,
+          camera: { x: 500, y: 1000, zoom: 1 },
+          time,
+          day,
+          reducedMotion: true,
+        });
+        return target.calls;
+      };
+      assert.deepEqual(render(1000), render(99000));
+    }
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
 
 test("a focal creature remains surfaced through its encounter camera move", () => {
   const renderer = createSeaRendering({
