@@ -104,6 +104,29 @@ body {
   display: block;
   background: #b48e50;
 }
+#worldOverlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+#webglFallback {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #21150e;
+  color: var(--cream);
+  font-family: var(--font-display);
+  text-align: center;
+}
+#webglFallback[hidden] {
+  display: none;
+}
 .resource-icon-sprite {
   position: absolute;
   width: 0;

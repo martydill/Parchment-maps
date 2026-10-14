@@ -1,7 +1,7 @@
 import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
 import { createChartSprayRendering } from "./chart-spray-rendering.js";
 import { createSeaIceRendering } from "./sea-ice-rendering.js";
-import { seaIceSpeed } from "./core/sea-ice.js";
+import { seaIceSpeed, seaIceStrength } from "./core/sea-ice.js";
 import {
   seasonalAppearance,
   seasonalFishingBoats,
@@ -24,8 +24,7 @@ import {
   encounterCamera,
   encounterFrame,
 } from "./core/encounters.js";
-import { sampleCreatureAppearance } from "./core/seascape.js";
-import { createAlphaPalette } from "./style-palette.js";
+import { sampleCreatureAppearance, sampleShipMotion } from "./core/seascape.js";
 import {
   createRenderCadence,
   createRenderQuality,
@@ -37,16 +36,9 @@ import {
   normalizeGraphicsSetting,
 } from "./core/graphics-quality.js";
 import { parseDebugSettings } from "./core/debug-settings.js";
-import { createMistRendering } from "./mist-rendering.js";
-import { createDepthRendering } from "./depth-rendering.js";
 import { createSiteMarkerRendering } from "./site-marker-rendering.js";
 import { createExplorationSampler } from "./exploration-mask.js";
 import { updateElementProperty } from "./ui/dom.js";
-import {
-  drawNightAtmosphere,
-  drawShipLanterns,
-} from "./atmosphere-rendering.js?v=3";
-import { MAX_LIGHTHOUSE_REACH } from "./core/seascape.js";
 import {
   GAME_NAME,
   PORT_NAMES,
@@ -69,12 +61,6 @@ import {
   rayIntersectsBounds,
   raySegmentDistance,
 } from "./core/geometry.js?v=3";
-import {
-  MAP_TILT_COS,
-  unprojectMapPoint,
-  visibleWorldCopies,
-} from "./core/projection.js";
-import { createRadialStamp } from "./radial-stamp.js";
 import { anchorMapLabels } from "./core/label-layout.js?v=2";
 import {
   edgeInwardVector,
@@ -343,26 +329,21 @@ import {
 import {
   createMapRendering,
   createRoughSeaParticles,
-  drawMerchantShip,
-  drawSceneLightWash,
   drawShip,
   drawWeatherEffects,
   portAccentColor,
-  wrappedCircleIntersectsViewport,
 } from "./rendering.js?v=9";
 import {
   advanceTimeOfDay,
+  LIGHT_DIRECTION,
   nightSightLimit,
   normalizeTimeOfDay,
   sceneLighting,
   timeOfDayLabel,
 } from "./core/lighting.js";
 import {
-  drawHarborBoats,
   drawPortScene,
-  drawSeasonalFishingBoat,
   createPortMiniatureCache,
-  drawPortActivity,
   hasPortMiniature,
 } from "./port-miniatures.js?v=6";
 import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
@@ -381,9 +362,42 @@ import {
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
+import {
+  cameraViewBasis,
+  cameraViewMatrix,
+  clampCamera,
+  createCamera3D,
+  distanceForZoom,
+  seaPixelsPerUnit,
+  MAX_PITCH,
+  MIN_PITCH,
+  perspectiveMatrix,
+  projectWorldPoint,
+  screenPointToSea,
+  viewBoundsOnSea,
+  worldCopiesInView,
+} from "./core/camera3d.js";
+import {
+  buildTerrainField,
+  buildTerrainMesh,
+  sampleTerrainHeight,
+  sampleTerrainLandness,
+} from "./core/terrain-heights.js";
+import {
+  buildCreatureHumpsMesh,
+  buildLighthouseMesh,
+  buildRowboatMesh,
+  buildVesselMesh,
+} from "./core/ship-mesh.js";
+import { createWorldRenderer } from "./gl/world3d.js";
+import {
+  getShipModelProfile,
+  SHIP_MODEL_PROFILES,
+} from "./core/ship-models.js";
+import { celestialPosition } from "./core/sea-optics.js";
+import { sampleLighthouse } from "./core/seascape.js";
 
 const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
 let DPR = 1;
 const renderQuality = createRenderQuality();
 const fogCadence = createRenderCadence();
@@ -401,10 +415,6 @@ const autoGraphicsTier = createAutoQualityTier();
 // dip below the cap under load but can never exceed it.
 function resolutionQuality() {
   return Math.min(renderQuality.quality, graphics.resolutionScale);
-}
-// Same shape for the sea renderers' continuous detail stride.
-function effectDetail() {
-  return Math.min(graphics.detail, renderQuality.quality);
 }
 function applyGraphicsProfile() {
   graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
@@ -510,13 +520,310 @@ function transformWorldData() {
 }
 
 const mapWorldPoint = transformWorldData();
+const clampNumber = clamp;
 const MIN_ZOOM = 0.7;
-const MAX_ZOOM = 1.5;
+const MAX_ZOOM = 2.4;
 const ZOOM_STEP = 1.12;
 let vw = 0,
-  vh = 0,
-  vignetteGradient = null;
-const camera = { x: 0, y: 0, zoom: 1 };
+  vh = 0;
+// The 3D camera keeps the flat chart's focus contract (x, y, zoom) and adds
+// an orbit: yaw spins around the ship, pitch tilts between chart-top-down and
+// a low horizon skim, and distance follows from zoom through the projection.
+const ORBIT_DEFAULT_PITCH = 1.02;
+const camera = createCamera3D({
+  x: 0,
+  y: 0,
+  zoom: 1,
+  yaw: 0,
+  pitch: ORBIT_DEFAULT_PITCH,
+  distance: 1500,
+  minDistance: 240,
+  maxDistance: 5400,
+});
+
+// --- 3D scene resources ----------------------------------------------------
+// The WebGL2 renderer owns the world view. The painted chart layer stays the
+// source of truth for the look: it is draped over a displaced terrain mesh,
+// and vessels sail as low-poly models in the same palette.
+const overlay = document.createElement("canvas");
+const overlayCtx = overlay.getContext("2d");
+overlay.id = "worldOverlay";
+document.body.insertBefore(overlay, canvas.nextSibling);
+let world3d = null;
+let world3dFailed = false;
+const vesselTints = new Map();
+
+function merchantTint(name) {
+  if (!vesselTints.has(name)) {
+    const index =
+      Math.abs(
+        [...name].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 7),
+      ) % merchantColors.length;
+    const hex = merchantColors[index];
+    vesselTints.set(name, [
+      parseInt(hex.slice(1, 3), 16) / 200,
+      parseInt(hex.slice(3, 5), 16) / 200,
+      parseInt(hex.slice(5, 7), 16) / 200,
+    ]);
+  }
+  return vesselTints.get(name);
+}
+
+// World-view harbor miniatures bake into the terrain texture (see
+// bakePortMiniatures); the menu cache renders at higher resolution.
+const chartPortArt = createPortMiniatureCache();
+
+function initWorld3D() {
+  if (world3d || world3dFailed) return;
+  try {
+    world3d = createWorldRenderer({ canvas });
+    if (!world3d) throw new Error("WebGL2 unavailable");
+    // Relief peaks come from the world's mountain ranges; harbors terrace.
+    const terrainField = buildTerrainField({
+      width: WORLD.w,
+      height: WORLD.h,
+      cell: 12,
+      lands,
+      peaks: mountains.map(([x, y, size]) => ({ x, y, size })),
+      ports: ports.map((port) => ({ x: port.x, y: port.y })),
+    });
+    world3d.setTerrainMesh(buildTerrainMesh(terrainField));
+    world3d.terrainField = terrainField;
+    bakeTerrainDetailTexture();
+    for (const [name, profile] of Object.entries(SHIP_MODEL_PROFILES)) {
+      world3d.setMesh(`vessel:${name}`, buildVesselMesh(profile));
+    }
+    world3d.setMesh("boat", buildRowboatMesh({}));
+    world3d.setMesh("lighthouse", buildLighthouseMesh({}));
+    world3d.setMesh(
+      "creature",
+      buildCreatureHumpsMesh({ count: 4, radius: 10 }),
+    );
+  } catch (error) {
+    world3dFailed = true;
+    console.error("3D renderer unavailable", error);
+    const fallback = document.getElementById("webglFallback");
+    if (fallback) fallback.hidden = false;
+  }
+}
+
+// --- Terrain texture detail bake --------------------------------------------
+// The old 2D renderer composed its richest details every frame: coastal surf
+// halos, a deepening sea wash, engraved wave glyphs, mountain drop shadows,
+// and the painted port miniatures. All of them are static in world space, so
+// they bake straight into a copy of the chart that becomes the terrain
+// texture. The result drapes every detail over the 3D relief for free.
+const terrainDetailCanvas = document.createElement("canvas");
+
+function bakeTerrainDetailTexture() {
+  if (!world3d || !world3d.terrainField) return;
+  const c = terrainDetailCanvas.getContext("2d");
+  terrainDetailCanvas.width = WORLD.w;
+  terrainDetailCanvas.height = WORLD.h;
+  c.drawImage(mapLayer, 0, 0);
+  bakeSeaDetail(c);
+  bakeMountainShadows(c);
+  bakePortMiniatures(c);
+  world3d.updateMapTexture(terrainDetailCanvas);
+}
+
+// Coastal surf halos and the deepening wash, rasterized at field resolution
+// and upscaled with smoothing so the bands stay soft like watercolor.
+function bakeSeaDetail(c) {
+  const field = world3d.terrainField;
+  const { cols, rows, cellW, cellH, shore, landness } = field;
+  const coarse = document.createElement("canvas");
+  coarse.width = cols;
+  coarse.height = rows;
+  const cc = coarse.getContext("2d");
+  const image = cc.createImageData(cols, rows);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      const offset = index * 4;
+      if (landness[index] > 0.5) continue;
+      const d = shore[index];
+      // Surf halo hugging the coast, then a pale ring, then the sea deepens
+      // steadily away from land until it reaches the open-water pigment.
+      const surf = Math.max(0, 1 - d / 2.6);
+      const ring = Math.max(0, 1 - Math.abs(d - 4.2) / 2.6) * 0.55;
+      const deep = Math.min(1, d / 42);
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      if (surf > 0) {
+        r += 214 * surf;
+        g += 233 * surf;
+        b += 224 * surf;
+        a += 0.5 * surf;
+      }
+      if (ring > 0) {
+        r += 196 * ring;
+        g += 219 * ring;
+        b += 211 * ring;
+        a += 0.3 * ring;
+      }
+      if (deep > 0) {
+        r += 74 * deep;
+        g += 124 * deep;
+        b += 122 * deep;
+        a += 0.34 * deep;
+      }
+      image.data[offset] = r;
+      image.data[offset + 1] = g;
+      image.data[offset + 2] = b;
+      image.data[offset + 3] = Math.round(Math.min(0.62, a) * 255);
+    }
+  }
+  cc.putImageData(image, 0, 0);
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = "high";
+  c.filter = "blur(3px)";
+  c.drawImage(coarse, 0, 0, cols * cellW, rows * cellH);
+  c.filter = "none";
+}
+
+// The engraved double-arc wave marks, on the same 95 x 48 grid the old sea
+// surface renderer used, skipping land and hugging the same phase offsets.
+// The engraved wave marks breathe: each glyph fades in and out on its own
+// phase while the whole field leans with the wind, like the old sea surface.
+function collectWaveGlyphs(time) {
+  const field = world3d.terrainField;
+  if (!field || !viewBounds) return [];
+  const sprites = [];
+  const columns = Math.ceil(WORLD.w / 95);
+  const spacing = WORLD.w / columns;
+  const lean = Math.sin(game.windAngle) * 0.12;
+  const firstRow = Math.max(1, Math.floor(viewBounds.top / 48));
+  const lastRow = Math.min(
+    Math.floor(WORLD.h / 48) - 1,
+    Math.ceil(viewBounds.bottom / 48),
+  );
+  const firstCol = Math.max(0, Math.floor((viewBounds.left - 40) / spacing));
+  const lastCol = Math.min(
+    columns - 1,
+    Math.ceil((viewBounds.right + 40) / spacing),
+  );
+  for (let row = firstRow; row <= lastRow; row++) {
+    const rowOffset = Math.sin(row * 12.7) * 25;
+    for (let column = firstCol; column <= lastCol; column++) {
+      const phase = column * 2.39 + row * 1.73;
+      const x =
+        (((column * spacing + rowOffset) % WORLD.w) + WORLD.w) % WORLD.w;
+      const y = row * 48 + Math.sin(phase * 3) * 16;
+      if (sampleTerrainLandness(field, x, y) > 0.12) continue;
+      const pulse = (Math.sin(time * 0.0009 + phase) + 1) / 2;
+      const inkAlpha = 0.06 + pulse * 0.1;
+      sprites.push({
+        x,
+        y,
+        z: 0.5,
+        sprite: "waveInk",
+        width: 32,
+        height: 20,
+        rotation: lean,
+        flat: true,
+        alpha: inkAlpha,
+        color: [1, 1, 1],
+      });
+      if ((column * 5 + row * 3) % 11 === 0) {
+        const glint = (Math.sin(time * 0.0012 + phase * 1.7) + 1) / 2;
+        sprites.push({
+          x,
+          y: y - 4,
+          z: 0.6,
+          sprite: "waveGlint",
+          width: 24,
+          height: 15,
+          rotation: lean,
+          flat: true,
+          alpha: glint * 0.2,
+          color: [1, 1, 1],
+        });
+      }
+    }
+  }
+  return sprites;
+}
+
+// Soft directional shadows cast by the displaced peaks, ray-marched through
+// the heightfield along the shared light direction and multiplied over the
+// land so the relief reads as raised paper even before the shader lights it.
+function bakeMountainShadows(c) {
+  const field = world3d.terrainField;
+  const { cols, rows, cellW, cellH, heights, landness } = field;
+  const lightX = -0.55;
+  const lightY = -0.45;
+  const horizontal = Math.hypot(lightX, lightY);
+  const dirX = lightX / horizontal;
+  const dirY = lightY / horizontal;
+  const slope = horizontal / 0.7;
+  const coarse = document.createElement("canvas");
+  coarse.width = cols;
+  coarse.height = rows;
+  const cc = coarse.getContext("2d");
+  const image = cc.createImageData(cols, rows);
+  const sampleHeight = (col, row) => {
+    const c0 = Math.max(0, Math.min(cols - 1, col));
+    const r0 = Math.max(0, Math.min(rows - 1, row));
+    return heights[r0 * cols + c0];
+  };
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      if (landness[index] < 0.6) continue;
+      const ground = heights[index];
+      let shadow = 0;
+      for (let step = 2; step <= 26 && shadow < 0.85; step += 2) {
+        const wrappedCol =
+          ((Math.round(col + dirX * step) % cols) + cols) % cols;
+        const h =
+          sampleHeight(wrappedCol, Math.round(row + dirY * step)) - ground;
+        const blocked = h - step * cellW * slope;
+        if (blocked > 0) {
+          shadow = Math.max(
+            shadow,
+            Math.min(1, blocked / 16) * Math.exp(-step / 26),
+          );
+        }
+      }
+      if (shadow <= 0.02) continue;
+      const offset = index * 4;
+      image.data[offset] = 24;
+      image.data[offset + 1] = 20;
+      image.data[offset + 2] = 26;
+      image.data[offset + 3] = Math.round(shadow * 0.34 * 255);
+    }
+  }
+  cc.putImageData(image, 0, 0);
+  c.imageSmoothingEnabled = true;
+  c.filter = "blur(3px)";
+  c.drawImage(coarse, 0, 0, cols * cellW, rows * cellH);
+  c.filter = "none";
+}
+
+// The painted harbor miniatures the old world composed dynamically. They are
+// static in world space, so they bake at their placements, letting the 3D
+// lighthouse tower and its night lamps stand in for the dynamic lights.
+function bakePortMiniatures(c) {
+  for (const port of ports) {
+    const placement = portMiniaturePlacements.get(port.name);
+    if (!placement) continue;
+    c.save();
+    c.translate(placement.x, placement.y);
+    c.scale(placement.scale, placement.scale);
+    chartPortArt.draw(
+      c,
+      port.name,
+      {},
+      placement.heading,
+      sceneLighting(),
+      portSeason(port),
+    );
+    c.restore();
+  }
+}
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const wakeTrail = [];
 const seaRendering = createSeaRendering({
@@ -1506,7 +1813,6 @@ const portMiniaturePlacements = new Map(
     .filter((port) => hasPortMiniature(port.name))
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
 );
-const chartPortArt = createPortMiniatureCache();
 const menuPortArt = createPortMiniatureCache(4);
 const seasonalWorldRendering = createSeasonalWorldRendering({
   world: WORLD,
@@ -1553,10 +1859,7 @@ const {
   exploredMask,
   FOG_MASK_SCALE,
   fogCanvas,
-  fogCtx,
   mapLayer,
-  drawTerrainDetails,
-  mountainShadows,
   riverPaths,
   minimapFog,
   minimapFogCtx,
@@ -1574,10 +1877,12 @@ loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
     if (!texture) return;
     setParchmentTexture(texture);
     minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
+    bakeTerrainDetailTexture();
   },
 );
 seaRendering.setRivers(riverPaths);
 const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
+initWorld3D();
 
 const merchantNames = RIVAL_SHIP_NAMES;
 const merchantColors = [
@@ -1614,11 +1919,7 @@ function nearestWrappedX(x, reference) {
 function wrappedDistance(x1, y1, x2, y2) {
   return calculateWrappedDistance(x1, y1, x2, y2, WORLD.w);
 }
-function worldCopiesNear(reference = camera.x) {
-  return visibleWorldCopies(reference, vw, camera.zoom, WORLD.w);
-}
 
-const clampNumber = clamp;
 function addNews(title, body) {
   recordNews(game, title, body);
 }
@@ -3467,52 +3768,21 @@ function updateVisualVisibility(time) {
   visibility.visualTime = time;
 }
 
-function punchNearShoreTerrain(c) {
-  if (!visibility.nearShoreLandIndices.length) return;
-  c.save();
-  c.globalAlpha = 0.38;
-  c.fillStyle = "#000";
-  for (const landIndex of visibility.nearShoreLandIndices) {
-    const land = lands[landIndex];
-    const center = visibilityLandGeometry[landIndex].center;
-    const nearestOffset = Math.round((ship.x - center.x) / WORLD.w) * WORLD.w;
-    for (const offset of [
-      nearestOffset - WORLD.w,
-      nearestOffset,
-      nearestOffset + WORLD.w,
-    ]) {
-      c.save();
-      c.beginPath();
-      land.poly.forEach(([x, y], index) => {
-        if (index) c.lineTo(x + offset, y);
-        else c.moveTo(x + offset, y);
-      });
-      c.closePath();
-      c.clip();
-      polygonPath(c, visibility.terrainPolygon, 1, 1, offset);
-      c.fill();
-      c.restore();
-    }
-  }
-  c.restore();
+let viewBounds = null;
+function refreshViewBounds() {
+  viewBounds = viewBoundsOnSea(camera, vw, vh, 120);
 }
-
-function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
-  return wrappedCircleIntersectsViewport(
-    x,
-    y,
-    radius,
-    camera.x,
-    camera.y,
-    vw,
-    vh,
-    z * MAP_TILT_COS,
-    WORLD.w,
+function isWorldCircleInViewport(x, y, radius) {
+  if (!viewBounds) refreshViewBounds();
+  const nx = nearestWrappedX(x, camera.x);
+  return (
+    nx + radius >= viewBounds.left &&
+    nx - radius <= viewBounds.right &&
+    y + radius >= viewBounds.top &&
+    y - radius <= viewBounds.bottom
   );
 }
 
-const roughSeaCrestStyle = createAlphaPalette("249,232,184", 0.1, 0.3);
-const roughSeaShadowStyle = createAlphaPalette("57,61,47", 0.12, 0.23);
 const shoalBandStyles = Array.from(
   { length: 3 },
   (_, strength) => `rgba(247, 231, 177, ${0.24 + strength * 0.07})`,
@@ -3566,74 +3836,7 @@ const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
   return { sx, sy, rx, ry, name, shelf, bands, pebblePrimary, pebbleSecondary };
 });
 
-function drawAnimatedRoughSeas(c, time, z, particleScale = 1) {
-  c.save();
-  c.lineCap = "round";
-  for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
-    const sea = roughSeas[seaIndex];
-    if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
-      continue;
-    const nearestX = nearestWrappedX(sea.x, camera.x);
-    const particles = roughSeaParticles[seaIndex];
-    if (!particles || particles.length === 0) continue;
-
-    // Particle arrays are seeded shuffles, so a deterministic prefix subsample
-    // keeps the same look at reduced counts.
-    const count = Math.round(particles.length * particleScale);
-    for (let i = 0; i < count; i++) {
-      const particle = particles[i];
-      const phase = time * particle.speed + particle.phaseOffset;
-      const x = nearestX + particle.baseX + Math.cos(phase) * particle.swell;
-      const y =
-        sea.y + particle.baseY + Math.sin(phase * 1.35) * particle.swell * 0.45;
-      const crest = (Math.sin(phase) + 1) * 0.5;
-      const cos = particle.cosScale;
-      const sin = particle.sinScale;
-
-      // First stroke
-      c.strokeStyle = roughSeaCrestStyle(0.1 + crest * 0.2);
-      c.lineWidth = (1.2 + crest) / z;
-      const c1y = -7 - crest * 3;
-      const c2y = -2 - crest * 2;
-      c.beginPath();
-      c.moveTo(x - 15 * cos - 3 * sin, y - 15 * sin + 3 * cos);
-      c.quadraticCurveTo(
-        x - 8 * cos - c1y * sin,
-        y - 8 * sin + c1y * cos,
-        x - 1 * cos - 1 * sin,
-        y - 1 * sin + 1 * cos,
-      );
-      c.quadraticCurveTo(
-        x + 6 * cos - 9 * sin,
-        y + 6 * sin + 9 * cos,
-        x + 14 * cos - c2y * sin,
-        y + 14 * sin + c2y * cos,
-      );
-      c.stroke();
-
-      // Second stroke
-      c.strokeStyle = roughSeaShadowStyle(0.12 + crest * 0.11);
-      c.lineWidth = 1 / z;
-      c.beginPath();
-      c.moveTo(x - 10 * cos - 8 * sin, y - 10 * sin + 8 * cos);
-      c.quadraticCurveTo(
-        x - 3 * cos - 4 * sin,
-        y - 3 * sin + 4 * cos,
-        x + 4 * cos - 8 * sin,
-        y + 4 * sin + 8 * cos,
-      );
-      c.quadraticCurveTo(
-        x + 10 * cos - 12 * sin,
-        y + 10 * sin + 12 * cos,
-        x + 16 * cos - 7 * sin,
-        y + 16 * sin + 7 * cos,
-      );
-      c.stroke();
-    }
-  }
-  c.restore();
-}
-
+// Rough-sea crests now render as flat foam sprites in the 3D scene.
 const mapButton = document.getElementById("mapButton");
 const minimapWrap = document.getElementById("minimapWrap");
 const minimap = document.getElementById("minimap");
@@ -3649,7 +3852,12 @@ function resize() {
   canvas.height = Math.floor(vh * DPR);
   canvas.style.width = vw + "px";
   canvas.style.height = vh + "px";
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  overlay.width = canvas.width;
+  overlay.height = canvas.height;
+  overlay.style.width = vw + "px";
+  overlay.style.height = vh + "px";
+  overlayCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  world3d?.resize(vw, vh, DPR);
   // The exploration haze contains only soft washes and masks. Keep every
   // compositing pass at a fraction of CSS resolution, bounded by the tier.
   fogCanvas.width = Math.ceil(vw * graphics.maskScale);
@@ -3657,16 +3865,6 @@ function resize() {
   fogCadence.reset();
   viewportZoom = Math.max(0.72, Math.min(1.05, Math.min(vw / 720, vh / 650)));
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewportZoom * userZoom));
-  vignetteGradient = ctx.createRadialGradient(
-    vw / 2,
-    vh / 2,
-    Math.min(vw, vh) * 0.25,
-    vw / 2,
-    vh / 2,
-    Math.max(vw, vh) * 0.72,
-  );
-  vignetteGradient.addColorStop(0, "rgba(0,0,0,0)");
-  vignetteGradient.addColorStop(1, "rgba(32,20,10,.32)");
 }
 addEventListener("resize", resize);
 resize();
@@ -4651,15 +4849,18 @@ function closeTownDetails() {
 }
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  return unprojectMapPoint(
-    clientX - rect.left,
-    clientY - rect.top,
-    camera.x,
-    camera.y,
-    camera.zoom,
+  const hit = screenPointToSea(
+    camera,
     rect.width,
     rect.height,
+    clientX - rect.left,
+    clientY - rect.top,
   );
+  if (hit) return hit;
+  // Looking over the horizon: fall back to the farthest visible water along
+  // the view axis so course-setting still lands somewhere sensible.
+  const basis = cameraViewBasis(camera);
+  return { x: basis.eye[0], y: -basis.eye[1] };
 }
 
 // A small screen-space mask gives the ink wash a soft edge without repeatedly
@@ -4668,52 +4869,30 @@ const horizonMask = document.createElement("canvas");
 const horizonCtx = horizonMask.getContext("2d");
 const blurredHorizonMask = document.createElement("canvas");
 const blurredHorizonCtx = blurredHorizonMask.getContext("2d");
-const mistStamp = document.createElement("canvas");
-mistStamp.width = mistStamp.height = 192;
-const mistCtx = mistStamp.getContext("2d");
-const mistGradient = mistCtx.createRadialGradient(96, 96, 6, 96, 96, 96);
-mistGradient.addColorStop(0, "rgba(229,228,201,.34)");
-mistGradient.addColorStop(0.45, "rgba(204,215,194,.16)");
-mistGradient.addColorStop(1, "rgba(189,206,188,0)");
-mistCtx.fillStyle = mistGradient;
-mistCtx.fillRect(0, 0, 192, 192);
-// One cached stipple tile gives unexplored water the same engraved paper grain
-// as the chart without drawing thousands of marks every frame.
-const fogGrainTile = document.createElement("canvas");
-fogGrainTile.width = fogGrainTile.height = 128;
-const grainCtx = fogGrainTile.getContext("2d");
-for (let index = 0; index < 480; index++) {
-  const x = (index * 73.31 + Math.sin(index * 17.7) * 31 + 128) % 128;
-  const y = (index * 47.83 + Math.sin(index * 9.3) * 23 + 128) % 128;
-  grainCtx.fillStyle = index % 6 === 0 ? "#f8e8bb" : "#4d4739";
-  grainCtx.globalAlpha = index % 6 === 0 ? 0.4 : 0.22;
-  grainCtx.fillRect(x, y, index % 7 === 0 ? 2.2 : 1, 0.7);
-}
-grainCtx.globalAlpha = 1;
-const fogGrain = fogCtx.createPattern(fogGrainTile, "repeat");
-const mistRendering = createMistRendering(WORLD.w, mistStamp);
 
-function renderFog(time, lighting) {
-  if (!gameStarted) return;
+// Rebuild the screen-space reveal mask the GL composite samples for soft
+// punches. Explored-area fog is handled in the terrain shader from the
+// world-space mask; this screen canvas carries only the sight polygon and
+// near-shore relief, projected through the 3D camera.
+function buildFogMask(time, lighting) {
+  if (!gameStarted || !world3d) return;
   const season = seasonalAppearance(
     debugSeasonDay ?? game.day,
     seasonalWorldRendering.biomeAt(camera.x, camera.y),
   );
   buildVisibilityPolygon();
   updateVisualVisibility(time);
+  world3d.updateExploredTexture(exploredMask);
   if (
     !fogCadence.shouldRender(time, {
-      x: camera.x * camera.zoom,
-      y: camera.y * camera.zoom * MAP_TILT_COS,
+      x: camera.x,
+      y: camera.y,
       width: vw,
       height: vh,
-      key: `${camera.zoom}:${visibility.revision}:${revealedVisibilityRevision}:${Math.round(lighting.daylight * 100)}:${season.key}`,
+      key: `${camera.zoom}:${camera.yaw.toFixed(2)}:${camera.pitch.toFixed(2)}:${visibility.revision}:${revealedVisibilityRevision}:${Math.round(lighting.daylight * 100)}:${season.key}`,
     })
-  ) {
-    ctx.drawImage(fogCanvas, 0, 0, vw, vh);
+  )
     return;
-  }
-  const f = fogCtx;
   const scale = graphics.maskScale;
   const width = Math.ceil(vw * scale),
     height = Math.ceil(vh * scale);
@@ -4723,54 +4902,13 @@ function renderFog(time, lighting) {
   }
   const h = horizonCtx;
   h.setTransform(1, 0, 0, 1, 0, 0);
-  h.clearRect(0, 0, width, height);
-  h.save();
-  h.translate(width / 2, height / 2);
-  h.scale(camera.zoom * scale, camera.zoom * MAP_TILT_COS * scale);
-  h.translate(-camera.x, -camera.y);
-  // Previously surveyed water reads as a faded chart beneath the haze.
-  h.globalAlpha = 0.78;
-  for (const offset of worldCopiesNear(camera.x))
-    h.drawImage(exploredMask, offset, 0, WORLD.w, WORLD.h);
-  h.globalAlpha = 1;
-  punchCurrentVisibility(h, 1, 1, false, true);
-  punchNearShoreTerrain(h);
-  h.restore();
-
-  f.setTransform(fogCanvas.width / vw, 0, 0, fogCanvas.height / vh, 0, 0);
-  f.clearRect(0, 0, vw, vh);
-  const wash = f.createLinearGradient(0, 0, 0, vh);
-  const sun = lighting.daylight;
-  wash.addColorStop(
-    0,
-    `rgba(${104 + sun * 99 + season.autumn * 8 - season.snow * 8},${111 + sun * 87 + season.snow * 9},${99 + sun * 61 + season.snow * 43 - season.autumn * 12},${0.86 - sun * 0.07})`,
-  );
-  wash.addColorStop(
-    0.55,
-    `rgba(${118 + sun * 95 + season.autumn * 8 - season.snow * 8},${119 + sun * 81 + season.snow * 9},${99 + sun * 62 + season.snow * 43 - season.autumn * 12},${0.85 - sun * 0.07})`,
-  );
-  wash.addColorStop(
-    1,
-    `rgba(${95 + sun * 98 + season.autumn * 8 - season.snow * 8},${103 + sun * 81 + season.snow * 9},${88 + sun * 58 + season.snow * 43 - season.autumn * 12},${0.86 - sun * 0.07})`,
-  );
-  f.fillStyle = wash;
-  f.fillRect(0, 0, vw, vh);
-  // Engraved paper grain over the unexplored water; lower tiers lighten or
-  // skip the pass entirely.
-  if (graphics.grainAlpha > 0) {
-    f.globalAlpha = graphics.grainAlpha;
-    f.fillStyle = fogGrain;
-    f.fillRect(0, 0, vw, vh);
-    f.globalAlpha = 1;
-  }
-
-  const z = camera.zoom;
-  mistRendering.draw(f, {
-    camera,
-    vw,
-    vh,
-    time: reducedMotion.matches ? 0 : time,
-  });
+  h.setTransform(scale / DPR, 0, 0, scale / DPR, 0, 0);
+  h.clearRect(0, 0, vw, vh);
+  punchCurrentVisibilityProjected(h);
+  punchNearShoreTerrainProjected(h);
+  // Feather the reveal; an outlined polygon would recreate the bright halo.
+  const b = blurredHorizonCtx;
+  b.setTransform(1, 0, 0, 1, 0, 0);
   if (
     blurredHorizonMask.width !== width ||
     blurredHorizonMask.height !== height
@@ -4778,26 +4916,16 @@ function renderFog(time, lighting) {
     blurredHorizonMask.width = width;
     blurredHorizonMask.height = height;
   }
-  blurredHorizonCtx.setTransform(1, 0, 0, 1, 0, 0);
-  blurredHorizonCtx.clearRect(0, 0, width, height);
-  // Feather the reveal at half scale; an outlined polygon would recreate the
-  // bright halo. Blurring the 0.5x mask is ~8x cheaper than full-viewport blur.
-  blurredHorizonCtx.filter = "blur(14px)";
-  blurredHorizonCtx.drawImage(horizonMask, 0, 0);
-
-  f.save();
-  f.globalCompositeOperation = "destination-out";
-  f.drawImage(blurredHorizonMask, 0, 0, vw, vh);
-  // Recover crisp relief near the vessel without revealing unsurveyed water:
-  // the unblurred visibility mask bounds this extra removal of nearby haze.
-  blurredHorizonCtx.filter = "none";
-  blurredHorizonCtx.clearRect(0, 0, width, height);
-  blurredHorizonCtx.drawImage(horizonMask, 0, 0);
-  blurredHorizonCtx.globalCompositeOperation = "destination-in";
-  const shipX = (vw / 2 + (ship.x - camera.x) * z) * scale;
-  const shipY = (vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS) * scale;
-  const clarityRadius = 210 * z * scale;
-  const clarity = blurredHorizonCtx.createRadialGradient(
+  b.clearRect(0, 0, width, height);
+  b.filter = "blur(14px)";
+  b.drawImage(horizonMask, 0, 0);
+  b.filter = "none";
+  b.globalCompositeOperation = "destination-in";
+  const shipPx = projectToScreen(ship.x, ship.y);
+  const shipX = shipPx.x * scale;
+  const shipY = shipPx.y * scale;
+  const clarityRadius = 210 * camera.zoom * scale;
+  const clarity = b.createRadialGradient(
     shipX,
     shipY,
     0,
@@ -4808,24 +4936,254 @@ function renderFog(time, lighting) {
   clarity.addColorStop(0, "rgba(0,0,0,.85)");
   clarity.addColorStop(0.38, "rgba(0,0,0,.65)");
   clarity.addColorStop(1, "rgba(0,0,0,0)");
-  blurredHorizonCtx.fillStyle = clarity;
-  blurredHorizonCtx.fillRect(0, 0, width, height);
-  blurredHorizonCtx.globalCompositeOperation = "source-over";
-  f.drawImage(blurredHorizonMask, 0, 0, vw, vh);
-  f.restore();
-
-  ctx.drawImage(fogCanvas, 0, 0, vw, vh);
+  b.fillStyle = clarity;
+  b.fillRect(0, 0, width, height);
+  b.globalCompositeOperation = "source-over";
+  world3d.updateFogMask(blurredHorizonMask, width, height);
 }
 
-function drawDynamicTradeWorld(c, z, time, lighting) {
+// Punch the visibility polygon and its radial falloff in projected space.
+function punchCurrentVisibilityProjected(c) {
+  const points = visibility.visualPolygon.length
+    ? visibility.visualPolygon
+    : visibility.polygon;
+  if (!points.length) return;
   c.save();
+  c.beginPath();
+  points.forEach((point, index) => {
+    const at = projectToScreen(nearestWrappedX(point.x, camera.x), point.y);
+    if (index === 0 || at.behind) c.moveTo(at.x, at.y);
+    else c.lineTo(at.x, at.y);
+  });
+  c.closePath();
+  c.clip();
+  const center = projectToScreen(ship.x, ship.y);
+  const radius = visibility.radius * camera.zoom * (graphics.maskScale / DPR);
+  const g = c.createRadialGradient(
+    center.x,
+    center.y,
+    radius * 0.5,
+    center.x,
+    center.y,
+    radius,
+  );
+  g.addColorStop(0, "rgba(0,0,0,1)");
+  g.addColorStop(0.72, "rgba(0,0,0,.98)");
+  g.addColorStop(0.89, "rgba(0,0,0,.66)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  c.fillStyle = g;
+  c.fillRect(0, 0, vw, vh);
+  c.restore();
+}
+
+function punchNearShoreTerrainProjected(c) {
+  if (!visibility.nearShoreLandIndices.length) return;
+  c.save();
+  c.globalAlpha = 0.38;
+  c.fillStyle = "#000";
+  for (const landIndex of visibility.nearShoreLandIndices) {
+    const land = lands[landIndex];
+    c.beginPath();
+    land.poly.forEach(([x, y], index) => {
+      const at = projectToScreen(nearestWrappedX(x, camera.x), y);
+      if (index === 0 || at.behind) c.moveTo(at.x, at.y);
+      else c.lineTo(at.x, at.y);
+    });
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
+}
+
+const crestSprites = [];
+function collectRoughSeaCrests(time) {
+  crestSprites.length = 0;
+  const particleScale = graphics.particleScale;
+  for (let seaIndex = 0; seaIndex < roughSeas.length; seaIndex++) {
+    const sea = roughSeas[seaIndex];
+    if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry)))
+      continue;
+    const particles = roughSeaParticles[seaIndex];
+    if (!particles) continue;
+    const count = Math.round(particles.length * particleScale);
+    const nearestX = nearestWrappedX(sea.x, camera.x);
+    for (let i = 0; i < count; i++) {
+      const particle = particles[i];
+      const phase = time * particle.speed + particle.phaseOffset;
+      crestSprites.push({
+        x: nearestX + particle.baseX + Math.cos(phase) * particle.swell,
+        y:
+          sea.y +
+          particle.baseY +
+          Math.sin(phase * 1.35) * particle.swell * 0.45,
+        rotation: Math.atan2(particle.sinScale, particle.cosScale),
+        size: 38,
+        alpha: 0.24 + (Math.sin(phase) + 1) * 0.17,
+      });
+    }
+  }
+}
+
+function collectFogBanks(time) {
+  const sprites = [];
+  if (reducedMotion.matches || !viewBounds) return sprites;
+  const centerX = camera.x - time * 0.003;
+  const columns = Math.ceil(WORLD.w / 240);
+  const spacing = WORLD.w / columns;
+  const left = Math.floor((viewBounds.left - 325) / spacing);
+  const right = Math.ceil((viewBounds.right + 325) / spacing);
+  const top = Math.floor((viewBounds.top - 140) / 160);
+  const bottom = Math.ceil((viewBounds.bottom + 140) / 160);
+  for (let row = top; row <= bottom; row++) {
+    for (let column = left; column <= right; column++) {
+      const phase =
+        (((column % columns) + columns) % columns) * 2.4 + row * 1.7;
+      const x = column * spacing + Math.sin(row * 4.1) * 65;
+      const y = row * 160 + Math.sin(phase) * 45;
+      if (Math.abs(x - centerX) > viewBounds.right - viewBounds.left) continue;
+      sprites.push({
+        x,
+        y,
+        z: 6,
+        sprite: "mist",
+        width: 300,
+        height: 110,
+        alpha: 0.38 + Math.sin(phase) * 0.15,
+        color: [1, 1, 1],
+      });
+    }
+  }
+  return sprites;
+}
+
+function profileName(profile) {
+  for (const [name, candidate] of Object.entries(SHIP_MODEL_PROFILES)) {
+    if (candidate === profile) return name;
+  }
+  return "sloop";
+}
+
+const lanternSprites = [];
+
+function collectVessels(time, weather, lighting, arc) {
+  const groups = {};
+  const addVessel = (object) => {
+    if (!groups[object.mesh]) groups[object.mesh] = [];
+    groups[object.mesh].push(object);
+  };
+  const motionFor = (vessel, extraSeed = 0) =>
+    sampleShipMotion({
+      time: reducedMotion.matches ? 0 : time / 1000,
+      seed: (vessel.seed ?? vessel.index ?? 0) + extraSeed,
+      roughness: weather.roughness,
+      windStrength: game.windStrength,
+      speed: vessel.speed ?? 0,
+      anchored: vessel.anchored ?? false,
+      reducedMotion: reducedMotion.matches,
+      swell: arc.swell,
+    });
+  const pushVessel = (vessel, options = {}) => {
+    if (!isWorldCircleInViewport(vessel.x, vessel.y, 90)) return;
+    const motion = motionFor(vessel, options.seedOffset ?? 0);
+    const profile = getShipModelProfile(
+      vessel.vesselClass,
+      vessel.seed ?? vessel.index ?? 0,
+    );
+    const damage = vessel.damage;
+    addVessel({
+      mesh: `vessel:${profileName(profile)}`,
+      x: nearestWrappedX(vessel.x, camera.x),
+      y: vessel.y,
+      z: motion.heave * 0.7,
+      angle: vessel.angle,
+      scale: (vessel.scale ?? 1) * (options.scale ?? 1),
+      phase: (vessel.seed ?? vessel.index ?? 0) * 2.399963,
+      flutter: motion.billow * 0.4,
+      roll: motion.roll + (damage?.heel ?? 0) * 0.06,
+      pitch: motion.pitch + (damage?.settle ?? 0) * 0.04,
+      tint: vessel.tint ?? [1, 1, 1],
+    });
+    if (options.lantern && lighting.night > 0.12) {
+      lanternSprites.push({
+        x: nearestWrappedX(vessel.x, camera.x),
+        y: vessel.y,
+        z: 8,
+        sprite: "glow",
+        width: 34,
+        alpha: lighting.night * 0.5,
+        color: [1, 0.86, 0.6],
+      });
+    }
+  };
+  const playerDamage = shipDamageState();
+  pushVessel(
+    {
+      x: ship.x,
+      y: ship.y,
+      angle: ship.angle,
+      vesselClass: game.shipUpgrades.activeClass,
+      speed: moving ? ship.speed : 0,
+      anchored: ship.anchored,
+      damage: playerDamage,
+      tint: [1, 1, 1],
+    },
+    { lantern: true, scale: 1.8 },
+  );
+  for (const vessel of merchantShips) {
+    if (!merchantVisible(vessel) || !pointCurrentlyVisible(vessel.x, vessel.y))
+      continue;
+    pushVessel(
+      {
+        ...vessel,
+        speed: 24,
+        tint: merchantTint(vessel.name ?? vessel.vesselClass),
+      },
+      { scale: 1.35 },
+    );
+  }
+  for (const vessel of game.fleet?.ships || []) {
+    if (vessel.status === "laidUp") continue;
+    pushVessel(
+      {
+        ...fleetRenderObject(vessel),
+        speed: 20,
+        tint: [1.02, 0.98, 0.92],
+      },
+      { scale: 1.5 },
+    );
+  }
+  const raider = game.seaRaid.raider;
+  if (raider && pointCurrentlyVisible(raider.x, raider.y)) {
+    pushVessel({
+      ...raider,
+      vesselClass: raider.attackStrength > 1 ? "brig" : "cutter",
+      speed: 26,
+      tint: [0.72, 0.6, 0.58],
+    });
+  }
+  if (encounters.active?.kind === "raider") {
+    const presented = encounters.active.preview
+      ? encounters.active
+      : game.seaRaid.raider;
+    if (presented) {
+      pushVessel({
+        ...presented,
+        vesselClass:
+          presented.vesselClass ||
+          (presented.attackStrength > 1 ? "brig" : "cutter"),
+        speed: 22,
+        tint: [0.72, 0.6, 0.58],
+      });
+    }
+  }
+  // Seasonal fishing fleets become small 3D boats.
   const seasonDay = debugSeasonDay ?? game.day;
   if (offshoreFleetDay !== seasonDay) {
     offshoreFleetDay = seasonDay;
     offshoreFleetPlans.clear();
   }
   for (const site of fishingGrounds) {
-    if (!isWorldCircleInViewport(site.x, site.y, site.radius + 25, z)) continue;
+    if (!isWorldCircleInViewport(site.x, site.y, site.radius + 25)) continue;
     if (!pointCurrentlyVisible(site.x, site.y)) continue;
     if (!offshoreFleetPlans.has(site.id))
       offshoreFleetPlans.set(
@@ -4843,144 +5201,279 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       );
     for (const boat of offshoreFleetPlans.get(site.id)) {
       if (!pointCurrentlyVisible(boat.x, boat.y)) continue;
-      c.save();
-      c.translate(nearestWrappedX(boat.x, camera.x), boat.y);
-      drawSeasonalFishingBoat(
-        c,
-        reducedMotion.matches ? 0 : time,
-        game.windAngle,
-        boat.heading,
-        seasonalAppearance(
-          seasonDay,
-          seasonalWorldRendering.biomeAt(site.x, site.y),
-        ),
-        lighting,
-      );
-      c.restore();
+      if (!isWorldCircleInViewport(boat.x, boat.y, 40)) continue;
+      const motion = motionFor(boat);
+      addVessel({
+        mesh: "boat",
+        x: nearestWrappedX(boat.x, camera.x),
+        y: boat.y,
+        z: motion.heave * 0.5,
+        angle: boat.heading,
+        scale: 0.8,
+        phase: boat.heading * 3.1,
+        roll: motion.roll * 0.6,
+        pitch: motion.pitch * 0.5,
+        tint: [1, 1, 1],
+      });
     }
   }
+  return groups;
+}
+
+function collectPorts(lighting, time) {
+  const groups = {};
+  const glows = [];
+  const beams = [];
   for (const port of ports) {
+    if (!isWorldCircleInViewport(port.x, port.y, 160)) continue;
+    if (!isWorldPointExplored(port.x, port.y)) continue;
     const placement = portMiniaturePlacements.get(port.name);
-    if (!placement) continue;
-    const evolution = portEvolution(game.regionalEconomy[port.name]);
-    if (
-      isWorldCircleInViewport(placement.x, placement.y, 52, z) &&
-      isWorldPointExplored(placement.x, placement.y)
-    ) {
-      c.save();
-      c.translate(nearestWrappedX(placement.x, camera.x), placement.y);
-      c.scale(placement.scale, placement.scale);
-      chartPortArt.draw(
-        c,
-        port.name,
-        evolution,
-        placement.heading,
-        lighting,
-        portSeason(port),
-      );
-      drawPortActivity(
-        c,
-        port.name,
-        reducedMotion.matches ? 0 : time,
-        z,
-        game.windAngle,
-        placement.heading,
-        evolution,
-        lighting,
-        portSeason(port),
-      );
-      c.restore();
-    }
-    if (!isWorldCircleInViewport(port.x, port.y, 100, z)) continue;
-    if (!pointCurrentlyVisible(port.x, port.y)) continue;
-    const seaX = port.x - placement.x;
-    const seaY = port.y - placement.y;
-    const seaDistance = Math.hypot(seaX, seaY) || 1;
-    c.save();
-    c.translate(nearestWrappedX(port.x, camera.x), port.y);
-    drawHarborBoats(
-      c,
-      port.name,
-      reducedMotion.matches ? 0 : time,
-      z,
-      game.windAngle,
-      seaX / seaDistance,
-      seaY / seaDistance,
-      placement.heading,
-      evolution,
-      lighting,
-      portSeason(port),
+    const heading = Math.atan2(
+      port.y - (placement?.y ?? port.y - 30),
+      port.x - (placement?.x ?? port.x),
     );
-    c.restore();
+    const towerX = nearestWrappedX(port.x + 26, camera.x);
+    const towerY = port.y - 18;
+    const towerGround = world3d?.terrainField
+      ? sampleTerrainHeight(world3d.terrainField, port.x + 26, towerY)
+      : 0;
+    const tower = groups["lighthouse"] || (groups["lighthouse"] = []);
+    tower.push({
+      x: towerX,
+      y: towerY,
+      z: Math.max(0, towerGround - 2),
+      angle: heading,
+      scale: 0.9,
+      tint: [1, 1, 1],
+    });
+    if (!pointCurrentlyVisible(port.x, port.y)) continue;
+    if (lighting.night > 0.12) {
+      for (const [dx, dy] of [
+        [-22, -14],
+        [-10, -21],
+        [15, -15],
+      ]) {
+        glows.push({
+          x: nearestWrappedX(port.x + dx, camera.x),
+          y: port.y + dy,
+          z: 3,
+          sprite: "glow",
+          width: 26,
+          alpha: lighting.night * 0.5,
+          color: [1, 0.88, 0.62],
+        });
+      }
+      const sample = sampleLighthouse(
+        reducedMotion.matches ? 0 : time / 1000,
+        port.x * 0.01,
+      );
+      beams.push({
+        x: towerX,
+        y: towerY,
+        z: Math.max(0, towerGround - 2) + 34,
+        sprite: "beam",
+        width: sample.reach,
+        height: sample.reach * sample.beamWidth * 2.2,
+        rotation: sample.angle,
+        flat: true,
+        alpha: lighting.night * 0.42,
+        color: [1, 0.93, 0.72],
+      });
+      glows.push({
+        x: towerX,
+        y: towerY,
+        z: Math.max(0, towerGround - 2) + 34,
+        sprite: "glow",
+        width: 42,
+        alpha: lighting.night * 0.55,
+        color: [1, 0.92, 0.66],
+      });
+    }
   }
+  return { groups, glows, beams };
+}
+
+function collectWake(time, weather, lighting) {
+  const sprites = [];
+  const glow = vesselBioluminescence(
+    ship,
+    bioluminescentSeas,
+    WORLD.w,
+    lighting,
+  );
+  for (const point of wakeTrail) {
+    const age = (time - point.time) / 5000;
+    if (age >= 1) continue;
+    const size = 20 + point.strength * 26 * (1 - age * 0.4);
+    sprites.push({
+      x: nearestWrappedX(point.x, camera.x),
+      y: point.y,
+      z: 0.8,
+      sprite: "foam",
+      width: size,
+      alpha:
+        point.strength * (1 - age) * 0.55 * (0.6 + weather.roughness * 0.5),
+      color: [1, 1, 1],
+      flat: true,
+    });
+    if (glow > 0.08) {
+      sprites.push({
+        x: nearestWrappedX(point.x, camera.x),
+        y: point.y,
+        z: 1,
+        sprite: "glow",
+        width: size * 1.2,
+        alpha: glow * (1 - age) * 0.4,
+        color: [0.45, 1, 0.85],
+        flat: true,
+      });
+    }
+  }
+  return sprites;
+}
+
+function collectEncounterCreature() {
+  const active = encounters.active;
+  if (!active || active.kind === "raider" || !active.preview) return null;
+  const rise = sampleCreatureAppearance(active.elapsed, active.index).rise;
+  return {
+    objects: [
+      {
+        x: nearestWrappedX(active.x, camera.x),
+        y: active.y,
+        z: -10 + rise * 6,
+        angle: active.elapsed * 0.1,
+        scale: 1 + rise * 0.3,
+        tint: [1, 1, 1],
+      },
+    ],
+  };
+}
+
+function projectToScreen(x, y, z = 0) {
+  return projectWorldPoint(camera, vw, vh, x, y, z);
+}
+
+function drawOverlay(time, weather, arc) {
+  overlayCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  overlayCtx.clearRect(0, 0, vw, vh);
+  const c = overlayCtx;
+  const z = camera.zoom;
+  const px = seaPixelsPerUnit(camera, vh);
+  if (!gameStarted) return;
+  drawOverlayWeather(time, weather, arc);
+
+  // Wind streaks stay crisp ink lines above the world.
+  if (!reducedMotion.matches && viewBounds) {
+    c.strokeStyle = "rgba(244,231,190,.28)";
+    c.lineWidth = 1.5;
+    const windCos = Math.cos(game.windAngle) * 30 * px;
+    const windSin = Math.sin(game.windAngle) * 30 * px;
+    const windStreaks = Math.round(14 * graphics.particleScale);
+    const spanX = Math.max(1, viewBounds.right - viewBounds.left);
+    const spanY = Math.max(1, viewBounds.bottom - viewBounds.top);
+    c.beginPath();
+    for (let i = 0; i < windStreaks; i++) {
+      const worldX =
+        viewBounds.left +
+        ((((i * 173 + time * 0.025) % spanX) + spanX) % spanX);
+      const worldY =
+        viewBounds.top + ((((i * 197 + camera.y) % spanY) + spanY) % spanY);
+      const a = projectToScreen(worldX, worldY);
+      if (a.behind) continue;
+      c.moveTo(a.x, a.y);
+      c.lineTo(a.x + windCos, a.y + windSin);
+    }
+    c.stroke();
+  }
+
+  // Shoal labels beneath the port labels.
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  for (const shoal of cachedShoals) {
+    if (!isWorldCircleInViewport(shoal.sx, shoal.sy, shoal.rx)) continue;
+    if (!pointCurrentlyVisible(shoal.sx, shoal.sy)) continue;
+    const at = projectToScreen(
+      nearestWrappedX(shoal.sx, camera.x),
+      shoal.sy - shoal.ry - 8 / z,
+    );
+    if (at.behind) continue;
+    c.fillStyle = "rgba(64, 39, 20, .9)";
+    c.font = `bold ${Math.max(10, 11 * px)}px Georgia`;
+    c.fillText(shoal.name || "Shallows", at.x, at.y);
+  }
+
+  // Course line toward the charted destination.
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {
     const bearing = courseBearing(ship, courseDestination, WORLD.w);
-    c.strokeStyle = "rgba(25,52,52,.75)";
-    c.lineWidth = 5 / z;
-    c.beginPath();
-    c.moveTo(ship.x, ship.y);
-    c.lineTo(bearing.destinationX, courseDestination.y);
-    c.stroke();
-    c.strokeStyle = "rgba(102, 200, 181, .9)";
-    c.lineWidth = 3 / z;
-    c.setLineDash([12 / z, 8 / z]);
-    c.beginPath();
-    c.moveTo(ship.x, ship.y);
-    c.lineTo(bearing.destinationX, courseDestination.y);
-    c.stroke();
-    c.setLineDash([]);
+    const from = projectToScreen(ship.x, ship.y);
+    const to = projectToScreen(bearing.destinationX, courseDestination.y);
+    if (!from.behind && !to.behind) {
+      c.strokeStyle = "rgba(25,52,52,.75)";
+      c.lineWidth = 5;
+      c.beginPath();
+      c.moveTo(from.x, from.y);
+      c.lineTo(to.x, to.y);
+      c.stroke();
+      c.strokeStyle = "rgba(102, 200, 181, .9)";
+      c.lineWidth = 3;
+      c.setLineDash([12, 8]);
+      c.stroke();
+      c.setLineDash([]);
+    }
   }
-  // Batch text rendering setup - set common properties once
-  c.textAlign = "center";
-  c.textBaseline = "middle";
 
+  // Exploration and discovery site markers.
   for (const site of explorationSites) {
-    if (!isWorldCircleInViewport(site.x, site.y, site.radius * 3.2, z))
-      continue;
+    if (!isWorldCircleInViewport(site.x, site.y, site.radius * 3.2)) continue;
     const progress = game.exploration.sites[site.id];
     const visible = pointCurrentlyVisible(site.x, site.y);
     if (!progress && !visible && !isWorldPointExplored(site.x, site.y))
       continue;
-    const x = nearestWrappedX(site.x, camera.x);
+    const at = projectToScreen(nearestWrappedX(site.x, camera.x), site.y);
+    if (at.behind) continue;
     const active = visible && site === nearExplorationSite;
     c.save();
-    c.translate(x, site.y);
-    c.scale(1 / z, 1 / z);
+    c.translate(at.x, at.y);
     siteMarkerRendering.draw(c, site, {
       size: active ? 54 : 48,
       surveyed: progress?.status === "surveyed",
       active,
       pixelRatio: DPR,
     });
+    c.restore();
     if ((visible || progress) && progress?.status !== "surveyed") {
       c.fillStyle = "rgba(47,29,15,.82)";
       c.font = `${progress ? "700 " : ""}12px Georgia`;
-      c.fillText("shore survey", 0, -30);
+      c.fillText("shore survey", at.x, at.y - 30);
     }
-    c.restore();
   }
   if (nearDiscovery) {
-    const x = nearestWrappedX(nearDiscovery.x, camera.x);
-    c.save();
-    c.translate(x, nearDiscovery.y);
-    c.scale(1 / z, 1 / z);
-    siteMarkerRendering.draw(c, nearDiscovery, {
-      kind: "discovery",
-      size: 54,
-      active: true,
-      pixelRatio: DPR,
-    });
-    c.restore();
+    const at = projectToScreen(
+      nearestWrappedX(nearDiscovery.x, camera.x),
+      nearDiscovery.y,
+    );
+    if (!at.behind) {
+      c.save();
+      c.translate(at.x, at.y);
+      siteMarkerRendering.draw(c, nearDiscovery, {
+        kind: "discovery",
+        size: 54,
+        active: true,
+        pixelRatio: DPR,
+      });
+      c.restore();
+    }
   }
   for (const site of discoverySites) {
     const record = game.discoveries.found[site.id];
     if (!record) continue;
-    if (!isWorldCircleInViewport(site.x, site.y, 27 / z, z)) continue;
-    const x = nearestWrappedX(site.x, camera.x);
+    if (!isWorldCircleInViewport(site.x, site.y, 40)) continue;
+    const at = projectToScreen(nearestWrappedX(site.x, camera.x), site.y);
+    if (at.behind) continue;
     c.save();
-    c.translate(x, site.y);
-    c.scale(1 / z, 1 / z);
+    c.translate(at.x, at.y);
     siteMarkerRendering.draw(c, site, {
       kind: "discovery",
       size: 43,
@@ -4989,351 +5482,73 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
     });
     c.restore();
   }
+
+  // Royal amber convoy route.
   if (game.laws.amberConvoy) {
-    const off = Math.round((camera.x - 650) / WORLD.w) * WORLD.w;
     c.save();
-    c.translate(off, 0);
     c.strokeStyle = "rgba(190,132,45,.92)";
-    c.lineWidth = 5 / z;
-    c.setLineDash([18 / z, 10 / z]);
-    c.lineDashOffset = -(time * 0.025) % (28 / z);
+    c.lineWidth = 5;
+    c.setLineDash([18, 10]);
+    c.lineDashOffset = -(time * 0.025) % 28;
     c.beginPath();
-    c.moveTo(650, 485);
-    c.bezierCurveTo(850, 570, 1070, 780, 1190, 1050);
-    c.lineTo(1450, 1185);
+    const convoy = [
+      [650, 485],
+      [850, 570],
+      [1070, 780],
+      [1190, 1050],
+      [1450, 1185],
+    ];
+    convoy.forEach(([x, y], index) => {
+      const at = projectToScreen(x, y);
+      if (at.behind) return;
+      if (index === 0) c.moveTo(at.x, at.y);
+      else c.lineTo(at.x, at.y);
+    });
     c.stroke();
     c.setLineDash([]);
     c.fillStyle = "rgba(61,38,18,.9)";
     c.font = "700 16px Georgia";
-    c.fillText("ROYAL AMBER CONVOY", 1110, 940);
+    const label = projectToScreen(1110, 940);
+    if (!label.behind) c.fillText("ROYAL AMBER CONVOY", label.x, label.y);
     c.restore();
   }
-  for (const contract of game.activeContracts) {
-    const p = getPortByName(contract.destination);
-    if (!p) continue;
-    const x = nearestWrappedX(p.x, camera.x);
-    if (!isWorldCircleInViewport(p.x, p.y, 34, z)) continue;
-    const pulse = 25 + Math.sin(time / 220) * 5;
-    c.strokeStyle = "rgba(215,159,55,.95)";
-    c.lineWidth = 4 / z;
-    c.beginPath();
-    c.arc(x, p.y, pulse, 0, Math.PI * 2);
-    c.stroke();
-  }
-  for (const event of game.scheduledEvents) {
-    if (!event.known || event.started) continue;
-    const t = eventTemplates[event.templateId],
-      p = getPortByName(t.port);
-    if (!isWorldCircleInViewport(p.x, p.y, 37, z)) continue;
-    const x = nearestWrappedX(p.x, camera.x);
-    c.strokeStyle = "rgba(139,78,45,.9)";
-    c.lineWidth = 3 / z;
-    c.setLineDash([7 / z, 7 / z]);
-    c.beginPath();
-    c.arc(x, p.y, 34 + Math.sin(time / 300) * 3, 0, Math.PI * 2);
-    c.stroke();
-    c.setLineDash([]);
-  }
-  let labeledMerchant = null;
-  let closestMerchant = 155;
-  for (const merchant of merchantShips) {
-    if (
-      !merchantVisible(merchant) ||
-      !pointCurrentlyVisible(merchant.x, merchant.y)
-    )
-      continue;
-    const distance = wrappedDistance(ship.x, ship.y, merchant.x, merchant.y);
-    if (distance < closestMerchant) {
-      closestMerchant = distance;
-      labeledMerchant = merchant;
-    }
-  }
-  for (const merchant of merchantShips) {
-    if (!merchantVisible(merchant)) continue;
-    const x = nearestWrappedX(merchant.x, camera.x);
-    if (!isWorldCircleInViewport(merchant.x, merchant.y, 60, z)) continue;
-    drawMerchantShip(c, merchant, z, x, {
-      time: reducedMotion.matches ? 0 : time / 1000,
-      roughness: getInterpolatedWeather().roughness,
-      windAngle: game.windAngle,
-      windStrength: game.windStrength,
-      reducedMotion: reducedMotion.matches,
-      lighting,
-      bioluminescence: vesselBioluminescence(
-        merchant,
-        bioluminescentSeas,
-        WORLD.w,
-        lighting,
-      ),
-    });
-    if (pointCurrentlyVisible(merchant.x, merchant.y)) {
-      recordMerchantSighting(merchant);
-      if (merchant === labeledMerchant || selectedMerchant === merchant) {
-        c.fillStyle = "rgba(47,29,15,.9)";
-        c.font = `700 ${11 / z}px Georgia`;
-        c.strokeStyle = "rgba(241,225,185,.94)";
-        c.lineWidth = 3 / z;
-        c.strokeText(merchant.name, x, merchant.y - 22 / z);
-        c.fillText(merchant.name, x, merchant.y - 22 / z);
-      }
-    }
-  }
-  const raider = game.seaRaid.raider;
-  if (
-    raider &&
-    pointCurrentlyVisible(raider.x, raider.y) &&
-    isWorldCircleInViewport(raider.x, raider.y, 60, z)
-  ) {
-    const x = nearestWrappedX(raider.x, camera.x);
-    c.beginPath();
-    c.arc(x, raider.y, 19 / z, 0, Math.PI * 2);
-    c.fillStyle = "rgba(133, 39, 29, .24)";
-    c.fill();
-    c.strokeStyle = "rgba(166, 51, 34, .95)";
-    c.lineWidth = 2 / z;
-    c.stroke();
-    drawMerchantShip(
-      c,
-      { ...raider, vesselClass: raider.attackStrength > 1 ? "brig" : "cutter" },
-      z,
-      x,
-      {
-        time: reducedMotion.matches ? 0 : time / 1000,
-        roughness: currentWeather().roughness,
-        windAngle: game.windAngle,
-        windStrength: game.windStrength,
-        reducedMotion: reducedMotion.matches,
-        lighting,
-        bioluminescence: vesselBioluminescence(
-          raider,
-          bioluminescentSeas,
-          WORLD.w,
-          lighting,
-        ),
-      },
-    );
-    c.fillStyle = "#8c261b";
-    c.font = `bold ${12 / z}px Georgia`;
-    c.fillText("RAIDER", x, raider.y - 24 / z);
-  }
-  // Player fleet: assigned trade routes, then the vessels sailing them.
-  for (const ship of game.fleet?.ships || []) {
-    if (ship.status === "laidUp" || !ship.route) continue;
-    c.strokeStyle = "rgba(106,140,138,.5)";
-    c.lineWidth = 1.4 / z;
-    c.setLineDash([4 / z, 6 / z]);
-    for (const leg of ship.route.legs) {
-      c.beginPath();
-      leg.points.forEach((point, index) => {
-        const wx = nearestWrappedX(point[0], camera.x);
-        if (index === 0) c.moveTo(wx, point[1]);
-        else c.lineTo(wx, point[1]);
-      });
-      c.stroke();
-    }
-    c.setLineDash([]);
-  }
-  for (const ship of game.fleet?.ships || []) {
-    if (ship.status === "laidUp") continue;
-    const render = fleetRenderObject(ship, game.day);
-    const x = nearestWrappedX(render.x, camera.x);
-    if (!isWorldCircleInViewport(render.x, render.y, 60, z)) continue;
-    // A green halo marks player vessels apart from rival traffic, and the name
-    // reads in the same green so the fleet is identifiable at a glance.
-    c.beginPath();
-    c.arc(x, render.y, 12 / z, 0, Math.PI * 2);
-    c.fillStyle = "rgba(58,170,99,.22)";
-    c.fill();
-    c.lineWidth = 1.8 / z;
-    c.strokeStyle = "rgba(46,158,90,.9)";
-    c.stroke();
-    drawMerchantShip(c, render, z, x, {
-      time: reducedMotion.matches ? 0 : time / 1000,
-      roughness: getInterpolatedWeather().roughness,
-      windAngle: game.windAngle,
-      windStrength: game.windStrength,
-      reducedMotion: reducedMotion.matches,
-      lighting,
-      worldWidth: WORLD.w,
-      bioluminescence: vesselBioluminescence(
-        render,
-        bioluminescentSeas,
-        WORLD.w,
-        lighting,
-      ),
-    });
-    c.fillStyle = "#ddf1d9";
-    c.font = "bold " + 11 / z + "px Georgia";
-    c.textAlign = "center";
-    c.textBaseline = "alphabetic";
-    c.strokeStyle = "rgba(30,67,47,.95)";
-    c.lineWidth = 3 / z;
-    c.strokeText(ship.name, x, render.y - 19 / z);
-    c.fillText(ship.name, x, render.y - 19 / z);
-  }
-  c.restore();
-}
-let harborGlowStamp = null;
-function getHarborGlowStamp() {
-  if (!harborGlowStamp) {
-    harborGlowStamp = createRadialStamp({
-      stops: [
-        [0, "rgba(255,219,139,1)"],
-        [1, "rgba(255,186,86,0)"],
-      ],
-      size: 64,
-    });
-  }
-  return harborGlowStamp;
+
+  // Lightning bolts ride the overlay so they keep their inked look.
+  if ((weather.lightning ?? 0) > 0.25 && !reducedMotion.matches)
+    drawLightningBolt(c, weather, time);
+
+  drawPortLabelsOverlay(c);
+  drawDockingRing(c, px);
+  drawEdgeRecoveryGlow(c);
 }
 
-function drawNavigationalHazards(c, z) {
-  c.save();
-  for (const sea of roughSeas) {
-    if (!isWorldCircleInViewport(sea.x, sea.y, Math.max(sea.rx, sea.ry), z))
-      continue;
-    const x = nearestWrappedX(sea.x, camera.x);
-    c.beginPath();
-    c.ellipse(x, sea.y, sea.rx, sea.ry, 0, 0, Math.PI * 2);
-    c.fillStyle = "rgba(40, 64, 70, .16)";
-    c.fill();
-    c.strokeStyle = "rgba(218, 233, 218, .6)";
-    c.lineWidth = 2 / z;
-    c.setLineDash([12 / z, 11 / z]);
-    c.stroke();
-  }
-  c.setLineDash([]);
-  for (const shoal of cachedShoals) {
-    if (!isWorldCircleInViewport(shoal.sx, shoal.sy, shoal.rx, z)) continue;
-    const x = nearestWrappedX(shoal.sx, camera.x);
-    c.save();
-    c.translate(x, shoal.sy);
-    c.fillStyle = "rgba(204, 177, 115, .39)";
-    c.fill(shoal.shelf);
-    c.strokeStyle = "rgba(88, 79, 51, .76)";
-    c.lineWidth = 1.5 / z;
-    c.stroke(shoal.shelf);
-    c.clip(shoal.shelf);
-    for (const { path, style, baseWidth } of shoal.bands) {
-      c.strokeStyle = style;
-      c.lineWidth = baseWidth / z;
-      c.stroke(path);
-    }
-    c.fillStyle = "rgba(73, 70, 52, .73)";
-    c.fill(shoal.pebblePrimary);
-    c.fillStyle = "rgba(92, 85, 59, .38)";
-    c.fill(shoal.pebbleSecondary);
-    c.restore();
-    if (pointCurrentlyVisible(shoal.sx, shoal.sy)) {
-      c.fillStyle = "rgba(64, 39, 20, .9)";
-      c.font = `bold ${11 / z}px Georgia`;
-      c.textAlign = "center";
-      c.fillText(shoal.name || "Shallows", x, shoal.sy - shoal.ry - 8 / z);
-    }
-  }
-  c.restore();
-}
-
-function drawHarborLights(c, lighting, z, time, roughness) {
-  if (lighting.night < 0.12) return;
-  const strength = lighting.night * (1 - lighting.storm * 0.2);
-  const stamp = getHarborGlowStamp();
-  const glowRadius = 11 / z;
-  const harborLampStyle = `rgba(255,229,160,${strength * 0.88})`;
-  const lamps = [];
-  const baseAlpha = c.globalAlpha;
-  c.save();
-  for (const port of ports) {
-    if (!isWorldCircleInViewport(port.x, port.y, 60, z)) continue;
-    if (!pointCurrentlyVisible(port.x, port.y)) continue;
-    const placement = portMiniaturePlacements.get(port.name);
-    if (placement && isWorldPointExplored(placement.x, placement.y)) {
-      c.save();
-      c.translate(nearestWrappedX(placement.x, camera.x), placement.y);
-      c.scale(placement.scale, placement.scale);
-      // A known harbor's practical lights remain visible through the coastal
-      // haze, while its architecture keeps the softer underlying pigments.
-      c.globalAlpha = baseAlpha * 0.62;
-      chartPortArt.drawLights(c, port.name, lighting);
-      c.restore();
-    }
-    c.save();
-    c.translate(nearestWrappedX(port.x, camera.x), port.y);
-    c.globalAlpha = baseAlpha * strength * 0.42;
-    for (const [x, y] of [
-      [-22, -14],
-      [-10, -21],
-      [15, -15],
-    ]) {
-      c.drawImage(
-        stamp,
-        x - glowRadius,
-        y - glowRadius,
-        glowRadius * 2,
-        glowRadius * 2,
-      );
-    }
-    c.globalAlpha = baseAlpha;
-    c.fillStyle = harborLampStyle;
-    for (const [x, y] of [
-      [-22, -14],
-      [-10, -21],
-      [15, -15],
-    ]) {
-      c.beginPath();
-      c.arc(x, y, 1.35 / z, 0, Math.PI * 2);
-      c.fill();
-    }
-    for (const [index, [x, y]] of [
-      [-22, -14],
-      [-10, -21],
-      [15, -15],
-    ].entries())
-      lamps.push({
-        x: port.x + x,
-        y: port.y + y,
-        index: index + port.x * 0.01,
-      });
-    c.restore();
-  }
-  c.restore();
-  seaRendering.drawReflections(c, {
-    camera,
-    vw,
-    vh,
-    time,
-    roughness,
-    lighting,
-    reducedMotion: reducedMotion.matches,
-    lamps,
-  });
-}
-
-const portLabelWidths = new Map();
-// A font becoming available can change metrics even though port names do not.
-document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
-function drawPortLabels(c, z) {
+function drawPortLabelsOverlay(c) {
   c.save();
   c.font = "700 14px Georgia";
   const labels = ports
     .filter(
       (port) =>
-        isWorldCircleInViewport(port.x, port.y, 90, z) &&
+        isWorldCircleInViewport(port.x, port.y, 90) &&
         isWorldPointExplored(port.x, port.y),
     )
-    .map((port) => ({
-      id: port.name,
-      x: vw / 2 + (nearestWrappedX(port.x, camera.x) - camera.x) * z,
-      y: vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS,
-      width: portLabelWidth(c, port.name),
-      height: 26,
-      priority:
-        (port.name === game.navigation.destination ? 100 : 0) +
-        (port === nearPort ? 30 : 0) +
-        (port.home ? 20 : 0) +
-        (pointCurrentlyVisible(port.x, port.y) ? 10 : 0),
-      port,
-    }));
+    .map((port) => {
+      const at = projectToScreen(nearestWrappedX(port.x, camera.x), port.y);
+      return {
+        id: port.name,
+        x: at.x,
+        y: at.y - 14,
+        width: portLabelWidth(c, port.name),
+        height: 26,
+        behind: at.behind,
+        priority:
+          (port.name === game.navigation.destination ? 100 : 0) +
+          (port === nearPort ? 30 : 0) +
+          (port.home ? 20 : 0) +
+          (pointCurrentlyVisible(port.x, port.y) ? 10 : 0),
+        port,
+      };
+    })
+    .filter((label) => !label.behind);
   const placed = anchorMapLabels(labels, vw, vh);
   c.textAlign = "center";
   c.textBaseline = "middle";
@@ -5344,7 +5559,7 @@ function drawPortLabels(c, z) {
       label.port.x,
       label.port.y,
     );
-    const dim = z >= 1.08 && distance > 200 && label.priority < 20;
+    const dim = camera.zoom >= 1.08 && distance > 200 && label.priority < 20;
     c.globalAlpha = dim ? 0.53 : label.priority >= 10 ? 0.98 : 0.82;
     c.fillStyle =
       label.port.name === game.navigation.destination
@@ -5367,30 +5582,141 @@ function drawPortLabels(c, z) {
   }
   c.restore();
 }
-function portLabelWidth(c, name) {
-  if (!portLabelWidths.has(name))
-    portLabelWidths.set(name, Math.ceil(c.measureText(name).width) + 29);
-  return portLabelWidths.get(name);
+
+function drawEdgeRecoveryGlow(c) {
+  if (!edgeRecoveryActive) return;
+  c.save();
+  c.strokeStyle = "rgba(225,176,86,.55)";
+  c.lineWidth = 7;
+  c.shadowColor = "rgba(225,176,86,.5)";
+  c.shadowBlur = 14;
+  c.strokeRect(5, 5, vw - 10, vh - 10);
+  c.restore();
 }
-const shipScreen = { x: 0, y: 0, angle: 0 };
-const depthRendering = createDepthRendering();
-const activeLighthouses = [];
-const siteMarkerRendering = createSiteMarkerRendering();
+
+function drawDockingRing(c, px) {
+  if (!nearPort) return;
+  const center = projectToScreen(
+    nearestWrappedX(nearPort.x, camera.x),
+    nearPort.y,
+  );
+  if (center.behind) return;
+  const ringRadius = 28 * px;
+  c.strokeStyle = "rgba(182,115,61,.75)";
+  c.lineWidth = 1.7;
+  c.setLineDash([5, 6]);
+  c.beginPath();
+  c.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
+  c.stroke();
+  c.setLineDash([]);
+  c.strokeStyle = "rgba(255,231,172,.82)";
+  c.lineWidth = 0.9;
+  c.beginPath();
+  c.arc(center.x, center.y, ringRadius * 1.04, 0, Math.PI * 2);
+  c.stroke();
+}
+
+function sceneEnvironment(time, lighting, weather, arc) {
+  const basis = cameraViewBasis(camera);
+  const moon = celestialPosition("moon", lighting);
+  const season = seasonalAppearance(
+    debugSeasonDay ?? game.day,
+    seasonalWorldRendering.biomeAt(camera.x, camera.y),
+  );
+  const dayF = lighting.daylight;
+  return {
+    time: reducedMotion.matches ? 0 : time / 1000,
+    worldCopies: worldCopiesInView(camera, vw, vh, WORLD.w, 200),
+    camRight: [basis.sx, -basis.sy, basis.sz],
+    camUp: [basis.ux, -basis.uy, basis.uz],
+    lightDir: [LIGHT_DIRECTION.x, LIGHT_DIRECTION.y, LIGHT_DIRECTION.z],
+    lightTint: [
+      1 + lighting.dusk * 0.08 - lighting.storm * 0.08 - lighting.night * 0.08,
+      1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
+      1 - lighting.dusk * 0.09 + lighting.storm * 0.06 + lighting.night * 0.08,
+    ],
+    ambient: 0.78 - lighting.night * 0.16,
+    flutter: 0.18 + weather.roughness * 0.4,
+    outlineWidth: 0.55,
+    outlineColor: [0.2, 0.14, 0.09],
+    waveAmp:
+      (0.9 + weather.roughness * 2.6 + (arc.swell ?? 0) * 1.4) *
+      (reducedMotion.matches ? 0 : 1),
+    windDir: [Math.cos(game.windAngle), Math.sin(game.windAngle)],
+    daylight: dayF,
+    storm: lighting.storm,
+    night: lighting.night,
+    dusk: lighting.dusk,
+    moon: lighting.night * lighting.moon,
+    moonUv: [moon.x, 1 - moon.y],
+    starAlpha: lighting.stars * 0.7,
+    ice: seaIceCover(),
+    relief: Math.min(1, 0.45 + camera.zoom * 0.4),
+    fogTop: seasonFogColor(season, dayF, 0),
+    fogMid: seasonFogColor(season, dayF, 0.55),
+    fogBottom: seasonFogColor(season, dayF, 1),
+    fogAlpha: 0.86 - dayF * 0.07,
+    grainAlpha: graphics.grainAlpha ?? 0,
+    seaDarkness: weather.front?.seaDarkness ?? 0,
+    hasFog: gameStarted ? 1 : 0,
+    worldSize: [WORLD.w, WORLD.h],
+    shipPos: [ship.x, ship.y],
+    sightRadius: Math.max(60, visibility.radius),
+    biolumRegions: bioluminescentSeas
+      .slice(0, 3)
+      .map((sea) => [sea.x, sea.y, sea.rx, sea.ry]),
+    biolumGlow: lighting.night * (1 - lighting.storm * 0.6),
+  };
+}
+
+function seasonFogColor(season, sun, stop) {
+  // The exact 2D fog-wash gradient stops, sampled by screen height.
+  const autumn = season.autumn ?? 0;
+  const snow = season.snow ?? 0;
+  if (stop === 0) {
+    return [
+      (104 + sun * 99 + autumn * 8 - snow * 8) / 255,
+      (111 + sun * 87 + snow * 9) / 255,
+      (99 + sun * 61 + snow * 43 - autumn * 12) / 255,
+    ];
+  }
+  if (stop === 0.55) {
+    return [
+      (118 + sun * 95 + autumn * 8 - snow * 8) / 255,
+      (119 + sun * 81 + snow * 9) / 255,
+      (99 + sun * 62 + snow * 43 - autumn * 12) / 255,
+    ];
+  }
+  return [
+    (95 + sun * 98 + autumn * 8 - snow * 8) / 255,
+    (103 + sun * 81 + snow * 9) / 255,
+    (88 + sun * 58 + snow * 43 - autumn * 12) / 255,
+  ];
+}
+
+function seaIceCover() {
+  const day = debugSeasonDay ?? game.day;
+  const strength = seaIceStrength(
+    day,
+    seasonalWorldRendering.biomeAt(camera.x, camera.y),
+  );
+  return Math.min(1, strength * 1.15);
+}
 
 function render() {
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.clearRect(0, 0, vw, vh);
+  if (!world3d) return;
+  refreshViewBounds();
   if (updateSeason(debugSeasonDay ?? game.day)) {
+    bakeTerrainDetailTexture();
     if (minimapWrap.style.display === "grid") renderChart();
     else minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
   }
   const z = camera.zoom;
   const time = performance.now();
-  const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
   const lighting = sceneLighting(sceneTimeOfDay(), weather.roughness, game.day);
   const arc = currentStormArc();
-  const moving =
+  moving =
     !ship.anchored &&
     !currentPort &&
     !selectedTown &&
@@ -5422,371 +5748,125 @@ function render() {
     (time - wakeTrail.at(-1).time > 5000 || wakeTrail.length > 80)
   )
     wakeTrail.pop();
-  const worldTransform = () => {
-    ctx.save();
-    ctx.translate(vw / 2, vh / 2);
-    ctx.scale(z, z * MAP_TILT_COS);
-    ctx.translate(-camera.x, -camera.y);
-  };
 
-  // World layer rendering: blit only visible slice of each world copy
-  worldTransform();
-  const halfW = vw / (2 * z);
-  const halfH = vh / (2 * z * MAP_TILT_COS);
-  for (const offset of worldCopiesNear(camera.x)) {
-    const margin = 2;
-    const sx = Math.max(0, Math.floor(camera.x - halfW - offset - margin));
-    const sy = Math.max(0, Math.floor(camera.y - halfH - margin));
-    const right = Math.min(
-      WORLD.w,
-      Math.ceil(camera.x + halfW - offset + margin),
-    );
-    const bottom = Math.min(WORLD.h, Math.ceil(camera.y + halfH + margin));
-    const sw = right - sx;
-    const sh = bottom - sy;
-    if (sw > 0 && sh > 0) {
-      ctx.drawImage(mapLayer, sx, sy, sw, sh, offset + sx, sy, sw, sh);
-    }
-  }
-  drawTerrainDetails(ctx, {
-    camera,
-    vw,
-    vh,
-    detail: effectDetail(),
-    time,
-    reducedMotion: reducedMotion.matches,
-  });
-  seaRendering.drawSurface(ctx, {
-    bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
-    deferLighting: true,
-    cacheLightBands: true,
-    detail: effectDetail(),
-    focus: { x: ship.x, y: ship.y, radius: 480 },
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    roughness: weather.roughness,
-    windAngle: game.windAngle,
-    reducedMotion: reducedMotion.matches,
-    lighting,
-    front: weather.front,
-    arc,
-    encounterCreature: encounters.active?.preview
-      ? undefined
-      : encounters.active?.index,
-  });
-  drawAnimatedRoughSeas(ctx, visualTime, z, graphics.particleScale);
-  drawNavigationalHazards(ctx, z);
-  seaRendering.drawCaustics(ctx, {
-    focus: { x: ship.x, y: ship.y, radius: 480 },
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    lighting,
-    shoals: cachedShoals,
-    reducedMotion: reducedMotion.matches,
-    detail: effectDetail(),
-  });
-  mountainShadows.draw(ctx, { camera, vw, vh, lighting });
-  seaIce.draw(ctx, {
-    camera,
-    vw,
-    vh,
-    day: debugSeasonDay ?? game.day,
-    time: seaIceTime,
-  });
-  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh, {
-    lighting,
-    bioluminescentSeas,
-    reducedMotion: reducedMotion.matches,
-  });
-  const reflectedVessels = merchantShips.filter(
-    (vessel) =>
-      merchantVisible(vessel) && pointCurrentlyVisible(vessel.x, vessel.y),
-  );
-  for (const vessel of game.fleet?.ships || []) {
-    if (vessel.status !== "laidUp")
-      reflectedVessels.push(fleetRenderObject(vessel));
-  }
-  const raider = game.seaRaid.raider;
-  if (raider && pointCurrentlyVisible(raider.x, raider.y))
-    reflectedVessels.push({
-      ...raider,
-      vesselClass: raider.attackStrength > 1 ? "brig" : "cutter",
-    });
-  seaRendering.drawReflections(ctx, {
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    roughness: weather.roughness,
-    lighting,
-    reducedMotion: reducedMotion.matches,
-    vessels: reflectedVessels,
-  });
-  drawDynamicTradeWorld(ctx, z, time, lighting);
-  seasonalWorldRendering.draw(ctx, {
-    camera,
-    vw,
-    vh,
-    day: debugSeasonDay ?? game.day,
-    time: visualTime,
-    reducedMotion: reducedMotion.matches,
-    windAngle: game.windAngle,
-  });
+  // Keep the orbit camera committed to the zoom contract.
+  camera.distance = distanceForZoom(z, vh, camera.fov);
+  clampCamera(camera);
 
-  // Batch trail and wind rendering
-  ctx.save();
-  // wind streaks
-  ctx.strokeStyle = "rgba(244,231,190,.28)";
-  ctx.lineWidth = 1.5 / z;
-  const windLeft = camera.x - vw / (2 * z) - 60,
-    windSpan = vw / z + 120;
-  const windCos = Math.cos(game.windAngle) * 30;
-  const windSin = Math.sin(game.windAngle) * 30;
+  buildFogMask(time, lighting);
+  collectRoughSeaCrests(reducedMotion.matches ? 0 : time);
+  lanternSprites.length = 0;
 
-  const windStreaks = Math.round(14 * graphics.particleScale);
-  for (let i = 0; i < windStreaks; i++) {
-    const x = windLeft + ((i * 173 + visualTime * 0.025) % windSpan),
-      y = (i * 197 + Math.floor(camera.y)) % WORLD.h;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + windCos, y + windSin);
-    ctx.stroke();
-  }
-  ctx.restore();
-  ctx.restore(); // Restore world transform
+  const env = sceneEnvironment(time, lighting, weather, arc);
+  const vesselGroups = collectVessels(time, weather, lighting, arc);
+  const harbor = collectPorts(lighting, time);
+  const creature = collectEncounterCreature();
+  if (creature) vesselGroups["creature"] = creature.objects;
 
-  shipScreen.x = vw / 2 + (nearestWrappedX(ship.x, camera.x) - camera.x) * z;
-  shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
-  shipScreen.angle = ship.angle;
-  depthRendering.draw(ctx, {
-    width: vw,
-    height: vh,
-    ship: shipScreen,
-    zoom: z,
-    lighting,
-    maskScale: graphics.maskScale,
-  });
-  renderFog(visualTime, lighting);
-  drawSceneLightWash(ctx, lighting, vw, vh);
-  activeLighthouses.length = 0;
-  if (lighting.night >= 0.015) {
-    const beaconCopies = visibleWorldCopies(
-      camera.x,
-      vw + MAX_LIGHTHOUSE_REACH * 2,
-      z,
-      WORLD.w,
-    );
-    for (let index = 0; index < ports.length; index++) {
-      const port = ports[index];
-      const y = vh / 2 + (port.y - camera.y) * z * MAP_TILT_COS;
-      if (y < -MAX_LIGHTHOUSE_REACH || y > vh + MAX_LIGHTHOUSE_REACH) continue;
-      for (const copy of beaconCopies) {
-        const x = vw / 2 + (port.x + copy - camera.x) * z;
-        if (x > -MAX_LIGHTHOUSE_REACH && x < vw + MAX_LIGHTHOUSE_REACH)
-          activeLighthouses.push({ x, y, index });
-      }
-    }
-  }
-  drawNightAtmosphere(ctx, {
-    lighting,
-    width: vw,
-    height: vh,
-    ship: shipScreen,
-    lighthouses: activeLighthouses,
-    time: visualTime,
-    reducedMotion: reducedMotion.matches,
-    particleScale: graphics.particleScale,
-    maskScale: graphics.maskScale,
-    zoom: z,
-  });
-
-  // The ship and immediate docking cue remain readable above the fog layer.
-  worldTransform();
-  // Specular light sits above the night wash, within the current sight area.
-  ctx.save();
-  polygonPath(
-    ctx,
-    visibility.polygon,
-    1,
-    1,
-    nearestWrappedX(ship.x, camera.x) - ship.x,
-  );
-  ctx.clip();
-  seaRendering.drawLighting(ctx, {
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    lighting,
-    windAngle: game.windAngle,
-    roughness: weather.roughness,
-    detail: effectDetail(),
-    reducedMotion: reducedMotion.matches,
-  });
-  ctx.restore();
-  if (
-    encounters.active?.kind === "raider" &&
-    (encounters.active.preview || game.seaRaid.raider)
-  ) {
-    const raider = encounters.active.preview
-      ? encounters.active
-      : game.seaRaid.raider;
-    drawMerchantShip(
-      ctx,
-      {
-        ...raider,
-        vesselClass:
-          raider.vesselClass || (raider.attackStrength > 1 ? "brig" : "cutter"),
-      },
-      z,
-      nearestWrappedX(raider.x, camera.x),
-      {
-        time: reducedMotion.matches ? 0 : time / 1000,
-        roughness: weather.roughness,
-        windAngle: game.windAngle,
-        windStrength: game.windStrength,
-        reducedMotion: reducedMotion.matches,
-        lighting,
-        bioluminescence: vesselBioluminescence(
-          raider,
-          bioluminescentSeas,
-          WORLD.w,
-          lighting,
-        ),
-      },
-    );
-  }
-  if (encounters.active?.preview && encounters.active.kind !== "raider") {
-    seaRendering.drawEncounterCreature(ctx, {
-      ...encounters.active,
-      x: nearestWrappedX(encounters.active.x, camera.x),
+  const flatSprites = [];
+  for (const crest of crestSprites) {
+    flatSprites.push({
+      x: crest.x,
+      y: crest.y,
+      z: 0.7,
+      sprite: "crest",
+      width: crest.size,
+      rotation: crest.rotation,
+      flat: true,
+      alpha: crest.alpha,
+      color: [1, 1, 1],
     });
   }
-  const playerDamage = shipDamageState();
-  seaRendering.drawReflections(ctx, {
+  for (const sprite of collectWaveGlyphs(reducedMotion.matches ? 0 : time))
+    flatSprites.push(sprite);
+  for (const sprite of collectWake(time, weather, lighting))
+    flatSprites.push(sprite);
+  for (const sprite of harbor.beams) flatSprites.push(sprite);
+
+  const frameScene = {
     camera,
-    vw,
-    vh,
-    time: visualTime,
-    roughness: weather.roughness,
-    lighting,
-    reducedMotion: reducedMotion.matches,
-    vessels: [
-      {
-        x: ship.x,
-        y: ship.y,
-        angle: ship.angle,
-        vesselClass: game.shipUpgrades.activeClass,
-        scale: 1.82,
-        speed: moving ? ship.speed : 0,
-        anchored: ship.anchored,
-        heel: playerDamage?.heel ?? 0,
-        settle: playerDamage?.settle ?? 0,
-      },
+    viewport: { width: vw, height: vh },
+    math: { cameraViewMatrix, perspectiveMatrix },
+    env,
+    shipScreen: (() => {
+      const at = projectToScreen(ship.x, ship.y);
+      return [at.x, at.y];
+    })(),
+    sharpRadius: Math.max(110, 230 * z),
+    washRadius: Math.max(300, 680 * z),
+    fog: { has: false, alpha: env.fogAlpha },
+    vessels: { ...vesselGroups, ...harbor.groups },
+    flatSprites,
+    lightSprites: [
+      ...lanternSprites,
+      ...harbor.glows,
+      ...(lighting.night > 0.12
+        ? [
+            {
+              x: nearestWrappedX(ship.x, camera.x),
+              y: ship.y,
+              z: 4,
+              sprite: "glow",
+              width: 60,
+              alpha: lighting.night * 0.4,
+              color: [1, 0.87, 0.62],
+            },
+          ]
+        : []),
     ],
-  });
-  drawShip(
-    ctx,
-    ship.x,
-    ship.y,
-    ship.angle,
-    game.windAngle,
-    game.windStrength,
-    game.shipUpgrades.activeClass,
-    z,
-    {
-      time: visualTime / 1000,
-      roughness: weather.roughness,
-      swell: arc.swell,
-      crew: arc.crew,
-      speed: moving ? ship.speed : 0,
-      anchored: ship.anchored,
-      reducedMotion: reducedMotion.matches,
-      lighting,
-      worldWidth: WORLD.w,
-      damage: playerDamage,
-      damageKey: game,
-      bioluminescence: vesselBioluminescence(
-        ship,
-        bioluminescentSeas,
-        WORLD.w,
-        lighting,
-      ),
-    },
-  );
-  if (nearPort) {
-    const px = nearestWrappedX(nearPort.x, ship.x);
-    ctx.strokeStyle = "rgba(182,115,61,.75)";
-    ctx.lineWidth = 1.7 / z;
-    ctx.setLineDash([5 / z, 6 / z]);
-    ctx.beginPath();
-    ctx.arc(px, nearPort.y, 28, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  ctx.restore();
+    weatherSprites: [],
+    fogSprites: collectFogBanks(time),
+  };
+  if (typeof window !== "undefined") window.__lastScene = frameScene;
+  world3d.frame(frameScene);
 
-  if (edgeRecoveryActive) {
-    ctx.save();
-    ctx.strokeStyle = "rgba(225,176,86,.55)";
-    ctx.lineWidth = 7;
-    ctx.shadowColor = "rgba(225,176,86,.5)";
-    ctx.shadowBlur = 14;
-    ctx.strokeRect(5, 5, vw - 10, vh - 10);
-    ctx.restore();
-  }
-  // Atmospheric weather — clouds, fog, rain, and storms are drawn over the
-  // ship so they read as something the vessel is sailing through.
-  {
-    drawWeatherEffects(ctx, {
-      name: weather.name,
-      softLayerScale: graphics.maskScale,
-      particleScale: graphics.particleScale,
-      lightning: graphics.lightning,
-      front: weather.front,
-      arc,
-      daylight: lighting.daylight,
-      roughness: weather.roughness,
-      visibilityKm: weather.visibilityKm,
-      aheadVisibilityKm: currentWeather(ship.angle).visibilityKm,
-      asternVisibilityKm: currentWeather(ship.angle + Math.PI).visibilityKm,
-      headingAngle: ship.angle,
-      windAngle: game.windAngle,
-      windStrength: game.windStrength,
-      vw,
-      vh,
-      time: visualTime,
-      reducedMotion: reducedMotion.matches,
-    });
-  }
-  drawShipLanterns(ctx, shipScreen, lighting);
-  chartSpray.draw(ctx, { vw, vh, particleScale: graphics.particleScale });
-
-  // Lamps and the docking ring sit above the weather wash, so ports and the
-  // immediate approach remain discoverable as the scene darkens.
-  worldTransform();
-  drawHarborLights(ctx, lighting, z, visualTime, weather.roughness);
-  if (nearPort) {
-    const px = nearestWrappedX(nearPort.x, ship.x);
-    ctx.strokeStyle = "rgba(255,231,172,.82)";
-    ctx.lineWidth = 0.9 / z;
-    ctx.beginPath();
-    ctx.arc(px, nearPort.y, 29, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  drawPortLabels(ctx, z);
-
-  // vignette
-  ctx.fillStyle = vignetteGradient;
-  ctx.fillRect(0, 0, vw, vh);
+  drawOverlay(time, weather, arc);
 }
 
+// The original 2D weather stack — cloud banks, storm fronts and grades,
+// fog washes, rain, sunbreaks, rainbows, and lightning — paints directly
+// onto the overlay so the 3D world shares its atmosphere pixel for pixel.
+function drawOverlayWeather(time, weather, arc) {
+  const visualTime = reducedMotion.matches ? 0 : time;
+  drawWeatherEffects(overlayCtx, {
+    name: weather.name,
+    softLayerScale: graphics.maskScale,
+    particleScale: graphics.particleScale,
+    lightning: graphics.lightning,
+    front: weather.front,
+    arc,
+    daylight: sceneLighting(sceneTimeOfDay(), weather.roughness, game.day)
+      .daylight,
+    roughness: weather.roughness,
+    visibilityKm: weather.visibilityKm,
+    aheadVisibilityKm: currentWeather(ship.angle).visibilityKm,
+    asternVisibilityKm: currentWeather(ship.angle + Math.PI).visibilityKm,
+    headingAngle: ship.angle,
+    windAngle: game.windAngle,
+    windStrength: game.windStrength,
+    vw,
+    vh,
+    time: visualTime,
+    reducedMotion: reducedMotion.matches,
+  });
+  chartSpray.draw(overlayCtx, {
+    vw,
+    vh,
+    particleScale: graphics.particleScale,
+  });
+}
+
+const portLabelWidths = new Map();
+// A font becoming available can change metrics even though port names do not.
+document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
+// Port labels render on the overlay canvas through the 3D camera.
+function portLabelWidth(c, name) {
+  if (!portLabelWidths.has(name))
+    portLabelWidths.set(name, Math.ceil(c.measureText(name).width) + 29);
+  return portLabelWidths.get(name);
+}
+let moving = false;
+const siteMarkerRendering = createSiteMarkerRendering();
 const input = { x: 0, y: 0, power: 0 };
 
 function readInput() {
@@ -6606,6 +6686,18 @@ addEventListener("keydown", (e) => {
     e.preventDefault();
     return;
   }
+  // Orbit controls: Q/E spin the yaw, R/F (or PageUp/PageDown) tilt the
+  // pitch, and a held shift doubles the rate. Steering keys still land in the
+  // shared key set.
+  const orbitStep = (e.shiftKey ? 2 : 1) * 0.045;
+  if (e.key === "q" || e.key === "Q") camera.yaw -= orbitStep;
+  else if (e.key === "e" || e.key === "E") camera.yaw += orbitStep;
+  else if (e.key === "r" || e.key === "R" || e.code === "PageUp")
+    camera.pitch = Math.min(MAX_PITCH, camera.pitch + orbitStep);
+  else if (e.key === "f" || e.key === "F" || e.code === "PageDown")
+    camera.pitch = Math.max(MIN_PITCH, camera.pitch - orbitStep);
+  if (["q", "e", "r", "f", "Q", "E", "R", "F"].includes(e.key))
+    clampCamera(camera);
   keys.add(e.key.toLowerCase());
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key))
     e.preventDefault();
@@ -6662,13 +6754,46 @@ joy.addEventListener("pointerup", endJoy);
 joy.addEventListener("pointercancel", endJoy);
 
 let canvasTapStart = null;
+let canvasOrbit = null;
 canvas.addEventListener("pointerdown", (e) => {
   if (!gameStarted || selectedTown || currentPort) return;
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {
+    // A rejected capture must not break the orbit gesture.
+  }
   canvasTapStart = { x: e.clientX, y: e.clientY };
+  canvasOrbit = { x: e.clientX, y: e.clientY, moved: 0 };
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (
+    !canvasOrbit ||
+    !gameStarted ||
+    selectedTown ||
+    currentPort ||
+    encounters.active
+  ) {
+    updatePickCursor(e);
+    return;
+  }
+  const dx = e.clientX - canvasOrbit.x;
+  const dy = e.clientY - canvasOrbit.y;
+  canvasOrbit.x = e.clientX;
+  canvasOrbit.y = e.clientY;
+  canvasOrbit.moved += Math.hypot(dx, dy);
+  if (canvasOrbit.moved > 8) {
+    // Drag orbits the diorama: horizontal spins the yaw, vertical tilts the
+    // pitch between chart top-down and a low horizon skim.
+    camera.yaw += dx * 0.0052;
+    camera.pitch -= dy * 0.0044;
+    clampCamera(camera);
+    canvasTapStart = null;
+  }
 });
 canvas.addEventListener("pointerup", (e) => {
   if (!canvasTapStart || !gameStarted || selectedTown || currentPort) {
     canvasTapStart = null;
+    canvasOrbit = null;
     return;
   }
   const moved = Math.hypot(
@@ -6676,6 +6801,7 @@ canvas.addEventListener("pointerup", (e) => {
     e.clientY - canvasTapStart.y,
   );
   canvasTapStart = null;
+  canvasOrbit = null;
   if (moved > 12) return;
   const world = screenToWorld(e.clientX, e.clientY);
   const fleetShip = nearestFleetShip(
@@ -6721,7 +6847,7 @@ canvas.addEventListener("pointerup", (e) => {
   );
   if (port) openTownDetails(port, false);
 });
-canvas.addEventListener("pointermove", (e) => {
+function updatePickCursor(e) {
   if (
     matchMedia("(pointer:fine)").matches &&
     gameStarted &&
@@ -6741,7 +6867,7 @@ canvas.addEventListener("pointermove", (e) => {
         ? "pointer"
         : "default";
   }
-});
+}
 
 function pricingOptions(port, key) {
   return {

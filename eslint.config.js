@@ -1,6 +1,6 @@
 export default [
   {
-    ignores: ["coverage/**"],
+    ignores: ["coverage/**", ".context/**"],
   },
   {
     files: ["**/*.js"],
