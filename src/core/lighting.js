@@ -1,5 +1,4 @@
-// Map space is lit from the northwest and above. Keep this direction shared
-// by the cached terrain and ports and the moving ship models.
+// Reference noon light for static chart engraving and older lighting callers.
 export const LIGHT_DIRECTION = Object.freeze({ x: -0.55, y: -0.45, z: 0.7 });
 export const LIGHTING_SECONDS_PER_CYCLE = 72;
 
@@ -24,6 +23,26 @@ export function advanceTimeOfDay(value, seconds) {
   );
 }
 
+// The sun crosses the northern sky from east to west. Elevation and bearing
+// vary continuously, including at midnight; low sun produces long shadows.
+export function solarGeometry(timeOfDay = 0.5) {
+  const angle = (normalizeTimeOfDay(timeOfDay) - 0.25) * Math.PI * 2;
+  const elevation = Math.max(0, Math.sin(angle));
+  const x = Math.cos(angle) - 0.55 * elevation;
+  const y = -0.45;
+  const z = 0.16 + elevation * 0.54;
+  const length = Math.hypot(x, y, z);
+  const horizontal = Math.hypot(x, y);
+  return {
+    sunDirection: { x: x / length, y: y / length, z: z / length },
+    shadow: {
+      x: -x / horizontal,
+      y: -y / horizontal,
+      length: Math.min(4.5, horizontal / z),
+    },
+  };
+}
+
 // Midnight is 0, sunrise is 0.25, noon is 0.5, sunset is 0.75.
 export function sceneLighting(timeOfDay = 0.5, roughness = 0, day = 1) {
   const time = normalizeTimeOfDay(timeOfDay);
@@ -39,7 +58,13 @@ export function sceneLighting(timeOfDay = 0.5, roughness = 0, day = 1) {
   const moonCycle = (((Math.floor(Number(day) || 1) - 1) % 8) + 8) % 8;
   const moon =
     0.32 + (0.68 * (1 + Math.cos((moonCycle / 8) * Math.PI * 2))) / 2;
+  const solar = solarGeometry(time);
   return {
+    sunDirection: solar.sunDirection,
+    shadow: {
+      ...solar.shadow,
+      strength: daylight * (1 - storm * 0.85),
+    },
     time,
     daylight,
     night,
@@ -58,21 +83,32 @@ export function sceneLighting(timeOfDay = 0.5, roughness = 0, day = 1) {
 export function litPigment(color, normal, lighting = sceneLighting()) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
   const length = Math.hypot(...normal);
+  const direction = lighting.sunDirection ?? LIGHT_DIRECTION;
   const diffuse =
     Number.isFinite(length) && length > 0
       ? clamp01(
-          (normal[0] * LIGHT_DIRECTION.x +
-            normal[1] * LIGHT_DIRECTION.y +
-            normal[2] * LIGHT_DIRECTION.z) /
+          (normal[0] * direction.x +
+            normal[1] * direction.y +
+            normal[2] * direction.z) /
             length,
         )
       : 0;
   const light =
     0.68 - lighting.night * 0.16 + diffuse * 0.62 * lighting.strength;
+  const warm = lighting.dusk * diffuse * (1 - lighting.storm);
+  const cool = lighting.dusk * (1 - diffuse) * (1 - lighting.storm * 0.5);
   const tint = [
-    1 + lighting.dusk * 0.08 - lighting.storm * 0.08 - lighting.night * 0.08,
-    1 - lighting.dusk * 0.01 - lighting.storm * 0.04,
-    1 - lighting.dusk * 0.09 + lighting.storm * 0.06 + lighting.night * 0.08,
+    1 +
+      warm * 0.28 -
+      cool * 0.13 -
+      lighting.storm * 0.08 -
+      lighting.night * 0.08,
+    1 + warm * 0.04 - cool * 0.03 - lighting.storm * 0.04,
+    1 -
+      warm * 0.24 +
+      cool * 0.2 +
+      lighting.storm * 0.06 +
+      lighting.night * 0.08,
   ];
   const channels = [1, 3, 5].map((offset, index) =>
     Math.min(

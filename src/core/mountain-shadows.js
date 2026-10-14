@@ -1,14 +1,9 @@
-import { normalizeTimeOfDay } from "./lighting.js";
+import { normalizeTimeOfDay, solarGeometry } from "./lighting.js";
 
 export const SHADOW_PHASES = [0.23, 0.4, 0.6, 0.77];
 
 export function mountainShadowSun(phase) {
-  const progress = (phase - 0.23) / 0.54;
-  return {
-    x: -Math.cos(progress * Math.PI),
-    y: 0.35,
-    length: 1.1 + Math.abs(progress - 0.5) * 5,
-  };
+  return solarGeometry(phase).shadow;
 }
 
 export function mountainShadowBlend(timeOfDay, daylight = 1, storm = 0) {
@@ -26,7 +21,7 @@ export function mountainShadowBlend(timeOfDay, daylight = 1, storm = 0) {
   );
   const alpha =
     Math.max(0, Math.min(1, daylight)) *
-    (1 - Math.max(0, Math.min(1, storm)) * 0.75);
+    (1 - Math.max(0, Math.min(1, storm)) * 0.85);
   return [
     { bucket: from, alpha: alpha * (1 - mix) },
     { bucket: to, alpha: alpha * mix },

@@ -6,7 +6,7 @@ import { MAP_TILT_TAN } from "./core/projection.js";
 import { PORT_NAMES } from "./names.js";
 import { createAlphaPalette } from "./style-palette.js";
 import {
-  LIGHT_DIRECTION,
+  litPigment,
   lightingHierarchy,
   sceneLighting,
 } from "./core/lighting.js";
@@ -73,7 +73,10 @@ function paperPigment(color) {
           paper[index] * 0.34,
       ),
     );
-    pigmentCache.set(color, `rgb(${channels.join(",")})`);
+    pigmentCache.set(
+      color,
+      `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`,
+    );
   }
   return pigmentCache.get(color);
 }
@@ -298,7 +301,27 @@ function face(c, vertices, fill, stroke = INK, width = 0.48) {
     }
   });
   c.closePath();
-  c.fillStyle = paperPigment(fill);
+  const [a, b, d] = vertices;
+  const ab = b.map((value, index) => value - a[index]);
+  const ad = d.map((value, index) => value - a[index]);
+  const normal = [
+    ab[1] * ad[2] - ab[2] * ad[1],
+    ab[2] * ad[0] - ab[0] * ad[2],
+    ab[0] * ad[1] - ab[1] * ad[0],
+  ];
+  if (normal[2] < 0)
+    for (let index = 0; index < 3; index++) normal[index] *= -1;
+  const angle = gridHeading + localFrame.angle;
+  const worldNormal = [
+    normal[0] * Math.cos(angle) - normal[1] * Math.sin(angle),
+    normal[0] * Math.sin(angle) + normal[1] * Math.cos(angle),
+    normal[2],
+  ];
+  // Visible vertical walls face the camera from the south; authored polygons
+  // use mixed winding, so orient their normals after rotating the town grid.
+  if (worldNormal[2] === 0 && worldNormal[1] < 0)
+    for (let index = 0; index < 3; index++) worldNormal[index] *= -1;
+  c.fillStyle = litPigment(paperPigment(fill), worldNormal, miniatureLighting);
   c.fill();
   if (stroke) {
     c.strokeStyle = stroke;
@@ -512,19 +535,16 @@ function drawBuilding(c, scene, spec) {
   const back = v - (front - v);
   const side = Math.sin(angle) <= 0 ? a : b;
   const top = z + h;
+  const shadow = miniatureLighting.shadow ?? sceneLighting().shadow;
   const shadowU =
-    -(
-      LIGHT_DIRECTION.x * Math.cos(angle) +
-      LIGHT_DIRECTION.y * Math.sin(angle)
-    ) *
+    (shadow.x * Math.cos(angle) + shadow.y * Math.sin(angle)) *
     h *
+    shadow.length *
     0.32;
   const shadowV =
-    -(
-      -LIGHT_DIRECTION.x * Math.sin(angle) +
-      LIGHT_DIRECTION.y * Math.cos(angle)
-    ) *
+    (-shadow.x * Math.sin(angle) + shadow.y * Math.cos(angle)) *
     h *
+    shadow.length *
     0.32;
   face(
     c,

@@ -5,6 +5,7 @@ import {
   mountainShadowSun,
   SHADOW_PHASES,
 } from "../src/core/mountain-shadows.js";
+import { solarGeometry } from "../src/core/lighting.js";
 
 test("four sun phases give long opposing dawn and dusk shadows and shorter midday shadows", () => {
   assert.equal(SHADOW_PHASES.length, 4);
@@ -13,7 +14,9 @@ test("four sun phases give long opposing dawn and dusk shadows and shorter midda
   assert.ok(dawn.x < 0 && dusk.x > 0);
   assert.ok(dawn.length > mountainShadowSun(0.5).length);
   assert.ok(dusk.length > mountainShadowSun(0.5).length);
-  assert.equal(dawn.y, dusk.y);
+  assert.ok(Math.abs(dawn.y - dusk.y) < 1e-9);
+  for (const phase of SHADOW_PHASES)
+    assert.deepEqual(mountainShadowSun(phase), solarGeometry(phase).shadow);
 });
 
 test("shadow buckets blend continuously through the day, fade at night, and soften in storms", () => {
@@ -35,7 +38,9 @@ test("shadow buckets blend continuously through the day, fade at night, and soft
     { bucket: 2, alpha: 0.5 },
   ]);
   assert.ok(
-    mountainShadowBlend(0.5, 1, 1).every((sample) => sample.alpha === 0.125),
+    mountainShadowBlend(0.5, 1, 1).every(
+      (sample) => Math.abs(sample.alpha - 0.075) < 1e-9,
+    ),
   );
   assert.ok(mountainShadowBlend(0, 0).every((sample) => sample.alpha === 0));
   assert.deepEqual(mountainShadowBlend(NaN), mountainShadowBlend(0.5));
