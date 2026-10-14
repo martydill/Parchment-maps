@@ -186,3 +186,19 @@ test("sculpted ridge faces respect cartographic clearings", () => {
       }
     }
 });
+
+test("detail raster scales bound both layers while retaining full resolution for small working sets", async () => {
+  const { terrainDetailRasterScale } =
+    await import("../src/core/terrain-detail.js");
+  assert.equal(terrainDetailRasterScale(100_000), 1.5);
+  for (const area of [2_000_000, 20_000_000, 200_000_000]) {
+    const scale = terrainDetailRasterScale(area);
+    assert.ok(scale > 0 && scale <= 1.5);
+    assert.ok(area * scale * scale * 2 <= 8_000_000);
+  }
+  assert.equal(terrainDetailRasterScale(0), 0);
+  assert.equal(terrainDetailRasterScale(-1), 0);
+  assert.equal(terrainDetailRasterScale(1000, 0), 0);
+  assert.equal(terrainDetailRasterScale(1000, 8000, 0), 0);
+  assert.ok(terrainDetailRasterScale(5000, 4000, 1) <= 1);
+});

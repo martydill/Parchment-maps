@@ -2,36 +2,20 @@ import { causticPoint } from "./sea-optics.js";
 
 // Interfering wave fronts make an irregular light field. All longitude waves
 // complete an integer number of periods, so the pattern crosses the world seam.
-function lightField(x, y, time, worldWidth) {
-  const warped = causticPoint(x, y, time, worldWidth);
+function lightField(x, y, time, worldWidth, frequencies, point) {
+  const warped = causticPoint(x, y, time, worldWidth, point);
   const longitude =
     ((((warped.x % worldWidth) + worldWidth) % worldWidth) / worldWidth) *
     Math.PI *
     2;
   return (
-    Math.sin(
-      longitude * Math.max(1, Math.round(worldWidth / 137)) +
-        warped.y * 0.049 +
-        time * 0.37,
-    ) *
+    Math.sin(longitude * frequencies[0] + warped.y * 0.049 + time * 0.37) *
       0.56 +
-    Math.sin(
-      longitude * Math.max(1, Math.round(worldWidth / 91)) -
-        warped.y * 0.067 -
-        time * 0.29,
-    ) *
+    Math.sin(longitude * frequencies[1] - warped.y * 0.067 - time * 0.29) *
       0.31 +
-    Math.cos(
-      longitude * Math.max(1, Math.round(worldWidth / 213)) +
-        warped.y * 0.031 -
-        time * 0.19,
-    ) *
+    Math.cos(longitude * frequencies[2] + warped.y * 0.031 - time * 0.19) *
       0.24 +
-    Math.sin(
-      longitude * Math.max(1, Math.round(worldWidth / 57)) +
-        warped.y * 0.083 +
-        time * 0.23,
-    ) *
+    Math.sin(longitude * frequencies[3] + warped.y * 0.083 + time * 0.23) *
       0.13 -
     0.16
   );
@@ -61,6 +45,10 @@ export function causticContours(bounds, time, worldWidth, detail = 1) {
     junctions = [],
     edges = [];
   const sampleIndex = (column, row) => (row - top) * stride + column - first;
+  const frequencies = [137, 91, 213, 57].map((wavelength) =>
+    Math.max(1, Math.round(worldWidth / wavelength)),
+  );
+  const point = {};
   for (let row = top; row <= bottom; row++) {
     for (let column = first; column <= last; column++) {
       samples[sampleIndex(column, row)] = lightField(
@@ -68,6 +56,8 @@ export function causticContours(bounds, time, worldWidth, detail = 1) {
         row * spacing,
         time,
         worldWidth,
+        frequencies,
+        point,
       );
     }
   }

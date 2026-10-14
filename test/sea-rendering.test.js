@@ -840,8 +840,9 @@ test("caustic lace blends once through shoal masks, caches, and freezes with red
   const draws = first.calls.filter(([name]) => name === "drawImage");
   assert.equal(draws.length, 1);
   const mask = draws[0][1];
+  const depth = mask.calls.find(([name]) => name === "drawImage")[1];
   assert.ok(
-    mask.calls.some(([name, path]) => name === "clip" && path === shelf),
+    depth.calls.some(([name, path]) => name === "clip" && path === shelf),
   );
   assert.ok(
     mask.calls.some(
@@ -853,11 +854,17 @@ test("caustic lace blends once through shoal masks, caches, and freezes with red
   assert.ok(web.calls.some(([name]) => name === "quadraticCurveTo"));
   assert.equal(web.calls.filter(([name]) => name === "stroke").length, 2);
   assert.equal(first.context.globalAlpha, 0.4);
+  const depthCount = depth.calls.length;
   const count = mask.calls.length;
   renderer.drawCaustics(first.context, { ...frame, time: 16 });
   assert.equal(mask.calls.length, count);
   renderer.drawCaustics(first.context, { ...frame, time: 34 });
   assert.ok(mask.calls.length > count);
+  assert.equal(
+    depth.calls.length,
+    depthCount,
+    "animated light reuses the static depth mask",
+  );
   renderer.drawCaustics(first.context, {
     ...frame,
     time: 1000,
@@ -1081,7 +1088,8 @@ test("material surf wraps, freezes with reduced motion, and leaves marsh channel
     ]) {
       const target = recordingContext();
       instance.drawCaustics(target.context, options);
-      const mask = target.calls.find(([method]) => method === "drawImage")[1];
+      const layer = target.calls.find(([method]) => method === "drawImage")[1];
+      const mask = layer.calls.find(([method]) => method === "drawImage")[1];
       const strokes = mask.calls.filter(([method]) => method === "stroke");
       assert.ok(strokes.length > 0);
       assert.ok(strokes.every(([, path]) => path instanceof globalThis.Path2D));
@@ -1091,4 +1099,93 @@ test("material surf wraps, freezes with reduced motion, and leaves marsh channel
     if (previousPath === undefined) delete globalThis.Path2D;
     else globalThis.Path2D = previousPath;
   }
+});
+
+test("caustics bound work to the ship and invalidate depth only when geometry or the anchor changes", () => {
+  const renderer = createSeaRendering({
+    WORLD: { w: 4800, h: 3200 },
+    lands: [],
+  });
+  const shelf = {};
+  const frame = {
+    ...options,
+    camera: { x: 2400, y: 1600, zoom: 0.5 },
+    vw: 2560,
+    vh: 1440,
+    focus: { x: 2400, y: 1600, radius: 480 },
+    shoals: [{ sx: 2400, sy: 1600, rx: 200, ry: 120, shelf }],
+  };
+  const target = recordingContext();
+  renderer.drawCaustics(target.context, frame);
+  const draw = target.calls.find(([method]) => method === "drawImage");
+  const output = draw[1],
+    depth = output.calls.find(([method]) => method === "drawImage")[1];
+  assert.ok(output.width < frame.vw * 0.75 && output.height < frame.vh * 0.75);
+  assert.ok(
+    depth.calls.some(([method]) => method === "createLinearGradient"),
+    "bounded edges feather to transparent",
+  );
+  const count = depth.calls.length;
+  renderer.drawCaustics(target.context, {
+    ...frame,
+    time: 1000,
+    focus: { ...frame.focus, x: 2405 },
+  });
+  assert.equal(
+    depth.calls.length,
+    count,
+    "small ship movement preserves the padded mask",
+  );
+  renderer.drawCaustics(target.context, {
+    ...frame,
+    time: 1100,
+    lighting: { daylight: 0.9 },
+  });
+  assert.equal(
+    depth.calls.length,
+    count,
+    "light intensity does not change depth geometry",
+  );
+  renderer.drawCaustics(target.context, {
+    ...frame,
+    time: 1200,
+    focus: { ...frame.focus, x: 2600 },
+  });
+  assert.ok(
+    depth.calls.length > count,
+    "moving beyond padding rebuilds the mask",
+  );
+  const moved = depth.calls.length;
+  renderer.drawCaustics(target.context, {
+    ...frame,
+    time: 1300,
+    focus: { ...frame.focus, x: 2600 },
+    shoals: [{ ...frame.shoals[0], sx: 2410 }],
+  });
+  assert.ok(
+    depth.calls.length > moved,
+    "changed shoal geometry invalidates the mask",
+  );
+  const reshaped = depth.calls.length;
+  renderer.drawCaustics(target.context, {
+    ...frame,
+    time: 1400,
+    focus: { ...frame.focus, x: 2600 },
+    shoals: [{ ...frame.shoals[0], sx: 2410, shelf: {} }],
+  });
+  assert.ok(
+    depth.calls.length > reshaped,
+    "a replacement shelf silhouette invalidates the mask",
+  );
+  const shifted = recordingContext();
+  renderer.drawCaustics(shifted.context, {
+    ...frame,
+    time: 1500,
+    camera: { ...frame.camera, x: 7200 },
+  });
+  const wrapped = shifted.calls.find(([method]) => method === "drawImage");
+  assert.ok(
+    wrapped[2] > 4800,
+    "the bounded effect follows the ship across the world seam",
+  );
 });

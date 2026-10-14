@@ -284,8 +284,9 @@ export function drawCoastalLand(c, poly, segments) {
 }
 
 export function drawShoreBreak(c, segment, depth, time, roughness, zoom) {
+  if (segment.grain < 0.38) return;
   const wave = sampleShoreBreak(segment, time, roughness);
-  if (!wave || wave.alpha < 0.025 || segment.grain < 0.38) return;
+  if (!wave || wave.alpha < 0.025) return;
   const s = segment;
   const x = (s.a.x + s.b.x) / 2 + s.nx * wave.reach;
   const y = (s.a.y + s.b.y) / 2 + depth + s.ny * wave.reach;
