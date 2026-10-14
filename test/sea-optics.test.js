@@ -79,3 +79,11 @@ test("caustic junctions animate deterministically and match across wrapped copie
     assert.ok(Math.abs(a.y - 290) <= 6);
   }
 });
+
+test("caustic sampling can reuse a caller-owned point without changing the light field", () => {
+  const point = {};
+  assert.equal(causticPoint(140, 290, 0, 1000, point), point);
+  assert.deepEqual(point, causticPoint(140, 290, 0, 1000));
+  causticPoint(-35, 140, 2, 1000, point);
+  assert.deepEqual(point, causticPoint(-35, 140, 2, 1000));
+});

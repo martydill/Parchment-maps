@@ -1,5 +1,15 @@
 // Illustration geometry lives in unwrapped island coordinates, just like the
 // geographic terrain. None of this detail changes navigation or saved state.
+export function terrainDetailRasterScale(
+  area,
+  pixelBudget = 8_000_000,
+  maxScale = 1.5,
+) {
+  if (area <= 0 || pixelBudget <= 0 || maxScale <= 0) return 0;
+  // Two detail layers share the budget. Leave room for rounding canvas edges.
+  return Math.min(maxScale, Math.sqrt(pixelBudget / (area * 2)) * 0.99);
+}
+
 export function terrainDetailLevels(zoom, detail = 1) {
   const smooth = (start, end) => {
     const t = Math.max(0, Math.min(1, (zoom - start) / (end - start)));

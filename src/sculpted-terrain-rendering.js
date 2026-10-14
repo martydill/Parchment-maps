@@ -2,8 +2,11 @@ import { litPigment } from "./core/lighting.js";
 import {
   cliffFacePlans,
   createTerrainDetailReveal,
+  terrainDetailRasterScale,
 } from "./core/terrain-detail.js";
 import { MAP_TILT_COS } from "./core/projection.js";
+import { shorelineCliffFaces } from "./core/shoreline.js";
+import { drawPigmentGranulation } from "./shoreline-rendering.js";
 
 function path(c, points, close = false) {
   c.beginPath();
@@ -260,7 +263,7 @@ export function drawTerrainDetails(c, terrain, palette, fine = false) {
 
 export function drawCliffDetails(c, faces, fine = false) {
   c.save();
-  for (const { a, b, depth, normal, fissures } of faces) {
+  for (const { a, b, depth, normal, fissures, kind } of faces) {
     c.save();
     path(
       c,
@@ -268,6 +271,29 @@ export function drawCliffDetails(c, faces, fine = false) {
       true,
     );
     c.clip();
+    if (kind) {
+      // Material faces are already painted in the chart. At close zoom, add
+      // sediment only; stacked contour and fissure strokes turn the coast into rails.
+      if (fine) {
+        c.globalAlpha *= 0.55;
+        drawPigmentGranulation(
+          c,
+          [
+            [a.x, a.y],
+            [b.x, b.y],
+            [b.x, b.y + depth],
+            [a.x, a.y + depth],
+          ],
+          Math.floor(Math.hypot(b.x - a.x, b.y - a.y) * 127 + depth * 31),
+          "#243e35",
+          "#b9c1a5",
+          10,
+        );
+      }
+      c.restore();
+      continue;
+    }
+
     if (!fine) {
       const shade = c.createLinearGradient(
         0,
@@ -325,41 +351,69 @@ export function createTerrainDetailRendering({ world, islands, paletteFor }) {
   const reveal = createTerrainDetailReveal();
   const scale = 1.5;
   const maxPixels = 8_000_000;
+  const boundsCache = new WeakMap();
   let cachedPixels = 0;
   let revision = 0;
-  function bake(island) {
+  function boundsFor(island) {
+    if (!boundsCache.has(island)) {
+      const xs = island.poly.map(([x]) => x),
+        ys = island.poly.map(([, y]) => y);
+      const left = Math.min(...xs),
+        right = Math.max(...xs);
+      const top = Math.min(...ys),
+        bottom = Math.max(...ys) + island.depth;
+      const x = Math.floor(left - 3),
+        y = Math.floor(top - 3);
+      boundsCache.set(island, {
+        left,
+        right,
+        top,
+        bottom,
+        x,
+        y,
+        width: Math.ceil(right - x + 3),
+        height: Math.ceil(bottom - y + 3),
+      });
+    }
+    return boundsCache.get(island);
+  }
+  function bake(island, rasterScale) {
     let plate = cache.get(island);
-    if (plate && plate.revision === revision) {
+    if (
+      plate &&
+      plate.revision === revision &&
+      plate.rasterScale <= rasterScale
+    ) {
       cache.delete(island);
       cache.set(island, plate);
       return plate;
     }
-    const xs = island.poly.map(([x]) => x),
-      ys = island.poly.map(([, y]) => y);
-    const x = Math.floor(Math.min(...xs) - 3),
-      y = Math.floor(Math.min(...ys) - 3);
-    const width = Math.ceil(Math.max(...xs) - x + 3);
-    const height = Math.ceil(Math.max(...ys) - y + island.depth + 3);
+    const { x, y, width, height } = boundsFor(island);
     if (!plate) {
       const layers = [
         document.createElement("canvas"),
         document.createElement("canvas"),
       ];
-      for (const canvas of layers) {
-        canvas.width = Math.ceil(width * scale);
-        canvas.height = Math.ceil(height * scale);
-      }
       plate = {
         x,
         y,
         width,
         height,
         layers,
-        pixels: layers[0].width * layers[0].height * 2,
+        pixels: 0,
       };
-      cachedPixels += plate.pixels;
     }
-    const faces = cliffFacePlans(island.poly, island.depth);
+    cachedPixels -= plate.pixels;
+    for (const canvas of plate.layers) {
+      canvas.width = Math.ceil(width * rasterScale);
+      canvas.height = Math.ceil(height * rasterScale);
+    }
+    plate.pixels = plate.layers[0].width * plate.layers[0].height * 2;
+    plate.rasterScale = rasterScale;
+    cachedPixels += plate.pixels;
+    const faces = island.shoreline
+      ? shorelineCliffFaces(island.shoreline, island.depth)
+      : cliffFacePlans(island.poly, island.depth);
     const palette = paletteFor(island.terrain.biome);
     for (const [index, canvas] of plate.layers.entries()) {
       const c = canvas.getContext("2d");
@@ -409,20 +463,30 @@ export function createTerrainDetailRendering({ world, islands, paletteFor }) {
       if (levels.sculpting < 0.001) return;
       const halfW = vw / (2 * camera.zoom),
         halfH = vh / (2 * camera.zoom * MAP_TILT_COS);
-      c.save();
-      const alpha = c.globalAlpha;
+      const visible = [];
+      let visibleArea = 0;
       for (const island of islands) {
-        const xs = island.poly.map(([x]) => x),
-          ys = island.poly.map(([, y]) => y);
-        const left = Math.min(...xs),
-          right = Math.max(...xs);
-        const top = Math.min(...ys),
-          bottom = Math.max(...ys) + island.depth;
+        const bounds = boundsFor(island);
+        const { left, right, top, bottom } = bounds;
         if (bottom < camera.y - halfH || top > camera.y + halfH) continue;
         const first = Math.ceil((camera.x - halfW - right - 3) / world.w);
         const last = Math.floor((camera.x + halfW - left + 3) / world.w);
         if (first > last) continue;
-        const plate = bake(island);
+        visible.push({ island, first, last });
+        visibleArea += bounds.width * bounds.height;
+      }
+      // Fit the entire visible working set, not only the last island. Otherwise
+      // the LRU continually discards and repaints neighboring islands every frame.
+      const rasterScale = terrainDetailRasterScale(
+        visibleArea,
+        maxPixels,
+        scale,
+      );
+      const pinned = new Set(visible.map(({ island }) => island));
+      c.save();
+      const alpha = c.globalAlpha;
+      for (const { island, first, last } of visible) {
+        const plate = bake(island, rasterScale);
         for (let copy = first; copy <= last; copy++) {
           for (const [index, canvas] of plate.layers.entries()) {
             c.globalAlpha =
@@ -439,8 +503,9 @@ export function createTerrainDetailRendering({ world, islands, paletteFor }) {
         }
       }
       c.restore();
-      while (cachedPixels > maxPixels && cache.size > 1) {
-        const [island, plate] = cache.entries().next().value;
+      for (const [island, plate] of cache) {
+        if (cachedPixels <= maxPixels) break;
+        if (pinned.has(island)) continue;
         cache.delete(island);
         cachedPixels -= plate.pixels;
         for (const canvas of plate.layers) canvas.width = canvas.height = 0;

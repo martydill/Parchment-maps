@@ -5,16 +5,12 @@ import {
 } from "./core/seasons.js";
 import { createMountainShadowRendering } from "./mountain-shadow-rendering.js";
 import { PORT_NAMES, LAND_NAMES } from "./names.js";
-import {
-  expandPolygon,
-  pointInWrappedPolygon,
-  polygonCentroid,
-} from "./core/geometry.js";
+import { pointInWrappedPolygon, polygonCentroid } from "./core/geometry.js";
 import { unwrapPath } from "./core/routes.js";
 import { portEvolution } from "./core/regional.js";
 import { MAP_TILT_TAN } from "./core/projection.js";
 import { coastFaceDepth } from "./core/seascape.js";
-import { LIGHT_DIRECTION, litPigment } from "./core/lighting.js";
+import { LIGHT_DIRECTION } from "./core/lighting.js";
 import {
   WIND_ROSE_NAMES,
   cartoucheInscription,
@@ -43,6 +39,12 @@ import {
   seasonalLandColor,
 } from "./terrain-rendering.js?v=5";
 import { createTerrainDetailRendering } from "./sculpted-terrain-rendering.js";
+import { planShoreline } from "./core/shoreline.js";
+import {
+  drawCoastalWater,
+  drawCoastalFaces,
+  drawCoastalLand,
+} from "./shoreline-rendering.js";
 export {
   drawMerchantShip,
   drawShip,
@@ -970,6 +972,9 @@ export function createMapRendering({
   const m = mapLayer.getContext("2d");
   const riverPaths = [];
   const terrainPlans = new Map();
+  const shorePlans = lands.map((land, index) =>
+    planShoreline(land.poly, 811 + index * 59, terrainBiome(land.name)),
+  );
   const terrainIslands = [];
   let seasonDay = game.day;
   let seasonKey = seasonAtDay(seasonDay).key;
@@ -1956,39 +1961,12 @@ export function createMapRendering({
     // islands with layered coast contours and internal parchment texture
     lands.forEach((l, li) => {
       const coastDepth = coastFaceDepth(li, l.satellite) * MAP_TILT_TAN;
-      // Layered shallow-water pigment and an ivory tide line sit underneath
-      // the engraved coast and raised cliffs. Built once, not each frame.
-      for (const [width, color] of [
-        [180, "rgba(24,74,85,.10)"],
-        [124, "rgba(40,130,127,.17)"],
-        [78, "rgba(89,171,151,.25)"],
-        [46, "rgba(151,200,160,.28)"],
-        [25, "rgba(217,226,176,.37)"],
-        [10, "rgba(255,241,199,.65)"],
-      ]) {
-        drawWrappedPolyPath(
-          m,
-          l.poly,
-          (poly) => {
-            m.save();
-            m.translate(0, coastDepth);
-            polyPath(m, poly);
-            m.lineJoin = "round";
-            m.strokeStyle = color;
-            m.lineWidth = width;
-            m.stroke();
-            m.restore();
-          },
-          100,
-        );
-      }
-      for (const off of [22, 14, 7]) {
-        drawWrappedPolyPath(m, expandPolygon(l.poly, off), (poly) => {
-          polyPath(m, poly);
-          m.strokeStyle = `rgba(54,43,25,${off === 22 ? 0.22 : off === 14 ? 0.34 : 0.48})`;
-          m.lineWidth = off === 22 ? 2 : 1.5;
-          m.stroke();
-        });
+      const shoreline = shorePlans[li];
+      for (const offset of polygonWorldOffsets(l.poly, 100)) {
+        m.save();
+        m.translate(offset, 0);
+        drawCoastalWater(m, l.poly, shoreline, coastDepth);
+        m.restore();
       }
       // Each coast has a vertical face projected from the raised top edge to
       // the sea plane. Back faces are hidden by the land surface drawn next.
@@ -2007,53 +1985,12 @@ export function createMapRendering({
           m.fill();
           m.restore();
 
-          let area = 0;
-          for (let i = 0; i < poly.length; i++) {
-            const a = poly[i];
-            const b = poly[(i + 1) % poly.length];
-            area += a[0] * b[1] - b[0] * a[1];
-          }
-          const facing = Math.sign(area) || 1;
-          for (let i = 0; i < poly.length; i++) {
-            const a = poly[i];
-            const b = poly[(i + 1) % poly.length];
-            if ((b[0] - a[0]) * facing >= 0) continue;
-            m.beginPath();
-            m.moveTo(a[0], a[1]);
-            m.lineTo(b[0], b[1]);
-            m.lineTo(b[0], b[1] + coastDepth);
-            m.lineTo(a[0], a[1] + coastDepth);
-            m.closePath();
-            m.fillStyle = litPigment("#b49463", [
-              (b[1] - a[1]) * facing,
-              -(b[0] - a[0]) * facing,
-              0,
-            ]);
-            m.fill();
-            m.save();
-            m.clip();
-            const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-            m.strokeStyle = "rgba(235,211,164,.24)";
-            m.lineWidth = 0.9;
-            for (const layer of [0.28, 0.67]) {
-              m.beginPath();
-              m.moveTo(a[0], a[1] + coastDepth * layer);
-              m.lineTo(b[0], b[1] + coastDepth * layer);
-              m.stroke();
-            }
-            m.strokeStyle = "rgba(36,30,24,.42)";
-            m.lineWidth = 1;
-            for (let step = 8; step < length; step += 13) {
-              const t = step / length;
-              const x = a[0] + (b[0] - a[0]) * t;
-              const y = a[1] + (b[1] - a[1]) * t;
-              m.beginPath();
-              m.moveTo(x, y + 2);
-              m.lineTo(x + 2, y + coastDepth * 0.75);
-              m.stroke();
-            }
-            m.restore();
-          }
+          // Use the same material plan as the shoreline and surf.
+          const offset = poly[0][0] - l.poly[0][0];
+          m.save();
+          m.translate(offset, 0);
+          drawCoastalFaces(m, shoreline, coastDepth);
+          m.restore();
         },
         40,
       );
@@ -2078,13 +2015,6 @@ export function createMapRendering({
         );
         m.fillStyle = pigment;
         m.fill();
-        m.strokeStyle = "#3b2b1a";
-        m.lineWidth = 7;
-        m.stroke();
-        polyPath(m, poly);
-        m.strokeStyle = "rgba(230,211,157,.54)";
-        m.lineWidth = 2;
-        m.stroke();
         // Hand-mixed pigment washes on some islands, the way late chartmakers
         // tinted their prize landfalls.
         const tint = islandTint(l.name, li);
@@ -2093,60 +2023,14 @@ export function createMapRendering({
           m.fillStyle = tint;
           m.fill();
         }
-        // An inset lit rim and a shaded rim read as a raised paper relief.
-        // Clipping leaves the sea's foam and shelf colors unobstructed.
-        m.save();
-        polyPath(m, poly);
-        m.clip();
-        let area = 0;
-        poly.forEach(([x, y], i) => {
-          const next = poly[(i + 1) % poly.length];
-          area += x * next[1] - next[0] * y;
-        });
-        const facing = Math.sign(area) || 1;
-        poly.forEach((a, i) => {
-          const b = poly[(i + 1) % poly.length];
-          const dx = b[0] - a[0],
-            dy = b[1] - a[1];
-          const light =
-            ((dy * LIGHT_DIRECTION.x - dx * LIGHT_DIRECTION.y) * facing) /
-            (Math.hypot(dx, dy) || 1);
-          m.strokeStyle =
-            light > 0 ? "rgba(255,238,184,.62)" : "rgba(64,47,27,.25)";
-          m.lineWidth = light > 0 ? 6 : 9;
-          m.beginPath();
-          m.moveTo(...a);
-          m.lineTo(...b);
-          m.stroke();
-        });
-        m.restore();
       });
 
-      // land stipple and short hatching clipped to each island
-      m.save();
-      wrappedClipPath(m, l.poly);
-      m.clip();
-      const lr = seeded(400 + li * 31);
-      m.fillStyle = "rgba(52,38,22,.16)";
-      for (let i = 0; i < 320; i++) {
-        const x = lr() * WORLD.w,
-          y = lr() * WORLD.h;
-        if (pointInWrappedPolygon(x, y, l.poly, WORLD.w))
-          m.fillRect(x, y, 1 + lr() * 1.5, 1 + lr() * 1.5);
+      for (const offset of polygonWorldOffsets(l.poly)) {
+        m.save();
+        m.translate(offset, 0);
+        drawCoastalLand(m, l.poly, shoreline);
+        m.restore();
       }
-      m.strokeStyle = "rgba(47,36,23,.12)";
-      m.lineWidth = 1;
-      for (let i = 0; i < 90; i++) {
-        const x = lr() * WORLD.w,
-          y = lr() * WORLD.h;
-        if (pointInWrappedPolygon(x, y, l.poly, WORLD.w)) {
-          m.beginPath();
-          m.moveTo(x, y);
-          m.lineTo(x + 8 + lr() * 12, y - 3 - lr() * 5);
-          m.stroke();
-        }
-      }
-      m.restore();
 
       const center = polygonCentroid(l.poly);
       const clearings = ports.map((port) => ({
@@ -2171,7 +2055,12 @@ export function createMapRendering({
         });
       terrainPlans.set(li, terrain);
       if (!terrainIslands[li])
-        terrainIslands[li] = { poly: l.poly, terrain, depth: coastDepth };
+        terrainIslands[li] = {
+          poly: l.poly,
+          terrain,
+          depth: coastDepth,
+          shoreline,
+        };
       riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
       m.save();
       wrappedClipPath(m, l.poly);
@@ -2185,29 +2074,6 @@ export function createMapRendering({
           seasonalAppearance(seasonDay, terrain.biome),
         );
         m.restore();
-      }
-      m.restore();
-
-      // Short, irregular hachures give the shore the engraved depth of a
-      // navigator's hand-inked chart without obscuring ports or terrain.
-      m.save();
-      m.strokeStyle = "rgba(48,34,20,.25)";
-      m.lineWidth = 1;
-      for (let i = 0; i < l.poly.length; i += 3) {
-        const [x, y] = l.poly[i];
-        const cent = polygonCentroid(l.poly);
-        const dx = x - cent.x,
-          dy = y - cent.y,
-          distance = Math.hypot(dx, dy) || 1,
-          nx = dx / distance,
-          ny = dy / distance;
-        for (let hatch = 0; hatch < 3; hatch++) {
-          const shift = hatch * 5;
-          m.beginPath();
-          m.moveTo(x + nx * (9 + shift), y + ny * (9 + shift));
-          m.lineTo(x + nx * (18 + shift), y + ny * (18 + shift));
-          m.stroke();
-        }
       }
       m.restore();
     });

@@ -54,19 +54,18 @@ export function shallowLightStrength(lighting = {}) {
   );
 }
 
-// Neighboring hexagons share the same deformation. Integer longitude waves
-// make the lace continuous across the atlas seam, even while it breathes.
-export function causticPoint(x, y, time, worldWidth) {
+// Gentle domain distortion shared by the light field. Integer longitude waves
+// keep the caustics continuous across the atlas seam while the water moves.
+export function causticPoint(x, y, time, worldWidth, point = {}) {
   const phase =
     ((((x % worldWidth) + worldWidth) % worldWidth) / worldWidth) * Math.PI * 2;
-  return {
-    x:
-      x +
-      Math.sin(phase * 37 + y * 0.047 + time * 0.7) * 4 +
-      Math.cos(phase * 53 - y * 0.031 - time * 0.43) * 2,
-    y:
-      y +
-      Math.cos(phase * 29 + y * 0.053 - time * 0.61) * 4 +
-      Math.sin(phase * 43 + y * 0.027 + time * 0.37) * 2,
-  };
+  point.x =
+    x +
+    Math.sin(phase * 37 + y * 0.047 + time * 0.7) * 4 +
+    Math.cos(phase * 53 - y * 0.031 - time * 0.43) * 2;
+  point.y =
+    y +
+    Math.cos(phase * 29 + y * 0.053 - time * 0.61) * 4 +
+    Math.sin(phase * 43 + y * 0.027 + time * 0.37) * 2;
+  return point;
 }

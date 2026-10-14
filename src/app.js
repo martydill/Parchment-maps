@@ -5479,6 +5479,7 @@ function render() {
   drawAnimatedRoughSeas(ctx, visualTime, z, graphics.particleScale);
   drawNavigationalHazards(ctx, z);
   seaRendering.drawCaustics(ctx, {
+    focus: { x: ship.x, y: ship.y, radius: 480 },
     camera,
     vw,
     vh,
