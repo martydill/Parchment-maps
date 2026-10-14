@@ -4,6 +4,8 @@ import {
   createTerrainDetailReveal,
 } from "./core/terrain-detail.js";
 import { MAP_TILT_COS } from "./core/projection.js";
+import { shorelineCliffFaces } from "./core/shoreline.js";
+import { drawPigmentGranulation } from "./shoreline-rendering.js";
 
 function path(c, points, close = false) {
   c.beginPath();
@@ -260,7 +262,7 @@ export function drawTerrainDetails(c, terrain, palette, fine = false) {
 
 export function drawCliffDetails(c, faces, fine = false) {
   c.save();
-  for (const { a, b, depth, normal, fissures } of faces) {
+  for (const { a, b, depth, normal, fissures, kind } of faces) {
     c.save();
     path(
       c,
@@ -268,6 +270,29 @@ export function drawCliffDetails(c, faces, fine = false) {
       true,
     );
     c.clip();
+    if (kind) {
+      // Material faces are already painted in the chart. At close zoom, add
+      // sediment only; stacked contour and fissure strokes turn the coast into rails.
+      if (fine) {
+        c.globalAlpha *= 0.55;
+        drawPigmentGranulation(
+          c,
+          [
+            [a.x, a.y],
+            [b.x, b.y],
+            [b.x, b.y + depth],
+            [a.x, a.y + depth],
+          ],
+          Math.floor(Math.hypot(b.x - a.x, b.y - a.y) * 127 + depth * 31),
+          "#243e35",
+          "#b9c1a5",
+          10,
+        );
+      }
+      c.restore();
+      continue;
+    }
+
     if (!fine) {
       const shade = c.createLinearGradient(
         0,
@@ -359,7 +384,9 @@ export function createTerrainDetailRendering({ world, islands, paletteFor }) {
       };
       cachedPixels += plate.pixels;
     }
-    const faces = cliffFacePlans(island.poly, island.depth);
+    const faces = island.shoreline
+      ? shorelineCliffFaces(island.shoreline, island.depth)
+      : cliffFacePlans(island.poly, island.depth);
     const palette = paletteFor(island.terrain.biome);
     for (const [index, canvas] of plate.layers.entries()) {
       const c = canvas.getContext("2d");

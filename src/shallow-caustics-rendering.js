@@ -1,6 +1,7 @@
 import { MAP_TILT_COS } from "./core/projection.js";
 import { nearestWrapped } from "./core/math.js";
-import { causticPoint, shallowLightStrength } from "./core/sea-optics.js";
+import { shallowLightStrength } from "./core/sea-optics.js";
+import { causticContours } from "./core/caustics.js";
 import { createRenderCadence } from "./core/render-quality.js";
 import { createRadialStamp } from "./radial-stamp.js";
 
@@ -112,67 +113,42 @@ export function createShallowCausticsRendering({
         }
         mask.restore();
 
-        // An even number of flat-top hexagon columns closes the wrapping grid.
-        const columns = Math.max(
-          2,
-          Math.ceil(WORLD.w / (detail >= 0.9 ? 36 : 54) / 2) * 2,
+        const ribbons = causticContours(
+          {
+            left: camera.x - halfW,
+            right: camera.x + halfW,
+            top: camera.y - halfH,
+            bottom: camera.y + halfH,
+          },
+          time / 1000,
+          WORLD.w,
+          detail,
         );
-        const spacing = WORLD.w / columns;
-        const radius = spacing / 1.5;
-        const rowHeight = Math.sqrt(3) * radius;
-        const first = Math.floor((camera.x - halfW - radius * 2) / spacing);
-        const last = Math.ceil((camera.x + halfW + radius * 2) / spacing);
-        const top = Math.floor((camera.y - halfH - rowHeight) / rowHeight);
-        const bottom = Math.ceil((camera.y + halfH + rowHeight) / rowHeight);
-        const t = time / 1000;
         web.beginPath();
-        for (let column = first; column <= last; column++) {
-          const stagger = ((column % 2) + 2) % 2;
-          for (let row = top; row <= bottom; row++) {
-            const x = column * spacing;
-            const y = (row + stagger * 0.5) * rowHeight;
-            // Three edges per cell: each junction is shared, never overdrawn.
-            let previous;
-            for (let corner = 0; corner <= 3; corner++) {
-              const angle = (corner * Math.PI) / 3;
-              const point = causticPoint(
-                x + Math.cos(angle) * radius,
-                y + Math.sin(angle) * radius,
-                t,
-                WORLD.w,
-              );
-              if (corner === 0) web.moveTo(point.x, point.y);
-              else {
-                const before = ((corner - 1) * Math.PI) / 3;
-                const middle = causticPoint(
-                  x + ((Math.cos(before) + Math.cos(angle)) * radius) / 2,
-                  y + ((Math.sin(before) + Math.sin(angle)) * radius) / 2,
-                  t,
-                  WORLD.w,
-                );
-                web.quadraticCurveTo(
-                  middle.x * 2 - (previous.x + point.x) / 2,
-                  middle.y * 2 - (previous.y + point.y) / 2,
-                  point.x,
-                  point.y,
-                );
-              }
-              previous = point;
-            }
+        for (const points of ribbons) {
+          web.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length - 1; i++) {
+            web.quadraticCurveTo(
+              points[i].x,
+              points[i].y,
+              (points[i].x + points[i + 1].x) / 2,
+              (points[i].y + points[i + 1].y) / 2,
+            );
           }
+          web.lineTo(points.at(-1).x, points.at(-1).y);
         }
         web.lineJoin = "round";
         web.lineCap = "round";
         const moonlit = (lighting?.daylight ?? 1) < 0.3;
         web.strokeStyle = moonlit
-          ? "rgba(170,218,255,0.22)"
-          : "rgba(211,255,214,0.22)";
-        web.lineWidth = 5 / Math.sqrt(z);
+          ? "rgba(170,218,255,0.12)"
+          : "rgba(211,255,214,0.12)";
+        web.lineWidth = 4 / Math.sqrt(z);
         web.stroke();
         web.strokeStyle = moonlit
-          ? "rgba(225,244,255,0.86)"
-          : "rgba(250,255,218,0.9)";
-        web.lineWidth = 1.25 / Math.sqrt(z);
+          ? "rgba(225,244,255,0.48)"
+          : "rgba(250,255,218,0.5)";
+        web.lineWidth = 1.24 / Math.sqrt(z);
         web.stroke();
         mask.setTransform(1, 0, 0, 1, 0, 0);
         mask.globalCompositeOperation = "source-in";

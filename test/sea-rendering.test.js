@@ -1017,3 +1017,78 @@ test("storm arc swell stretches the wave marks and quickens their pulse", () => 
   };
   assert.ok(extent(rolling) > extent(flat), "swell should lengthen wave marks");
 });
+
+test("material surf wraps, freezes with reduced motion, and leaves marsh channels quiet", async () => {
+  const { LAND_NAMES } = await import("../src/names.js");
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    commands = [];
+    rect(...args) {
+      this.commands.push(["rect", ...args]);
+    }
+    moveTo(...args) {
+      this.commands.push(["moveTo", ...args]);
+    }
+    lineTo(...args) {
+      this.commands.push(["lineTo", ...args]);
+    }
+    closePath() {}
+  };
+  try {
+    const poly = [
+      [430, 350],
+      [570, 350],
+      [570, 470],
+      [430, 470],
+    ];
+    const create = (name) =>
+      createSeaRendering({
+        WORLD: { w: 1000, h: 800 },
+        lands: [{ poly, name }],
+      });
+    const renderer = create(LAND_NAMES.eoslynKeys);
+    const render = (instance, overrides = {}) => {
+      const recording = recordingContext();
+      instance.drawSurface(recording.context, {
+        ...options,
+        time: 1000,
+        ...overrides,
+      });
+      return recording;
+    };
+    const foam = (recording) =>
+      recording.strokes.filter(({ style }) =>
+        String(style).startsWith("rgba(255,245,211,"),
+      );
+    const first = render(renderer);
+    assert.ok(foam(first).length > 0);
+    assert.notDeepEqual(foam(first), foam(render(renderer, { time: 4000 })));
+    assert.deepEqual(
+      foam(first),
+      foam(render(renderer, { camera: { ...options.camera, x: 1500 } })),
+    );
+    assert.deepEqual(
+      foam(render(renderer, { reducedMotion: true, time: 1000 })),
+      foam(render(renderer, { reducedMotion: true, time: 99000 })),
+    );
+    const marsh = create(LAND_NAMES.lunemire);
+    assert.equal(foam(render(marsh)).length, 0);
+    // The shelf lace consumes a valid cached Path2D even though surf animation
+    // now paints individual material segments. Marsh paths are intentionally empty.
+    for (const [instance, quiet] of [
+      [renderer, false],
+      [marsh, true],
+    ]) {
+      const target = recordingContext();
+      instance.drawCaustics(target.context, options);
+      const mask = target.calls.find(([method]) => method === "drawImage")[1];
+      const strokes = mask.calls.filter(([method]) => method === "stroke");
+      assert.ok(strokes.length > 0);
+      assert.ok(strokes.every(([, path]) => path instanceof globalThis.Path2D));
+      assert.equal(strokes[0][1].commands.length === 0, quiet);
+    }
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
