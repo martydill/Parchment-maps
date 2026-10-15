@@ -534,6 +534,7 @@ const seaRendering = createSeaRendering({
   lands,
   currents: worldCurrents,
   creatures: worldMonsters,
+  shoals: worldShoals,
 });
 let viewportZoom = 1;
 let userZoom = 1;
@@ -5593,6 +5594,16 @@ function render() {
     detail: effectDetail(),
     time,
     reducedMotion: reducedMotion.matches,
+  });
+  seaRendering.drawUnderwater(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    roughness: weather.roughness,
+    lighting,
+    reducedMotion: reducedMotion.matches,
+    detail: effectDetail(),
   });
   seaRendering.drawSurface(ctx, {
     bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,

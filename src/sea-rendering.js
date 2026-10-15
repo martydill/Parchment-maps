@@ -15,6 +15,7 @@ import { createRadialStamp } from "./radial-stamp.js";
 import { createSeaLightRendering } from "./sea-light-rendering.js";
 import { createSeaSurfaceRendering } from "./sea-surface-rendering.js";
 import { createShallowCausticsRendering } from "./shallow-caustics-rendering.js";
+import { createUnderwaterRendering } from "./underwater-rendering.js";
 import { glitterCorridor, seaLightSources } from "./core/sea-optics.js";
 import {
   buildWakeRibbon,
@@ -162,6 +163,7 @@ export function createSeaRendering({
   lands,
   currents = [],
   creatures = [],
+  shoals = [],
 }) {
   let riverPaths = [];
   let cachedView = null;
@@ -279,6 +281,13 @@ export function createSeaRendering({
   const glitterBatches = new Map();
   const causticsRendering = createShallowCausticsRendering({
     WORLD,
+    visibleCoasts,
+    clipWater,
+  });
+  const underwaterRendering = createUnderwaterRendering({
+    WORLD,
+    lands,
+    shoals,
     visibleCoasts,
     clipWater,
   });
@@ -1559,6 +1568,7 @@ export function createSeaRendering({
         time: options.reducedMotion ? 0 : options.time,
       }),
     drawCaustics: (c, options) => causticsRendering.draw(c, options),
+    drawUnderwater: (c, options) => underwaterRendering.draw(c, options),
     drawWake,
     drawReflections,
     drawEncounterCreature(c, { x, y, scale, index }) {
