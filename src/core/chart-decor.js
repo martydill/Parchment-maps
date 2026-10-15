@@ -1,6 +1,6 @@
 // Deterministic generators for the hand-inked chart furniture baked into the
 // world map layer: the portolan rhumb web, Catalan wind roses, coastal
-// toponymy, the leagues scale bar, and the physical wear of a surviving
+// toponymy, and the physical wear of a surviving
 // parchment (foxing, tidelines, wax drips, fold creases, tattered edges).
 // Everything here is pure math so the canvas work in rendering.js stays thin.
 
@@ -321,33 +321,6 @@ export function foldCreases(width, height, seed) {
       y1: height,
     },
   ];
-}
-
-// The leagues ladder every chart carries in a framed box.
-export function scaleBarSpec({ width, height }) {
-  if (
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0
-  )
-    return null;
-  const segment = 42;
-  const segments = 8;
-  const barWidth = segment * segments;
-  // Beneath the title cartouche in the northwestern sea, where a new voyage
-  // begins and the chartmaker's tools cluster together.
-  return {
-    x: width * 0.045,
-    y: height * 0.13,
-    segment,
-    segments,
-    total: 400,
-    values: [0, 200, 400],
-    caption: "LEAGUES",
-    width: barWidth,
-    height: 34,
-  };
 }
 
 // Occasional islands receive a wash of hand-mixed pigment, the way late

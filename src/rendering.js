@@ -21,7 +21,6 @@ import {
   islandTint,
   rhumbInk,
   rhumbRayAngles,
-  scaleBarSpec,
   tatteredEdge,
   tidelineRingPoints,
   tidelines,
@@ -2069,8 +2068,6 @@ export function createMapRendering({
     );
     m.restore();
 
-    drawScaleBar(m);
-
     // Physical wear sits over the ink: foxing blooms in the damp margins,
     // tide stains from an old soaking, drips of candle wax. Seeded so the
     // sheet reads as one surviving object.
@@ -2144,50 +2141,6 @@ export function createMapRendering({
     m.restore();
 
     drawTatteredEdges(m);
-  }
-
-  function drawScaleBar(c) {
-    const spec = scaleBarSpec({ width: WORLD.w, height: WORLD.h });
-    if (!spec) return;
-    c.save();
-    c.translate(spec.x, spec.y);
-    const frame = c.createLinearGradient(0, 0, spec.width, 0);
-    frame.addColorStop(0, "#8a5f28");
-    frame.addColorStop(0.5, "#caa24d");
-    frame.addColorStop(1, "#8a5f28");
-    c.strokeStyle = frame;
-    c.lineWidth = 2.4;
-    c.strokeRect(-10, -14, spec.width + 20, spec.height + 30);
-    c.strokeStyle = "rgba(56,34,17,.5)";
-    c.lineWidth = 1;
-    c.strokeRect(-6, -10, spec.width + 12, spec.height + 22);
-    // The ladder of leagues: filled and open steps alternate.
-    for (let index = 0; index < spec.segments; index += 1) {
-      const x = index * spec.segment;
-      if (index % 2 === 0) {
-        c.fillStyle = "rgba(129,52,36,.66)";
-        c.fillRect(x, 0, spec.segment, 9);
-      }
-      c.strokeStyle = "rgba(56,34,17,.65)";
-      c.lineWidth = 1;
-      c.strokeRect(x, 0, spec.segment, 9);
-    }
-    c.fillStyle = "rgba(47,29,15,.8)";
-    c.font = "10.5px Georgia";
-    c.textAlign = "center";
-    c.textBaseline = "alphabetic";
-    for (const value of spec.values) {
-      const x = (value / spec.total) * spec.width;
-      c.fillText(String(value), x, 26);
-      c.beginPath();
-      c.moveTo(x, 9);
-      c.lineTo(x, 13);
-      c.stroke();
-    }
-    c.font = "italic 11.5px Georgia";
-    c.textAlign = "left";
-    c.fillText(spec.caption, 0, 40);
-    c.restore();
   }
 
   // Torn, deckled north and south sheet edges — the vellum ends even though

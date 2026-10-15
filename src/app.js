@@ -5490,19 +5490,6 @@ function drawPortLabels(c, z, labelZoom) {
       label.x + label.width / 2 + 3,
       label.y + label.height / 2 + 1,
     );
-    const detail = labelZoomOpacity(labelZoom, "detail");
-    const layout = getHarborLayout(label.port.name);
-    if (layout && detail > 0) {
-      c.globalAlpha *= detail;
-      c.font = "italic 11px Georgia";
-      c.strokeStyle = "rgba(239,220,175,.92)";
-      c.lineWidth = 3;
-      const x = label.x + label.width / 2;
-      const y = label.y + label.height + 10;
-      c.strokeText(layout.composition.title, x, y);
-      c.fillText(layout.composition.title, x, y);
-      c.font = "700 14px Georgia";
-    }
   }
   c.restore();
 }
