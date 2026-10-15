@@ -1,6 +1,10 @@
-import { planShoreline } from "./core/shoreline.js";
+import {
+  planShoreline,
+  planTidalShoreline,
+  sampleVisualTide,
+} from "./core/shoreline.js";
 import { terrainBiome } from "./core/terrain.js";
-import { drawShoreBreak } from "./shoreline-rendering.js";
+import { drawShoreBreak, drawTidalShore } from "./shoreline-rendering.js";
 import { clamp, nearestWrapped } from "./core/math.js";
 import {
   BIOLUMINESCENT_RGB,
@@ -259,6 +263,7 @@ export function createSeaRendering({
       land,
       surf,
       shoreline,
+      tidalShore: planTidalShoreline(shoreline),
       depth,
       flocks,
       animals,
@@ -1192,15 +1197,21 @@ export function createSeaRendering({
           encounterCreature === index ? 1 - index * 3.7 : t,
         );
     });
-    for (const { shoreline, depth, offset } of visible) {
+    const tide = sampleVisualTide(t);
+    for (const { shoreline, tidalShore, depth, offset } of visible) {
       c.save();
       c.translate(offset, 0);
       c.lineCap = "round";
+      for (const patch of tidalShore) {
+        if (!inView(patch.x + offset, patch.y + depth, 36, detailView))
+          continue;
+        drawTidalShore(c, patch, depth, tide);
+      }
       for (const segment of shoreline) {
         const x = (segment.a.x + segment.b.x) / 2 + offset;
         const y = (segment.a.y + segment.b.y) / 2 + depth;
         if (!inView(x, y, 36, detailView)) continue;
-        drawShoreBreak(c, segment, depth, t, roughness, z);
+        drawShoreBreak(c, segment, depth, t, roughness, z, tide);
       }
       c.restore();
     }

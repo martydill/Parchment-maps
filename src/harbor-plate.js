@@ -205,7 +205,7 @@ export function drawHarborPlate(
     c.save();
     c.translate(width * 0.5, height * 0.57);
     c.scale(scale, scale);
-    art.draw(c, port.name, evolution, undefined, lighting, season);
+    art.draw(c, port.name, evolution, undefined, lighting, season, clock);
     drawPortActivity(
       c,
       port.name,

@@ -1219,6 +1219,27 @@ test("material surf wraps, freezes with reduced motion, and leaves marsh channel
         String(style).startsWith("rgba(255,245,211,"),
       );
     const first = render(renderer);
+    const tidalPaint = (recording) =>
+      recording.calls.filter(
+        ([method, value]) => method === "fillStyle" && value === "#c5b780",
+      );
+    assert.equal(tidalPaint(render(renderer, { time: 0 })).length, 0);
+    const lowTide = render(renderer, { time: 120000 });
+    assert.ok(tidalPaint(lowTide).length > 0);
+    assert.equal(
+      tidalPaint(lowTide).length,
+      tidalPaint(
+        render(renderer, {
+          time: 120000,
+          camera: { ...options.camera, x: 1500 },
+        }),
+      ).length,
+    );
+    assert.equal(
+      tidalPaint(render(renderer, { time: 120000, reducedMotion: true }))
+        .length,
+      0,
+    );
     assert.ok(foam(first).length > 0);
     assert.notDeepEqual(foam(first), foam(render(renderer, { time: 4000 })));
     assert.deepEqual(

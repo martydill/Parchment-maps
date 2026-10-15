@@ -1,5 +1,33 @@
 import { pointInPolygon } from "./geometry.js";
 
+// Seconds on the presentation clock, independent of voyage time and saves.
+// This is a visual intertidal skin; never feed it into collision or routing.
+export const VISUAL_TIDE_PERIOD = 240;
+
+export function sampleVisualTide(time = 0) {
+  const phase =
+    ((time % VISUAL_TIDE_PERIOD) / VISUAL_TIDE_PERIOD) * Math.PI * 2;
+  const exposure = (1 - Math.cos(phase)) / 2;
+  return { level: 1 - exposure, exposure, waterline: exposure * 8 };
+}
+
+// Reuse the shoreline's local frame, so patches retain their position and
+// shape across world copies. Broad sand lenses alternate with wet rock ledges.
+export function planTidalShoreline(segments) {
+  return segments
+    .filter((s) => s.kind !== "marsh" && s.grain > 0.4)
+    .map((s) => ({
+      x: (s.a.x + s.b.x) / 2 + s.nx * 3,
+      y: (s.a.y + s.b.y) / 2 + s.ny * 3,
+      angle: Math.atan2(s.ty, s.tx),
+      along: s.length * (0.55 + s.grain * 0.3),
+      across: s.kind === "sand" ? 5 + s.grain * 5 : 3 + s.grain * 3,
+      kind: s.kind,
+      grain: s.grain,
+      pool: s.kind !== "sand" && s.grain > 0.82,
+    }));
+}
+
 function randomSource(seed) {
   let value = seed >>> 0;
   return () => {

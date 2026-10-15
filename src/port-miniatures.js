@@ -1,4 +1,5 @@
 import { mixSeasonColor } from "./core/seasons.js";
+import { sampleVisualTide } from "./core/shoreline.js";
 import { getHarborLayout } from "./harbor-layouts.js";
 import { harborFocalWalk } from "./core/harbor-composition.js";
 import { drawHarborSkyline } from "./harbor-skyline-rendering.js";
@@ -205,6 +206,7 @@ export function createPortMiniatureCache(resolution = 2) {
       heading = DEFAULT_HEADING,
       lighting = sceneLighting(),
       season,
+      time = 0,
     ) {
       if (!SCENES.has(name)) return false;
       const plateLighting = portPlateLighting(lighting);
@@ -249,6 +251,7 @@ export function createPortMiniatureCache(resolution = 2) {
         plate = { key, canvas, lightEdges };
         plates.set(name, plate);
       }
+      drawTidalPierSupports(c, name, time, evolution, heading, lighting);
       c.drawImage(plate.canvas, -112, -136, 224, 224);
       return true;
     },
@@ -1320,6 +1323,49 @@ function drawDock(c, scene, [u, v, w, d, angle]) {
   });
 }
 
+// A live layer beneath the cached decks. Receding water reveals stained piles
+// and braces without rebuilding the architecture plate on every tide frame.
+export function drawTidalPierSupports(
+  c,
+  name,
+  time = 0,
+  evolution = {},
+  heading = DEFAULT_HEADING,
+  lighting = sceneLighting(),
+) {
+  const scene = SCENES.get(name);
+  const tide = sampleVisualTide(time / 1000);
+  if (!scene || tide.exposure < 0.001) return;
+  const layout = scene.layout;
+  setGridHeading(heading + layout.angle);
+  miniatureLighting = lighting;
+  c.save();
+  c.scale(layout.scale, layout.scale);
+  c.globalAlpha *= (1 - lighting.night * 0.5) * tide.exposure;
+  const bottom = -4 - tide.waterline;
+  for (const [u, v, w, d, angle] of layout.docks.slice(
+    0,
+    Math.min(layout.docks.length, harborDevelopment(evolution).docks + 1),
+  )) {
+    withFrame({ u, v, angle }, () => {
+      for (const y of [-d / 2 + 3, d / 2 - 3]) {
+        for (const x of [-w / 2 + 2, w / 2 - 2]) {
+          line(c, [x, y, bottom], [x, y, -3.8], "#3c4336", 2.2);
+          line(
+            c,
+            [x - 0.4, y, Math.max(bottom, -6)],
+            [x - 0.4, y, -3.8],
+            "#827452",
+            0.65,
+          );
+        }
+        line(c, [-w / 2 + 2, y, bottom], [w / 2 - 2, y, -3.8], "#5b5038", 1);
+      }
+    });
+  }
+  c.restore();
+}
+
 function samplePromenade(points, progress) {
   const position = progress * (points.length - 1);
   const index = Math.min(points.length - 2, Math.floor(position));
@@ -2141,7 +2187,15 @@ export function drawPortScene(
   layer(1, () => {
     c.translate(width * 0.5, height * 0.74);
     c.scale(height / 205, height / 205);
-    architecture.draw(c, name, evolution, DEFAULT_HEADING, lighting, season);
+    architecture.draw(
+      c,
+      name,
+      evolution,
+      DEFAULT_HEADING,
+      lighting,
+      season,
+      clock,
+    );
     drawPortActivity(
       c,
       name,

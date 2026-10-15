@@ -8,6 +8,61 @@ import { createAlphaPalette } from "./style-palette.js";
 const foamStroke = createAlphaPalette("255,245,211", 0, 0.72, 48);
 const sprayFill = createAlphaPalette("255,249,223", 0, 0.55, 32);
 
+// Drawn over the sea inside its existing land/cliff masks. The narrow patches
+// stay within the painted shelf and never replace the authored coastline.
+export function drawTidalShore(c, patch, depth, tide) {
+  if (tide.exposure < 0.001) return;
+  const sand = patch.kind === "sand";
+  c.save();
+  c.translate(patch.x, patch.y + depth);
+  c.rotate(patch.angle);
+  c.scale(patch.along, patch.across * (0.25 + tide.exposure * 0.75));
+  c.globalAlpha *= tide.exposure;
+  c.beginPath();
+  c.moveTo(-1, 0);
+  if (sand) {
+    c.bezierCurveTo(-0.7, -0.75, 0.45, -0.85, 1, -0.12);
+    c.bezierCurveTo(0.6, 0.75, -0.45, 0.9, -1, 0);
+  } else {
+    c.lineTo(-0.65, -0.7);
+    c.lineTo(0.2, -0.9);
+    c.lineTo(0.95, -0.2);
+    c.lineTo(0.65, 0.65);
+    c.lineTo(-0.4, 0.8);
+  }
+  c.closePath();
+  c.fillStyle = sand ? "#c5b780" : materials[patch.kind].face;
+  c.fill();
+  c.clip();
+  // The lower edge stays dark and wet, with a small reflected sky plane.
+  c.fillStyle = sand ? "rgba(110,109,74,.35)" : "rgba(22,46,44,.52)";
+  c.fillRect(-1, 0.2, 2, 0.8);
+  c.fillStyle = sand ? "rgba(239,221,165,.5)" : "rgba(165,181,155,.28)";
+  c.fillRect(-0.6, -0.5, 1.05, 0.12);
+  if (patch.pool) {
+    const center = (patch.grain - 0.9) * 3;
+    c.beginPath();
+    c.ellipse(
+      center,
+      0.02,
+      0.25 + patch.grain * 0.1,
+      0.4,
+      -0.15,
+      0,
+      Math.PI * 2,
+    );
+    c.fillStyle = "#264e50";
+    c.fill();
+    c.beginPath();
+    c.ellipse(center - 0.02, -0.05, 0.25, 0.24, -0.15, 0, Math.PI * 2);
+    c.fillStyle = "#5e9188";
+    c.fill();
+    c.fillStyle = "rgba(225,238,205,.5)";
+    c.fillRect(center - 0.17, -0.16, 0.25, 0.06);
+  }
+  c.restore();
+}
+
 const materials = {
   sand: {
     pool: "107,91,53",
@@ -283,13 +338,14 @@ export function drawCoastalLand(c, poly, segments) {
   c.restore();
 }
 
-export function drawShoreBreak(c, segment, depth, time, roughness, zoom) {
+export function drawShoreBreak(c, segment, depth, time, roughness, zoom, tide) {
   if (segment.grain < 0.38) return;
   const wave = sampleShoreBreak(segment, time, roughness);
   if (!wave || wave.alpha < 0.025) return;
   const s = segment;
-  const x = (s.a.x + s.b.x) / 2 + s.nx * wave.reach;
-  const y = (s.a.y + s.b.y) / 2 + depth + s.ny * wave.reach;
+  const reach = wave.reach + (tide?.waterline ?? 0);
+  const x = (s.a.x + s.b.x) / 2 + s.nx * reach;
+  const y = (s.a.y + s.b.y) / 2 + depth + s.ny * reach;
   const half = s.length * (s.kind === "sand" ? 0.25 + s.grain * 0.2 : 0.18);
   c.strokeStyle = foamStroke(wave.alpha * 0.68);
   c.lineWidth = (s.kind === "sand" ? 0.7 : 1.15) / zoom;

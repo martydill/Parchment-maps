@@ -6,6 +6,7 @@ import {
   drawHarborBoats,
   drawDocksideFishingBoats,
   drawPortMiniature,
+  drawTidalPierSupports,
   drawPortScene,
   hasPortMiniature,
 } from "../src/port-miniatures.js";
@@ -59,6 +60,28 @@ function canvasContext() {
   );
   return { context, fills, coordinates };
 }
+
+test("tidal supports expose timber below fixed decks and follow each harbor heading", () => {
+  const high = canvasContext();
+  drawTidalPierSupports(high.context, PORT_NAMES.velquorin, 0);
+  drawTidalPierSupports(high.context, "Unknown", 120000);
+  assert.deepEqual(high.coordinates, []);
+  const render = (time, heading, evolution, name = PORT_NAMES.velquorin) => {
+    const target = canvasContext();
+    drawTidalPierSupports(target.context, name, time, evolution, heading);
+    return target.coordinates;
+  };
+  const low = render(120000);
+  assert.ok(low.length > 0);
+  assert.ok(low.flat().every(Number.isFinite));
+  assert.notDeepEqual(low, render(60000));
+  assert.notDeepEqual(low, render(120000, Math.PI / 2));
+  assert.ok(
+    render(120000, undefined, { level: 3 }, PORT_NAMES.orvessaQuay).length >
+      render(120000, undefined, { level: 0 }, PORT_NAMES.orvessaQuay).length,
+  );
+  assert.deepEqual(low, render(360000));
+});
 
 test("foundry glow, sparks, and smoke use bounded palettes while animating", () => {
   const palettes = new Map([
@@ -167,6 +190,20 @@ test("harbor architecture plates reuse artwork and refresh when development or h
     const first = canvases[0].fills.length;
     cache.draw(context, PORT_NAMES.velquorin, { level: 0 });
     assert.equal(canvases[0].fills.length, first);
+    cache.draw(
+      context,
+      PORT_NAMES.velquorin,
+      { level: 0 },
+      undefined,
+      undefined,
+      undefined,
+      120000,
+    );
+    assert.equal(
+      canvases[0].fills.length,
+      first,
+      "tides reuse the architecture plate",
+    );
     cache.draw(context, PORT_NAMES.velquorin, { level: 3 });
     const developed = canvases[0].fills.length;
     assert.ok(developed - first > first);

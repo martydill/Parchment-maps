@@ -6,6 +6,9 @@ import {
   planPigmentGrains,
   sampleShoreBreak,
   shorelineCliffFaces,
+  sampleVisualTide,
+  planTidalShoreline,
+  VISUAL_TIDE_PERIOD,
 } from "../src/core/shoreline.js";
 
 const square = [
@@ -24,6 +27,56 @@ const cove = [
   [100, 300],
   [0, 300],
 ];
+
+test("visual tides recede slowly, repeat smoothly, and do not mutate shoreline geometry", () => {
+  const period = VISUAL_TIDE_PERIOD;
+  assert.equal(period, 240);
+  assert.deepEqual(sampleVisualTide(), { level: 1, exposure: 0, waterline: 0 });
+  assert.deepEqual(sampleVisualTide(period / 2), {
+    level: 0,
+    exposure: 1,
+    waterline: 8,
+  });
+  for (const time of [-period, -11, 0, 12, 60, 120, period, 1e6]) {
+    const tide = sampleVisualTide(time);
+    assert.ok(tide.level >= 0 && tide.level <= 1);
+    assert.ok(tide.exposure >= 0 && tide.exposure <= 1);
+    assert.ok(Math.abs(tide.level + tide.exposure - 1) < 1e-12);
+    assert.ok(
+      Math.abs(tide.exposure - sampleVisualTide(time + period).exposure) < 1e-9,
+    );
+    assert.ok(
+      Math.abs(tide.exposure - sampleVisualTide(time + 1).exposure) < 0.014,
+    );
+  }
+  assert.ok(sampleVisualTide(60).exposure < sampleVisualTide(61).exposure);
+  assert.ok(sampleVisualTide(180).exposure > sampleVisualTide(181).exposure);
+  assert.ok(
+    Math.abs(
+      sampleVisualTide(-0.01).exposure - sampleVisualTide(0.01).exposure,
+    ) < 1e-12,
+  );
+  const segments = planShoreline(cove, 811);
+  const original = structuredClone(segments);
+  const patches = planTidalShoreline(segments);
+  assert.deepEqual(segments, original);
+  assert.deepEqual(patches, planTidalShoreline(segments));
+  assert.deepEqual(planTidalShoreline([]), []);
+  assert.deepEqual(planTidalShoreline(planShoreline(cove, 811, "marsh")), []);
+  assert.ok(patches.some((p) => p.kind === "sand"));
+  assert.ok(patches.some((p) => p.pool));
+  assert.ok(patches.every((p) => p.across <= 10 && p.along <= 18));
+  const shifted = planTidalShoreline(
+    planShoreline(
+      cove.map(([x, y]) => [x + 4800, y]),
+      811,
+    ),
+  );
+  shifted.forEach((patch, i) => {
+    assert.ok(Math.abs(patch.x - patches[i].x - 4800) < 1e-9);
+    assert.deepEqual({ ...patch, x: patches[i].x }, patches[i]);
+  });
+});
 
 test("shoreline plans preserve geometry, subdivide continuously, and are deterministic", () => {
   const original = structuredClone(cove);
