@@ -251,10 +251,14 @@ import {
 } from "./core/navigation.js";
 import {
   adjustSpecialistLoyalty,
+  advanceOfficerAmbitions,
   normalizeSpecialistState,
+  OFFICER_AMBITIONS,
+  resolveOfficerAmbition,
   resolveSpecialistEvent,
   SPECIALIST_ROSTER,
   specialistCombatBonus,
+  specialistCustomsRelief,
   specialistExplorationBonus,
   specialistPower,
   specialistRewardMultiplier,
@@ -383,7 +387,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=19";
+} from "./ui/panels.js?v=20";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels, renderShipyard } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
@@ -531,6 +535,7 @@ const seaRendering = createSeaRendering({
   lands,
   currents: worldCurrents,
   creatures: worldMonsters,
+  shoals: worldShoals,
 });
 let viewportZoom = 1;
 let userZoom = 1;
@@ -1992,6 +1997,81 @@ function updateMilestoneCompletion() {
     );
   }
 }
+function processOfficerAmbitions() {
+  const result = advanceOfficerAmbitions(
+    game.specialists,
+    game.day,
+    (destination) => {
+      const port = getPortByName(destination);
+      const distance = currentPort
+        ? (routeDistanceBetween(currentPort.name, destination) ??
+          wrappedDistance(currentPort.x, currentPort.y, port.x, port.y))
+        : wrappedDistance(ship.x, ship.y, port.x, port.y);
+      return estimateVoyageDays(distance, {
+        maxSpeed: operationalShipStats().maxSpeed,
+      });
+    },
+  );
+  game.specialists = result.state;
+  for (const event of result.events) {
+    addNews(event.title, event.body);
+    revealContractDestination(
+      getPortByName(OFFICER_AMBITIONS[event.officerId].destination),
+    );
+    showMessage(`${event.title} · Ship → Officers`, 6);
+  }
+}
+
+function chooseOfficerAmbition(officerId, action) {
+  const portName =
+    currentPort && (game.legal.portBans[currentPort.name] || 0) < game.day
+      ? currentPort.name
+      : null;
+  const result = resolveOfficerAmbition(game.specialists, {
+    officerId,
+    action,
+    day: game.day,
+    portName,
+    coins: game.coins,
+  });
+  if (!result.ok) return showMessage(result.reason, 4);
+  game.specialists = result.state;
+  game.coins = result.coins;
+  addNews(result.event.title, result.event.body);
+  showMessage(result.event.body, 6);
+  renderShipPanel();
+  if (currentPort) renderPortSystems();
+  updateHud();
+  saveGameState();
+  document
+    .querySelector(`[data-officer-id="${officerId}"] .officer-request-status`)
+    .focus();
+}
+
+function plotOfficerCourse(officerId) {
+  const officer = game.specialists.officers.find(
+    (item) => item.id === officerId,
+  );
+  if (officer?.ambition.status !== "accepted") return;
+  const destination = OFFICER_AMBITIONS[officerId].destination;
+  plotCourse(
+    game.navigation,
+    destination,
+    ports.map((port) => port.name),
+  );
+  document.getElementById("shipPanel").style.display = "none";
+  if (currentPort) renderPortSystems();
+  showMessage(
+    `Course plotted for ${destination} · promise due Day ${officer.ambition.deadline}.`,
+    5,
+  );
+  updateHud();
+  saveGameState();
+  document
+    .getElementById(currentPort ? "portOfficersButton" : "shipButton")
+    .focus();
+}
+
 function advanceDays(days) {
   days = Math.max(0, Math.floor(days));
   for (let i = 0; i < days; i++) {
@@ -2034,6 +2114,7 @@ function advanceDays(days) {
       );
       addNews(specialistEvent.event.title, specialistEvent.event.body);
     }
+    processOfficerAmbitions();
     processWorldEventsForDay();
     processRegionalCrisesForDay();
     runEconomyDay();
@@ -2091,6 +2172,17 @@ function advanceDays(days) {
   game.activeContracts = retained;
   maybeStartShortage();
   updateMilestoneCompletion();
+  if (days && document.getElementById("shipPanel").style.display === "grid") {
+    const focusedOfficer =
+      document.activeElement.closest("[data-officer-id]")?.dataset.officerId;
+    renderShipPanel();
+    if (focusedOfficer)
+      document
+        .querySelector(
+          `[data-officer-id="${focusedOfficer}"] .officer-request-status`,
+        )
+        .focus();
+  }
 }
 function normalizeVoyageTimeState() {
   if (game.departedFromPort === null) return resetVoyageTimeState();
@@ -3716,6 +3808,8 @@ const ui = {
   plottedCourseClear: document.getElementById("plottedCourseClear"),
 };
 const panelContext = {
+  chooseOfficerAmbition,
+  plotOfficerCourse,
   refreshPortWorkspace() {
     refreshPortWorkspaces({
       game,
@@ -3850,6 +3944,7 @@ function applyNarrativeNames() {
 applyNarrativeNames();
 
 function revealStartedGame({ message = null, save = false } = {}) {
+  processOfficerAmbitions();
   ui.dock.style.display = nearPort ? "block" : "none";
   ui.town.style.display = nearPort ? "block" : "none";
   revealCurrentView(true);
@@ -5476,6 +5571,16 @@ function render() {
     time,
     reducedMotion: reducedMotion.matches,
   });
+  seaRendering.drawUnderwater(ctx, {
+    camera,
+    vw,
+    vh,
+    time: visualTime,
+    roughness: weather.roughness,
+    lighting,
+    reducedMotion: reducedMotion.matches,
+    detail: effectDetail(),
+  });
   seaRendering.drawSurface(ctx, {
     bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
     deferLighting: true,
@@ -7013,6 +7118,7 @@ function openPort() {
       reputation: game.factionStanding[dominantFaction(currentPort).name] || 0,
       laws,
       seed: `${game.departedFromPort}:${distance}`,
+      scrutinyRelief: specialistCustomsRelief(game.specialists),
     });
     if (!customs.admitted) {
       addNews("Entry refused at " + currentPort.name, customs.reason);
@@ -7074,6 +7180,16 @@ function openPort() {
     );
   }
   resolveContractsAtPort(currentPort);
+  const officerAtPort = game.specialists.officers.find(
+    (officer) =>
+      officer.ambition.status === "accepted" &&
+      OFFICER_AMBITIONS[officer.id].destination === currentPort.name,
+  );
+  if (officerAtPort)
+    showMessage(
+      "An officer’s promise can be fulfilled here · Open Officers in the harbor",
+      6,
+    );
   document.getElementById("portName").textContent = currentPort.name;
   document.getElementById("portFlavor").textContent = currentPort.flavor;
   renderPortSystems();
@@ -7828,14 +7944,28 @@ ledgerPanel.addEventListener("click", (e) => {
 
 const shipButton = document.getElementById("shipButton"),
   shipPanel = document.getElementById("shipPanel");
-shipButton.addEventListener("click", () => {
+function openShipRegister(tab = null) {
   renderShipPanel();
-  activateSectionTabs(shipPanel, "vessel");
+  const pendingRequest = game.specialists.officers.some((officer) =>
+    ["offered", "accepted"].includes(officer.ambition.status),
+  );
+  activateSectionTabs(
+    shipPanel,
+    tab || (pendingRequest ? "officers" : "vessel"),
+  );
   shipPanel.style.display = "grid";
-});
+  document.querySelector("#shipPanel .port-tab.active").focus();
+}
+shipButton.addEventListener("click", () => openShipRegister());
 document
-  .getElementById("closeShip")
-  .addEventListener("click", () => (shipPanel.style.display = "none"));
+  .getElementById("portOfficersButton")
+  .addEventListener("click", () => openShipRegister("officers"));
+document.getElementById("closeShip").addEventListener("click", () => {
+  shipPanel.style.display = "none";
+  document
+    .getElementById(currentPort ? "portOfficersButton" : "shipButton")
+    .focus();
+});
 shipPanel.addEventListener("click", (e) => {
   if (e.target === shipPanel) shipPanel.style.display = "none";
 });
