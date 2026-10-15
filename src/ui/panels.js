@@ -22,6 +22,7 @@ import {
   decommissionFleetShip,
 } from "../core/fleet.js";
 import { drawShip } from "../rendering.js?v=5";
+import { renderOfficerCards } from "./officer-ambitions.js";
 
 let panelContext;
 let acceptContract,
@@ -207,6 +208,34 @@ function syncPanelContext() {
 
 export function updateHud() {
   syncPanelContext();
+
+  const request = game.specialists.officers.find((officer) =>
+    ["offered", "accepted"].includes(officer.ambition.status),
+  );
+  const requestBadge = document.getElementById("officerRequestBadge");
+  updateElementProperty(requestBadge, "hidden", !request);
+  updateElementProperty(
+    document.getElementById("portOfficersButton"),
+    "textContent",
+    request
+      ? `Officers · request due Day ${request.ambition.deadline}`
+      : "Officers",
+  );
+  const shipButton = document.getElementById("shipButton");
+  updateElementProperty(
+    shipButton,
+    "ariaLabel",
+    request
+      ? `Open officers: personal request due Day ${request.ambition.deadline}`
+      : "Open ship’s register",
+  );
+  updateElementProperty(
+    shipButton,
+    "title",
+    request
+      ? `Officer request · Day ${request.ambition.deadline}`
+      : "Ship’s register",
+  );
 
   const stats = operationalShipStats();
   updateElementProperty(
@@ -1543,14 +1572,18 @@ export function renderShipPanel() {
     )
     .join("");
 
-  const specialistState = new Map(
-    game.specialists.officers.map((officer) => [officer.id, officer]),
-  );
-  document.getElementById("shipRegisterSpecialists").innerHTML =
-    SPECIALIST_ROSTER.map((definition) => {
-      const officer = specialistState.get(definition.id);
-      return `<article class="specialist-card"><header><span class="specialist-emblem">${definition.emblem}</span><span><h4>${definition.name}</h4><span class="small">${definition.role} · ${definition.origin}</span></span><b>${Math.round(officer.loyalty)} ♥</b></header><p><b>Benefit:</b> ${definition.benefit}</p><p><b>Flaw:</b> ${definition.flaw}</p><p class="small"><b>Ambition:</b> ${definition.ambition}<br><b>Ties:</b> ${definition.relationship} · ${officer.events} event${officer.events === 1 ? "" : "s"}</p></article>`;
-    }).join("");
+  renderOfficerCards(document.getElementById("shipRegisterSpecialists"), {
+    specialists: game.specialists,
+    day: game.day,
+    coins: game.coins,
+    portName:
+      currentPort && (game.legal.portBans[currentPort.name] || 0) < game.day
+        ? currentPort.name
+        : null,
+    contracts: game.activeContracts,
+    onChoose: panelContext.chooseOfficerAmbition,
+    onPlotCourse: panelContext.plotOfficerCourse,
+  });
 
   const obligationsRoot = document.getElementById("shipRegisterObligations");
   const obligations = ops.obligations.filter(

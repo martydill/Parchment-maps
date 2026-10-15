@@ -140,6 +140,7 @@ export function customsScrutiny({
   cultivated = false,
   forgedManifest = false,
   remoteAnchorage = false,
+  scrutinyRelief = 0,
 }) {
   const base = JURISDICTIONS[portName]?.scrutiny ?? 0.5;
   return clamp(
@@ -150,7 +151,8 @@ export function customsScrutiny({
       recentBehavior * 0.025 -
       (cultivated ? 0.2 : 0) -
       (remoteAnchorage ? 0.28 : 0) +
-      (forgedManifest ? 0.08 : 0),
+      (forgedManifest ? 0.08 : 0) -
+      scrutinyRelief,
     0.05,
     0.95,
   );
@@ -173,6 +175,7 @@ export function resolveCustoms({
   reputation = 0,
   laws = {},
   seed = "",
+  scrutinyRelief = 0,
 }) {
   if ((state.portBans[portName] || 0) >= day)
     return {
@@ -209,6 +212,7 @@ export function resolveCustoms({
     cultivated: state.cultivatedOfficials[portName],
     forgedManifest: forged,
     remoteAnchorage: remote,
+    scrutinyRelief,
   });
   const inspected = deterministicRoll(`${seed}:${portName}:${day}`) < scrutiny;
   const forgeryDetected =
