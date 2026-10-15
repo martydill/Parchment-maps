@@ -14,13 +14,11 @@ import { LIGHT_DIRECTION } from "./core/lighting.js";
 import {
   WIND_ROSE_NAMES,
   cartoucheInscription,
-  coastAspect,
   createRhumbWeb,
   edgeDepthAt,
   foldCreases,
   foxingClusters,
   islandTint,
-  portChartLabel,
   rhumbInk,
   rhumbRayAngles,
   scaleBarSpec,
@@ -1720,47 +1718,6 @@ export function createMapRendering({
     c.restore();
   }
 
-  // Portolan toponymy inked onto the sheet itself: names run parallel to the
-  // local coast, red in shield boxes for the great ports, plain black for
-  // minor landings. The interactive screen-space labels stay on top.
-  function drawPortChartLabels(c) {
-    c.save();
-    c.textAlign = "center";
-    c.textBaseline = "middle";
-    if ("letterSpacing" in c) c.letterSpacing = "1.5px";
-    for (const port of ports) {
-      const aspect = coastAspect(onLand, port.x, port.y, 46);
-      if (!aspect) continue;
-      const style = portChartLabel(
-        port,
-        portMiniaturePlacements.has(port.name),
-      );
-      const labelX = port.x + aspect.seaward.x * 26;
-      const labelY = port.y + aspect.seaward.y * 26;
-      const boxWidth = port.name.length * 7 + 14;
-      const half = boxWidth / 2 + 8;
-      const offsets = [0];
-      if (labelX - half < 0) offsets.push(WORLD.w);
-      if (labelX + half > WORLD.w) offsets.push(-WORLD.w);
-      for (const offset of offsets) {
-        c.save();
-        c.translate(labelX + offset, labelY);
-        c.rotate(aspect.angle);
-        if (style.boxed) {
-          c.strokeStyle = "rgba(146,44,34,.5)";
-          c.lineWidth = 1.1;
-          c.strokeRect(-boxWidth / 2, -8.5, boxWidth, 17);
-        }
-        c.font = "600 11.5px Georgia";
-        c.fillStyle =
-          style.tone === "red" ? "rgba(129,36,26,.78)" : "rgba(45,34,22,.66)";
-        c.fillText(port.name.toUpperCase(), 0, 0.5);
-        c.restore();
-      }
-    }
-    c.restore();
-  }
-
   function buildMapLayer() {
     drawParchmentBase(m);
     const rnd = seeded(91);
@@ -2074,39 +2031,9 @@ export function createMapRendering({
       m.restore();
     });
 
-    lands.forEach((land) => {
-      if (!land.name) return;
-      const center = polygonCentroid(land.poly);
-      m.save();
-      m.fillStyle = "rgba(46,34,20,.58)";
-      m.strokeStyle = "rgba(204,186,133,.48)";
-      m.lineWidth = 2.5;
-      m.lineJoin = "round";
-      m.font = "italic 29px Georgia";
-      m.textAlign = "center";
-      for (const offset of polygonWorldOffsets(land.poly)) {
-        m.strokeText(land.name, center.x + offset, center.y);
-        m.fillText(land.name, center.x + offset, center.y);
-      }
-      m.restore();
-    });
-
     ports.forEach((p) => drawPortIcon(m, p));
-    drawPortChartLabels(m);
 
-    // sea regions, calligraphic labels, and decorative flourishes. The ink
-    // varies between iron-black and faded brown like a hand-cut quill let the
-    // chartmaker work at different hours.
-    m.textAlign = "center";
-    seaRegionLabels.forEach(([label, x, y, size], index) => {
-      m.font = "italic " + size + "px Georgia";
-      m.fillStyle =
-        index % 3 === 2
-          ? `rgba(86,62,34,${0.44 + (index % 5) * 0.03})`
-          : `rgba(45,42,29,${0.48 + (index % 4) * 0.03})`;
-      m.fillText(label, x, y);
-    });
-
+    // Geographic lettering is drawn separately so zoom can reveal it smoothly.
     drawCompassRose(m, WORLD.w * 0.36, WORLD.h * 0.1, 84);
     drawCompassRose(m, WORLD.w * 0.72, WORLD.h * 0.13, 70);
     drawCompassRose(m, WORLD.w * 0.94, WORLD.h * 0.88, 66);
