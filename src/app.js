@@ -340,6 +340,7 @@ import {
   separateWrappedPoints,
 } from "./core/map-generation.js";
 import { generateWorldMap } from "./core/world-generation.js";
+import { createWakeSystem } from "./core/wake-crossings.js";
 import {
   buildSeaField,
   routeLaneAroundLand,
@@ -524,7 +525,7 @@ let vw = 0,
   vignetteGradient = null;
 const camera = { x: 0, y: 0, zoom: 1 };
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const wakeTrail = [];
+const wakeSystem = createWakeSystem(WORLD.w);
 const seaRendering = createSeaRendering({
   WORLD,
   lands,
@@ -3286,6 +3287,7 @@ function loadGameState() {
   }
   if (!saved) return false;
 
+  wakeSystem.clear();
   Object.assign(game, saved.game);
   game.mapSeed = mapSeed;
   game.timeOfDay = normalizeTimeOfDay(game.timeOfDay);
@@ -5440,32 +5442,6 @@ function render() {
     !selectedTown &&
     !selectedMerchant &&
     !pendingCombat;
-  const sternX = ship.x - Math.cos(ship.angle) * 24;
-  const sternY = ship.y - Math.sin(ship.angle) * 24;
-  if (
-    moving &&
-    ship.speed > 3 &&
-    (!wakeTrail.length ||
-      (time - wakeTrail[0].time > 65 &&
-        wrappedDistance(sternX, sternY, wakeTrail[0].x, wakeTrail[0].y) > 3))
-  ) {
-    if (
-      wakeTrail.length &&
-      wrappedDistance(sternX, sternY, wakeTrail[0].x, wakeTrail[0].y) > 100
-    )
-      wakeTrail.length = 0;
-    wakeTrail.unshift({
-      x: sternX,
-      y: sternY,
-      strength: Math.min(1, ship.speed / ship.maxSpeed),
-      time,
-    });
-  }
-  while (
-    wakeTrail.length &&
-    (time - wakeTrail.at(-1).time > 5000 || wakeTrail.length > 80)
-  )
-    wakeTrail.pop();
   const worldTransform = () => {
     ctx.save();
     ctx.translate(vw / 2, vh / 2);
@@ -5542,11 +5518,6 @@ function render() {
     day: debugSeasonDay ?? game.day,
     time: seaIceTime,
   });
-  seaRendering.drawWake(ctx, wakeTrail, time, camera, vw, vh, {
-    lighting,
-    bioluminescentSeas,
-    reducedMotion: reducedMotion.matches,
-  });
   const reflectedVessels = merchantShips.filter(
     (vessel) =>
       merchantVisible(vessel) && pointCurrentlyVisible(vessel.x, vessel.y),
@@ -5561,6 +5532,56 @@ function render() {
       ...raider,
       vesselClass: raider.attackStrength > 1 ? "brig" : "cutter",
     });
+  wakeSystem.update(
+    [
+      {
+        ...ship,
+        id: "player",
+        stern: 24,
+        active:
+          moving &&
+          ship.speed > 3 &&
+          !debugPaused &&
+          !encounters.active?.preview,
+      },
+      ...reflectedVessels.map((vessel) => ({
+        ...vessel,
+        id: vessel.damageKey ?? vessel.id ?? "raider",
+        active:
+          !debugPaused &&
+          !encounters.active?.preview &&
+          (!vessel.damageKey || vessel.damageKey.status === "sailing"),
+      })),
+    ],
+    time,
+  );
+  const wakeEnvironment = {
+    lighting,
+    bioluminescentSeas,
+    reducedMotion: reducedMotion.matches,
+    roughness: weather.roughness,
+    detail: effectDetail(),
+    crossings: wakeSystem.crossings,
+  };
+  for (const trail of wakeSystem.trails.values())
+    seaRendering.drawWake(
+      ctx,
+      trail.points,
+      time,
+      camera,
+      vw,
+      vh,
+      wakeEnvironment,
+    );
+  seaRendering.drawWakeCrossings(
+    ctx,
+    wakeSystem.crossings,
+    time,
+    camera,
+    vw,
+    vh,
+    wakeEnvironment,
+  );
   seaRendering.drawReflections(ctx, {
     camera,
     vw,
