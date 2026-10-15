@@ -879,6 +879,39 @@ test("river paths are baked once, culled offscreen, and reused across wrapped vi
     assert.equal(riverStrokes(500).length, 0);
     renderer.setRivers(rivers);
     assert.notEqual(riverStrokes(0)[0][1], first[0][1]);
+    renderer.setRivers(rivers, [
+      [{ x: 995, y: 400, angle: Math.PI / 4, span: 20 }],
+      [],
+    ]);
+    const bridgeMasks = [];
+    for (const x of [0, 1000]) {
+      const recording = recordingContext();
+      renderer.drawSurface(recording.context, {
+        ...options,
+        camera: { x, y: 400, zoom: 1 },
+      });
+      const maskClip = recording.calls.find(
+        ([method, path, rule]) =>
+          method === "clip" &&
+          rule === "evenodd" &&
+          path?.commands?.[0]?.[0] === "rect" &&
+          path.commands[0][1] === -1000,
+      );
+      assert.ok(
+        maskClip,
+        "flow is masked below bridge decks in both world copies",
+      );
+      assert.equal(
+        maskClip[1].commands.filter(([command]) => command === "lineTo").length,
+        3,
+      );
+      bridgeMasks.push(maskClip[1]);
+    }
+    assert.equal(
+      bridgeMasks[0],
+      bridgeMasks[1],
+      "bridge masks are cached across wrapping",
+    );
   } finally {
     if (previousPath === undefined) delete globalThis.Path2D;
     else globalThis.Path2D = previousPath;

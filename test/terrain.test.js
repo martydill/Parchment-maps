@@ -144,7 +144,7 @@ test("terrain and river controls remain inland on irregular coasts", () => {
             );
           }
         }
-        assert.equal(terrain.tributaries.length, terrain.rivers.length);
+        assert.equal(terrain.tributaries.length, terrain.rivers.length * 2);
       }
     }
     assert.deepEqual(poly, unchanged);

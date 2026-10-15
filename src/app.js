@@ -1580,6 +1580,7 @@ const {
   drawTerrainDetails,
   mountainShadows,
   riverPaths,
+  riverBridges,
   minimapFog,
   minimapFogCtx,
   setParchmentTexture,
@@ -1609,7 +1610,7 @@ loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
     minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
   },
 );
-seaRendering.setRivers(riverPaths);
+seaRendering.setRivers(riverPaths, riverBridges);
 const explorationSampler = createExplorationSampler(exploredMask, exploredCtx);
 
 const merchantNames = RIVAL_SHIP_NAMES;

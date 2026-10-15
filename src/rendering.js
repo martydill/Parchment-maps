@@ -36,6 +36,7 @@ import {
   terrainPalette,
   seasonalLandColor,
 } from "./terrain-rendering.js?v=5";
+import { drawRiverMouths, drawRiverSediment } from "./river-rendering.js";
 import { createTerrainDetailRendering } from "./sculpted-terrain-rendering.js";
 import { planShoreline } from "./core/shoreline.js";
 import {
@@ -969,6 +970,7 @@ export function createMapRendering({
   mapLayer.height = WORLD.h;
   const m = mapLayer.getContext("2d");
   const riverPaths = [];
+  const riverBridges = [];
   const terrainPlans = new Map();
   const shorePlans = lands.map((land, index) =>
     planShoreline(land.poly, 811 + index * 59, terrainBiome(land.name)),
@@ -1915,16 +1917,67 @@ export function createMapRendering({
       LAND_NAMES.rimevault,
     ]);
 
-    // islands with layered coast contours and internal parchment texture
+    // Plan once, then lay sediment beneath every island so a plume can never
+    // paint over a neighboring coast. Seasonal rebakes reuse the geometry.
     lands.forEach((l, li) => {
-      const coastDepth = coastFaceDepth(li, l.satellite) * MAP_TILT_TAN;
-      const shoreline = shorePlans[li];
-      for (const offset of polygonWorldOffsets(l.poly, 100)) {
+      const center = polygonCentroid(l.poly);
+      const clearings = ports.map((port) => ({
+        x: port.x + Math.round((center.x - port.x) / WORLD.w) * WORLD.w,
+        y: port.y,
+        rx: Math.max(48, port.name.length * 5.5),
+        ry: 50,
+      }));
+      if (l.name)
+        clearings.push({
+          x: center.x,
+          y: center.y - 8,
+          rx: Math.max(45, l.name.length * 7),
+          ry: 23,
+        });
+      const terrain =
+        terrainPlans.get(li) ??
+        planTerrainIllustration(l.poly, 1349 + li * 97, {
+          mountainous: mountainLands.has(l.name),
+          biome: terrainBiome(l.name),
+          clearings,
+        });
+      terrainPlans.set(li, terrain);
+      if (!terrainIslands[li])
+        terrainIslands[li] = {
+          poly: l.poly,
+          terrain,
+          depth: coastFaceDepth(li, l.satellite) * MAP_TILT_TAN,
+          shoreline: shorePlans[li],
+        };
+      riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
+      riverBridges[li] = terrain.riverDetails.bridges;
+    });
+    lands.forEach((land, li) => {
+      const coastDepth = terrainIslands[li].depth;
+      for (const offset of polygonWorldOffsets(land.poly, 100)) {
         m.save();
         m.translate(offset, 0);
-        drawCoastalWater(m, l.poly, shoreline, coastDepth);
+        drawCoastalWater(m, land.poly, shorePlans[li], coastDepth);
         m.restore();
       }
+    });
+    lands.forEach((land, li) => {
+      for (const offset of polygonWorldOffsets(land.poly, 150)) {
+        m.save();
+        m.translate(offset, 0);
+        drawRiverSediment(
+          m,
+          terrainPlans.get(li).riverDetails,
+          terrainIslands[li].depth,
+        );
+        m.restore();
+      }
+    });
+
+    // islands with layered coast contours and internal parchment texture
+    lands.forEach((l, li) => {
+      const coastDepth = terrainIslands[li].depth;
+      const shoreline = shorePlans[li];
       // Each coast has a vertical face projected from the raised top edge to
       // the sea plane. Back faces are hidden by the land surface drawn next.
       drawWrappedPolyPath(
@@ -1985,36 +2038,7 @@ export function createMapRendering({
         m.restore();
       }
 
-      const center = polygonCentroid(l.poly);
-      const clearings = ports.map((port) => ({
-        x: port.x + Math.round((center.x - port.x) / WORLD.w) * WORLD.w,
-        y: port.y,
-        rx: Math.max(48, port.name.length * 5.5),
-        ry: 50,
-      }));
-      if (l.name)
-        clearings.push({
-          x: center.x,
-          y: center.y - 8,
-          rx: Math.max(45, l.name.length * 7),
-          ry: 23,
-        });
-      const terrain =
-        terrainPlans.get(li) ??
-        planTerrainIllustration(l.poly, 1349 + li * 97, {
-          mountainous: mountainLands.has(l.name),
-          biome: terrainBiome(l.name),
-          clearings,
-        });
-      terrainPlans.set(li, terrain);
-      if (!terrainIslands[li])
-        terrainIslands[li] = {
-          poly: l.poly,
-          terrain,
-          depth: coastDepth,
-          shoreline,
-        };
-      riverPaths[li] = [...terrain.rivers, ...terrain.tributaries];
+      const terrain = terrainPlans.get(li);
       m.save();
       wrappedClipPath(m, l.poly);
       m.clip();
@@ -2029,6 +2053,12 @@ export function createMapRendering({
         m.restore();
       }
       m.restore();
+      for (const offset of polygonWorldOffsets(l.poly, 25)) {
+        m.save();
+        m.translate(offset, 0);
+        drawRiverMouths(m, terrain.riverDetails, coastDepth);
+        m.restore();
+      }
     });
 
     ports.forEach((p) => drawPortIcon(m, p));
@@ -2261,6 +2291,7 @@ export function createMapRendering({
     mapLayer,
     drawTerrainDetails: (c, options) => terrainDetailRendering.draw(c, options),
     riverPaths,
+    riverBridges,
     minimapFog,
     minimapFogCtx,
     // Seasonal pigment steps reuse the canvas and deterministic terrain plans.
