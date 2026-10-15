@@ -19,6 +19,7 @@ export function renderChartPanel({
   homePortName,
   isWorldPointExplored,
   mapLayer,
+  mapTypography,
   merchantShips,
   merchantVisible,
   minimap,
@@ -43,6 +44,10 @@ export function renderChartPanel({
   c.globalCompositeOperation = "source-over";
   c.clearRect(0, 0, w, h);
   c.drawImage(mapLayer, 0, 0, w, h);
+  c.save();
+  c.scale(sx, sy);
+  mapTypography.draw(c, { overview: true, copies: [-world.w, 0, world.w] });
+  c.restore();
   const f = minimapFogCtx;
   f.clearRect(0, 0, w, h);
   const unchartedPaper = f.createLinearGradient(0, 0, 0, h);

@@ -1,3 +1,5 @@
+import { createCartographicRendering } from "./cartographic-rendering.js";
+import { labelZoomOpacity } from "./core/cartography.js";
 import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
 import { createChartSprayRendering } from "./chart-spray-rendering.js";
 import { createSeaIceRendering } from "./sea-ice-rendering.js";
@@ -1573,6 +1575,17 @@ const {
   merchantRoutePaths,
   portMiniaturePlacements,
 });
+
+const mapTypography = createCartographicRendering({
+  lands,
+  seas: seaRegionLabels,
+  worldWidth: WORLD.w,
+});
+document.fonts?.addEventListener("loadingdone", () =>
+  mapTypography.invalidate(),
+);
+let typographyZoom = camera.zoom;
+let typographyFrameTime = null;
 
 loadParchmentTexture("./assets/map-opening/parchment-weathered.jpg").then(
   (texture) => {
@@ -5319,7 +5332,7 @@ function drawHarborLights(c, lighting, z, time, roughness) {
 const portLabelWidths = new Map();
 // A font becoming available can change metrics even though port names do not.
 document.fonts?.addEventListener("loadingdone", () => portLabelWidths.clear());
-function drawPortLabels(c, z) {
+function drawPortLabels(c, z, labelZoom) {
   c.save();
   c.font = "700 14px Georgia";
   const labels = ports
@@ -5352,7 +5365,9 @@ function drawPortLabels(c, z) {
       label.port.y,
     );
     const dim = z >= 1.08 && distance > 200 && label.priority < 20;
-    c.globalAlpha = dim ? 0.53 : label.priority >= 10 ? 0.98 : 0.82;
+    const reveal =
+      label.priority >= 20 ? 1 : labelZoomOpacity(labelZoom, "port");
+    c.globalAlpha = reveal * (dim ? 0.53 : label.priority >= 10 ? 0.98 : 0.82);
     c.fillStyle =
       label.port.name === game.navigation.destination
         ? "rgba(255,234,185,.98)"
@@ -5371,6 +5386,19 @@ function drawPortLabels(c, z) {
       label.x + label.width / 2 + 3,
       label.y + label.height / 2 + 1,
     );
+    const detail = labelZoomOpacity(labelZoom, "detail");
+    const layout = getHarborLayout(label.port.name);
+    if (layout && detail > 0) {
+      c.globalAlpha *= detail;
+      c.font = "italic 11px Georgia";
+      c.strokeStyle = "rgba(239,220,175,.92)";
+      c.lineWidth = 3;
+      const x = label.x + label.width / 2;
+      const y = label.y + label.height + 10;
+      c.strokeText(layout.composition.title, x, y);
+      c.fillText(layout.composition.title, x, y);
+      c.font = "700 14px Georgia";
+    }
   }
   c.restore();
 }
@@ -5393,6 +5421,15 @@ function render() {
   }
   const z = camera.zoom;
   const time = performance.now();
+  const labelElapsed =
+    typographyFrameTime === null
+      ? 0
+      : Math.min(100, time - typographyFrameTime);
+  typographyFrameTime = time;
+  typographyZoom = reducedMotion.matches
+    ? z
+    : typographyZoom +
+      (z - typographyZoom) * (1 - Math.exp(-labelElapsed / 140));
   const visualTime = reducedMotion.matches ? 0 : time;
   const weather = currentWeather();
   const lighting = sceneLighting(sceneTimeOfDay(), weather.roughness, game.day);
@@ -5575,6 +5612,16 @@ function render() {
     ctx.stroke();
   }
   ctx.restore();
+  mapTypography.draw(ctx, {
+    zoom: typographyZoom,
+    copies: worldCopiesNear(camera.x),
+    bounds: {
+      left: camera.x - halfW,
+      right: camera.x + halfW,
+      top: camera.y - halfH,
+      bottom: camera.y + halfH,
+    },
+  });
   ctx.restore(); // Restore world transform
 
   shipScreen.x = vw / 2 + (nearestWrappedX(ship.x, camera.x) - camera.x) * z;
@@ -5800,7 +5847,7 @@ function render() {
   }
   ctx.restore();
 
-  drawPortLabels(ctx, z);
+  drawPortLabels(ctx, z, typographyZoom);
 
   // vignette
   ctx.fillStyle = vignetteGradient;
@@ -8110,6 +8157,7 @@ function renderChart() {
     homePortName: HOME_PORT.name,
     isWorldPointExplored,
     mapLayer,
+    mapTypography,
     merchantShips,
     merchantVisible,
     minimap,
