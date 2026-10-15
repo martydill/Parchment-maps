@@ -374,6 +374,13 @@
         data-tooltip="Ship"
       >
         <span class="hud-paper-edge" aria-hidden="true"></span>
+        <span
+          id="officerRequestBadge"
+          class="officer-request-badge"
+          aria-hidden="true"
+          hidden
+          >!</span
+        >
         <svg
           class="main-icon"
           viewBox="0 0 24 24"
@@ -451,6 +458,9 @@
               </div>
               <h2 id="portName">Port</h2>
               <p id="portFlavor"></p>
+              <button type="button" class="parchment" id="portOfficersButton">
+                Officers
+              </button>
             </div>
             <div class="port-grid" aria-label="Captain’s resources">
               <div><b>Purse</b><span id="portCoins"></span></div>
@@ -1283,6 +1293,11 @@
             <section class="port-panel" data-tab="officers" role="tabpanel">
               <div class="detail-card">
                 <h3>Named specialists</h3>
+                <p class="small">
+                  Officers may ask for a personal voyage. Keep a promise to earn
+                  loyalty and a permanent ability; its deadline competes with
+                  your commissions.
+                </p>
                 <div id="shipRegisterSpecialists" class="specialist-grid"></div>
               </div>
             </section>
