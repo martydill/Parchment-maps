@@ -378,7 +378,7 @@ import {
 } from "./port-miniatures.js?v=6";
 import { portArrivalFrame, PORT_ARRIVAL_DURATION } from "./core/port-scene.js";
 import { planPortIllustration } from "./core/port-illustrations.js";
-import { renderChartPanel } from "./ui/chart-panel.js?v=5";
+import { renderChartPanel } from "./ui/chart-panel.js?v=6";
 import {
   configureUiPanels,
   openMarketGood,
@@ -8318,6 +8318,9 @@ mapButton.addEventListener("click", () => {
   minimapWrap.style.display = "grid";
   renderChart();
 });
+new ResizeObserver(() => {
+  if (minimapWrap.style.display === "grid") renderChart();
+}).observe(minimap);
 minimap.addEventListener("pointerup", (e) => {
   const rect = minimap.getBoundingClientRect();
   const x = ((e.clientX - rect.left) / rect.width) * WORLD.w;

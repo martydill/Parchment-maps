@@ -1603,34 +1603,34 @@ button.parchment {
   pointer-events: auto;
   position: fixed;
   inset: 0;
+  z-index: 61;
   display: none;
   place-items: center;
   background: rgba(10, 7, 4, 0.78);
-  padding: 20px;
+  padding: max(8px, env(safe-area-inset-top))
+    max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
+    max(8px, env(safe-area-inset-left));
 }
 #minimapCard {
   position: relative;
-  width: min(96vw, 1120px);
+  min-height: 0;
 }
 #minimap {
   display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  border: 9px solid #5a351d;
-  box-shadow:
-    0 14px 50px rgba(0, 0, 0, 0.72),
-    inset 0 0 30px rgba(74, 39, 15, 0.3);
-  background: #c8a66a;
+  height: 100%;
 }
 #chartedCities {
   position: absolute;
-  inset: 9px;
+  inset: 0;
   pointer-events: none;
 }
 .charted-city {
   position: absolute;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 2px solid #f4dfad;
   border-radius: 50%;
@@ -1641,35 +1641,6 @@ button.parchment {
   cursor: pointer;
   pointer-events: auto;
   transform: translate(-50%, -50%);
-}
-.charted-city::after {
-  content: attr(data-city-name);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 9px);
-  z-index: 2;
-  width: max-content;
-  max-width: 180px;
-  padding: 6px 9px;
-  border: 1px solid #7d512c;
-  border-radius: 4px;
-  color: #3d2615;
-  background: #f5e2af;
-  box-shadow: 0 4px 12px rgba(31, 18, 8, 0.45);
-  font:
-    700 13px Georgia,
-    serif;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, 4px);
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
-}
-.charted-city:hover::after,
-.charted-city:focus-visible::after {
-  opacity: 1;
-  transform: translate(-50%, 0);
 }
 .charted-city:hover,
 .charted-city:focus-visible {
@@ -2849,16 +2820,15 @@ button.parchment {
   border: 1px solid rgba(45, 103, 55, 0.3);
 }
 #chartLegend {
-  position: absolute;
-  left: 18px;
-  bottom: 38px;
   display: flex;
-  gap: 12px;
-  padding: 7px 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 20px;
+  padding: 10px 12px;
   color: #fff0c5;
   background: rgba(52, 31, 16, 0.88);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 13px;
 }
 #chartLegend span {
   display: flex;
@@ -2975,10 +2945,6 @@ button.parchment {
   }
   #plottedCourse {
     width: 100%;
-  }
-  #chartLegend {
-    right: 18px;
-    flex-wrap: wrap;
   }
 }
 
@@ -6281,16 +6247,11 @@ body.port-open {
   height: 100dvh;
 }
 .chart-paper {
-  width: min(1120px, calc(100vw - 40px));
-  padding: 16px;
-}
-.chart-paper #minimapCard {
   width: 100%;
-}
-.chart-paper #minimap {
-  border-color: transparent;
-  box-shadow: none;
-  background: none;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
 }
 #debugMenu {
   padding: 0;

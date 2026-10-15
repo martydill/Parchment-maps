@@ -36,11 +36,22 @@ export function renderChartPanel({
   wrapX,
 }) {
   buildVisibilityPolygon(true);
+  // Draw in CSS pixels with a dense backing store so labels and routes stay
+  // sharp as the chart fills the viewport, including on Retina displays.
+  const w = minimap.clientWidth;
+  const h = minimap.clientHeight;
+  if (!w || !h) return;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.round(w * pixelRatio);
+  const height = Math.round(h * pixelRatio);
+  for (const canvas of [minimap, minimapFog]) {
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+  }
   const c = minimapCtx,
-    w = minimap.width,
-    h = minimap.height,
     sx = w / world.w,
     sy = h / world.h;
+  c.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   c.globalCompositeOperation = "source-over";
   c.clearRect(0, 0, w, h);
   c.drawImage(mapLayer, 0, 0, w, h);
@@ -49,6 +60,7 @@ export function renderChartPanel({
   mapTypography.draw(c, { overview: true, copies: [-world.w, 0, world.w] });
   c.restore();
   const f = minimapFogCtx;
+  f.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   f.clearRect(0, 0, w, h);
   const unchartedPaper = f.createLinearGradient(0, 0, 0, h);
   unchartedPaper.addColorStop(0, "rgba(166,161,125,.95)");
@@ -65,7 +77,7 @@ export function renderChartPanel({
   punchCurrentVisibility(f, sx, sy, true);
   f.restore();
   f.globalCompositeOperation = "source-over";
-  c.drawImage(minimapFog, 0, 0);
+  c.drawImage(minimapFog, 0, 0, w, h);
   drawChartPortLabels(c, ports, isWorldPointExplored, sx, sy, w, h);
   drawAmberConvoyRoute(c, sx, sy, game);
   drawActiveContracts(c, sx, sy, game, getPortByName);
@@ -106,21 +118,21 @@ export function renderChartPanel({
 
 function drawChartPortLabels(c, ports, isWorldPointExplored, sx, sy, w, h) {
   c.save();
-  c.font = "700 12px Georgia";
+  c.font = "700 15px Georgia";
   const labels = ports
     .filter((port) => isWorldPointExplored(port.x, port.y))
     .map((port) => ({
       id: port.name,
       x: port.x * sx,
       y: port.y * sy,
-      width: Math.ceil(c.measureText(port.name).width) + 12,
-      height: 21,
+      width: Math.ceil(c.measureText(port.name).width) + 16,
+      height: 26,
       priority: port.home ? 2 : 1,
     }));
   c.textAlign = "center";
   c.textBaseline = "middle";
   for (const label of layoutMapLabels(labels, [], w, h)) {
-    c.fillStyle = "rgba(239,220,175,.9)";
+    c.fillStyle = "rgba(250,236,201,.96)";
     c.strokeStyle = "rgba(88,61,34,.7)";
     c.lineWidth = 1;
     c.beginPath();
@@ -192,10 +204,6 @@ function drawObjective(
   c.beginPath();
   c.arc(p.x * sx, p.y * sy, 19, 0, Math.PI * 2);
   c.stroke();
-  c.fillStyle = "#fff0c5";
-  c.font = "bold 14px Georgia";
-  c.textAlign = "center";
-  c.fillText(objective.title, p.x * sx, p.y * sy - 25);
 }
 
 function drawRumorLeads(c, sx, sy, leads, world) {
@@ -343,7 +351,6 @@ function renderChartedCities({
     marker.className = "charted-city";
     marker.style.left = indicator.left;
     marker.style.top = indicator.top;
-    marker.dataset.cityName = indicator.city.name;
     marker.setAttribute("aria-label", `Open ${indicator.city.name}`);
     marker.addEventListener("click", () => {
       minimapWrap.style.display = "none";
