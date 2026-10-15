@@ -3803,7 +3803,6 @@ const ui = {
   time: document.getElementById("timeText"),
   hold: document.getElementById("holdText"),
   dock: document.getElementById("dockButton"),
-  town: document.getElementById("townButton"),
   explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
   objective: document.getElementById("objectiveText"),
@@ -3956,7 +3955,6 @@ applyNarrativeNames();
 function revealStartedGame({ message = null, save = false } = {}) {
   processOfficerAmbitions();
   ui.dock.style.display = nearPort ? "block" : "none";
-  ui.town.style.display = nearPort ? "block" : "none";
   revealCurrentView(true);
   if (message) showMessage(message, 4.5);
   if (save) saveGameState();
@@ -4773,7 +4771,7 @@ function closeTownDetails() {
     document.getElementById("portPanel").style.display === "grid"
   )
     document.querySelector("#portPanel .port-tab.active").focus();
-  else (nearPort ? ui.town : mapButton).focus();
+  else (nearPort ? ui.dock : mapButton).focus();
 }
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -6635,7 +6633,6 @@ function update(dt) {
   )
     showMessage(`LANDFALL · ${nearPort.name}`, 3.2);
   ui.dock.style.display = nearPort ? "block" : "none";
-  ui.town.style.display = nearPort ? "block" : "none";
   nearExplorationSite = null;
   if (!nearPort && ship.speed < 8) {
     let nearestSiteDistance = Infinity;
@@ -7752,12 +7749,6 @@ function undertakeExpedition(site, approach) {
 }
 
 ui.dock.addEventListener("click", openPort);
-ui.town.addEventListener("click", () => {
-  if (!nearPort) return;
-  openPort();
-  activateSectionTabs(document.getElementById("portPanel"), "city");
-  document.querySelector("#portPanel .port-tab.active").focus();
-});
 ui.explore.addEventListener("click", openExploration);
 document
   .getElementById("closeExploration")

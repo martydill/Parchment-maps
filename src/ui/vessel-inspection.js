@@ -3,18 +3,6 @@ import { vesselInspectionArtwork } from "./vessel-art.js?v=2";
 
 const formatValue = (value) => Number(value.toFixed(2)).toString();
 
-const SYSTEM_NOTES = {
-  hull: "Sound planking keeps the vessel seaworthy and helps it survive rough passages.",
-  rigging:
-    "Masts, ropes, and sails carry your vessel through the wind. Repair wear before a long voyage.",
-  rudder:
-    "Steering gear controls your response at sea. Keep it sound for difficult approaches.",
-  fittings:
-    "Cargo fittings protect the hold. Inspect your stowage before sailing with fragile or perishable goods.",
-  weapons:
-    "Maintain the ship’s armament before taking a passage through hostile waters.",
-};
-
 let selectedPort = null;
 let selectedComponent = "hull";
 
@@ -70,7 +58,13 @@ export function renderVesselInspection(
       part.classList.toggle("damaged", partCondition < 40);
     });
     const detail = root.querySelector(".inspection-detail");
-    detail.innerHTML = `<div class="town-kicker">${condition < 40 ? "Needs urgent attention" : condition < 100 ? "Maintenance available" : "Shipwright’s clearance"}</div><h4>${definition.label}</h4><strong class="inspection-percent">${formatValue(condition)}<small>% condition</small></strong><p>${SYSTEM_NOTES[key]}</p><div class="inspection-repair-preview" aria-live="polite"><span>Condition after repair <b>${formatValue(preview.operations.components[key])}%</b></span><span>Repair cost <b>${formatValue(cost)} crowns</b></span></div><button type="button" class="parchment" id="repairSelectedComponent">${condition >= 100 ? "Fully repaired" : preview.repaired ? `Repair ${formatValue(preview.repaired)} points · ${formatValue(cost)} crowns` : "Repairs unavailable"}</button><span class="inspection-repair-note">${condition >= 100 ? "This system is fully repaired." : !preview.repaired ? `Need at least ${definition.repairCost} crowns to begin repairs.` : preview.operations.components[key] < 100 ? "Your purse covers a partial repair." : "Your purse covers a complete repair."}</span><button type="button" class="inspection-refit">Browse vessels & fittings →</button>`;
+    const repairNote =
+      condition >= 100
+        ? "This system is fully repaired."
+        : !preview.repaired
+          ? `Need at least ${definition.repairCost} crowns to begin repairs.`
+          : "";
+    detail.innerHTML = `<div class="town-kicker">${condition < 40 ? "Needs urgent attention" : condition < 100 ? "Maintenance available" : "Shipwright’s clearance"}</div><h4>${definition.label}</h4><strong class="inspection-percent">${formatValue(condition)}<small>% condition</small></strong><div class="inspection-repair-preview" aria-live="polite"><span>Condition after repair <b>${formatValue(preview.operations.components[key])}%</b></span><span>Repair cost <b>${formatValue(cost)} crowns</b></span></div><button type="button" class="parchment" id="repairSelectedComponent">${condition >= 100 ? "Fully repaired" : preview.repaired ? `Repair ${formatValue(preview.repaired)} points · ${formatValue(cost)} crowns` : "Repairs unavailable"}</button>${repairNote ? `<span class="inspection-repair-note">${repairNote}</span>` : ""}<button type="button" class="inspection-refit">Browse vessels & fittings →</button>`;
     const repair = detail.querySelector("#repairSelectedComponent");
     repair.disabled = !preview.repaired;
     repair.onclick = () => onRepair(key);
