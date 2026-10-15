@@ -36,6 +36,8 @@ import {
 } from "./core/regional-water.js";
 import { createObstacleFoamRendering } from "./obstacle-foam-rendering.js";
 import { seasonAtDay } from "./core/seasons.js";
+import { wakeDisruption } from "./core/wake-crossings.js";
+import { createWakeCrossingRendering } from "./wake-crossing-rendering.js";
 
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
@@ -282,6 +284,11 @@ export function createSeaRendering({
   const lightBandStamps = new Map();
   const glitterBatches = new Map();
   const causticsRendering = createShallowCausticsRendering({
+    WORLD,
+    visibleCoasts,
+    clipWater,
+  });
+  const drawWakeCrossings = createWakeCrossingRendering({
     WORLD,
     visibleCoasts,
     clipWater,
@@ -1275,17 +1282,35 @@ export function createSeaRendering({
       region.top = Math.min(region.top, section.y - margin);
       region.bottom = Math.max(region.bottom, section.y + margin);
     }
+    if (
+      region.right < camera.x - vw / (2 * camera.zoom) ||
+      region.left > camera.x + vw / (2 * camera.zoom) ||
+      region.bottom < camera.y - vh / (2 * camera.zoom * MAP_TILT_COS) ||
+      region.top > camera.y + vh / (2 * camera.zoom * MAP_TILT_COS)
+    )
+      return;
     c.save();
     const visible = visibleCoasts(camera, vw, vh);
     clipWater(c, visible, region);
     c.translate(offset, 0);
     c.lineCap = "round";
+    const baseAlpha = c.globalAlpha;
     for (let i = 1; i < sections.length; i++) {
       const a = sections[i - 1],
         b = sections[i];
-      if (b.alpha < 0.006) continue;
+      if (a.breakBefore || b.alpha < 0.006) continue;
+      const disruption = wakeDisruption(
+        b,
+        environment.crossings ?? [],
+        time,
+        WORLD.w,
+      );
+      c.globalAlpha = baseAlpha * (1 - disruption * 0.82);
       const seed = b.seed;
       const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      // Slow traffic produces more samples per metre. Thin decorations by
+      // segment length so its foam never piles up into a dense ladder.
+      const density = Math.min(1, length / 10);
       const dx = (b.x - a.x) / length;
       const dy = (b.y - a.y) / length;
       const nx = -dy;
@@ -1305,7 +1330,7 @@ export function createSeaRendering({
       // Occasional outer crests catch the light as the disturbed water spreads.
       for (const side of [-1, 1]) {
         const crest = wakeNoise(seed, side + 4);
-        if (crest < 0.32) continue;
+        if (crest < 1 - 0.68 * density) continue;
         const along = 0.17 + wakeNoise(seed, side + 7) * 0.56;
         const lateral = (a.width + b.width) * (0.35 + crest * 0.23);
         const x = a.x + dx * length * along + nx * lateral * side;
@@ -1326,7 +1351,7 @@ export function createSeaRendering({
       // Specks of foam collect unevenly through the centre, then dissolve.
       for (let fleck = 0; fleck < 4; fleck++) {
         const scatter = wakeNoise(seed, fleck + 11);
-        if (scatter < 0.23) continue;
+        if (scatter < 1 - 0.77 * density) continue;
         const along = wakeNoise(seed, fleck + 17);
         const cross = (wakeNoise(seed, fleck + 23) - 0.5) * b.width * 1.5;
         const x = a.x + dx * length * along + nx * cross;
@@ -1345,6 +1370,7 @@ export function createSeaRendering({
         c.fill();
       }
     }
+    c.globalAlpha = baseAlpha;
     drawWakeBioluminescence(c, sections, time, environment);
     c.restore();
   }
@@ -1363,13 +1389,21 @@ export function createSeaRendering({
     for (let i = 1; i < sections.length; i++) {
       const a = sections[i - 1],
         b = sections[i];
+      if (a.breakBefore) continue;
       const sea = bioluminescentSeaAt(
         b,
         environment.bioluminescentSeas,
         WORLD.w,
       );
       if (!sea) continue;
-      const glow = night * sea.exposure;
+      const disruption = wakeDisruption(
+        b,
+        environment.crossings ?? [],
+        time,
+        WORLD.w,
+      );
+      const glow =
+        night * sea.exposure * (b.alpha / 0.48) * (1 - disruption * 0.82);
       if (glow < 0.004) continue;
       const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       const dx = (b.x - a.x) / length;
@@ -1582,6 +1616,7 @@ export function createSeaRendering({
     drawCaustics: (c, options) => causticsRendering.draw(c, options),
     drawUnderwater: (c, options) => underwaterRendering.draw(c, options),
     drawWake,
+    drawWakeCrossings,
     drawReflections,
     drawEncounterCreature(c, { x, y, scale, index }) {
       drawCreature(c, x, y, scale, index, 1 - index * 3.7);
