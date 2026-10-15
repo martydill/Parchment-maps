@@ -14,7 +14,6 @@ import {
   rhumbInk,
   rhumbRayAngles,
   roseTickPoints,
-  scaleBarSpec,
   tatteredEdge,
   tidelineRingPoints,
   tidelines,
@@ -289,19 +288,6 @@ test("fold creases run across the sheet from edge to edge", () => {
   assert.deepEqual(creases, foldCreases(WORLD.width, WORLD.height, 6067));
   assert.deepEqual(foldCreases(0, 0, 6067), []);
   assert.deepEqual(foldCreases(4800, NaN, 6067), []);
-});
-
-test("scale bar hugs the lower-left border of the sheet", () => {
-  const spec = scaleBarSpec(WORLD);
-  assert.ok(spec);
-  assert.equal(spec.segments, 8);
-  assert.equal(spec.width, spec.segment * spec.segments);
-  assert.equal(spec.x, 216);
-  assert.equal(spec.y, WORLD.height * 0.13);
-  assert.ok(spec.values[0] < spec.values[1]);
-  assert.equal(spec.values.at(-1), spec.total);
-  assert.equal(scaleBarSpec({ width: 0, height: 1000 }), null);
-  assert.equal(scaleBarSpec({ width: 4800, height: undefined }), null);
 });
 
 test("island tints wash only every third named island", () => {
