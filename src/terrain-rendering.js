@@ -1,3 +1,5 @@
+import { planRiverDetails } from "./core/rivers.js";
+import { drawRiverChannels, drawRiverSettlements } from "./river-rendering.js";
 import { LIGHT_DIRECTION } from "./core/lighting.js";
 import { mixSeasonColor } from "./core/seasons.js";
 import { drawSculptedRidge } from "./sculpted-terrain-rendering.js";
@@ -449,18 +451,6 @@ function drawMountain(c, x, y, s, biome, season) {
   }
   c.restore();
 }
-function terrainPath(c, points) {
-  c.beginPath();
-  c.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length - 1; i++) {
-    const midpoint = {
-      x: (points[i].x + points[i + 1].x) / 2,
-      y: (points[i].y + points[i + 1].y) / 2,
-    };
-    c.quadraticCurveTo(points[i].x, points[i].y, midpoint.x, midpoint.y);
-  }
-  c.lineTo(points.at(-1).x, points.at(-1).y);
-}
 function terrainWash(c, x, y, rx, ry, angle, color, opacity) {
   c.save();
   c.translate(x, y);
@@ -605,35 +595,10 @@ export function drawTerrainIllustration(c, terrain, season) {
       );
     }
   }
-  c.lineCap = "round";
-  c.lineJoin = "round";
-  for (const river of terrain.tributaries) {
-    terrainPath(c, river);
-    c.strokeStyle = "rgba(51,78,72,.6)";
-    c.lineWidth = 1.6;
-    c.stroke();
-  }
-  for (const river of terrain.rivers) {
-    terrainPath(c, river);
-    c.strokeStyle = "rgba(45,64,60,.65)";
-    c.lineWidth = 3.8;
-    c.stroke();
-    terrainPath(c, river);
-    c.strokeStyle = season
-      ? mixSeasonColor("#9ab4a3", "#e1f0f2", season.snow)
-      : "rgba(154,180,163,.7)";
-    c.lineWidth = 1.8;
-    c.stroke();
-    if (season?.snow > 0) {
-      c.save();
-      c.globalAlpha *= season.snow * 0.55;
-      terrainPath(c, river);
-      c.strokeStyle = "#f3f7f5";
-      c.lineWidth = 2.6;
-      c.stroke();
-      c.restore();
-    }
-  }
+  const riverDetails =
+    terrain.riverDetails ??
+    planRiverDetails([], terrain.rivers, terrain.tributaries);
+  drawRiverChannels(c, riverDetails, season);
   for (const grove of terrain.groves) {
     terrainWash(
       c,
@@ -676,5 +641,6 @@ export function drawTerrainIllustration(c, terrain, season) {
       drawMountain(c, mark.x, mark.y, mark.size, terrain.biome, season);
     else drawTree(c, mark, terrain.biome, season);
   }
+  drawRiverSettlements(c, riverDetails, season);
   c.restore();
 }

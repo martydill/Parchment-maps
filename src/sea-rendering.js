@@ -164,6 +164,7 @@ export function createSeaRendering({
   creatures = [],
 }) {
   let riverPaths = [];
+  let riverBridgeMasks = [];
   let cachedView = null;
   let cachedVisible = [];
   const coasts = lands.map(({ poly, satellite, name }, index) => {
@@ -565,6 +566,7 @@ export function createSeaRendering({
       c.save();
       c.translate(offset, 0);
       c.clip(land);
+      if (riverBridgeMasks[index]) c.clip(riverBridgeMasks[index], "evenodd");
       c.strokeStyle = "rgba(225,236,199,.65)";
       c.lineWidth = 1.2 / zoom;
       c.setLineDash([5, 13]);
@@ -1564,7 +1566,30 @@ export function createSeaRendering({
     drawEncounterCreature(c, { x, y, scale, index }) {
       drawCreature(c, x, y, scale, index, 1 - index * 3.7);
     },
-    setRivers(paths) {
+    setRivers(paths, bridges = []) {
+      riverBridgeMasks = bridges.map((crossings) => {
+        if (!crossings.length) return null;
+        const mask = new Path2D();
+        mask.rect(-WORLD.w, 0, WORLD.w * 3, WORLD.h);
+        for (const bridge of crossings) {
+          const cos = Math.cos(bridge.angle),
+            sin = Math.sin(bridge.angle);
+          const half = bridge.span / 2 + 1;
+          [
+            [-half, -5],
+            [half, -5],
+            [half, 3],
+            [-half, 3],
+          ].forEach(([x, y], index) => {
+            const px = bridge.x + x * cos - y * sin;
+            const py = bridge.y + x * sin + y * cos;
+            if (index) mask.lineTo(px, py);
+            else mask.moveTo(px, py);
+          });
+          mask.closePath();
+        }
+        return mask;
+      });
       riverPaths = paths.map((rivers) =>
         rivers
           .map((river) => {

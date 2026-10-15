@@ -1,6 +1,7 @@
 import { pointInPolygon } from "./geometry.js";
 import { LAND_NAMES } from "../names.js";
 import { sculptedRidgeLayers } from "./terrain-detail.js";
+import { planRiverDetails } from "./rivers.js";
 
 const regionalBiomes = new Map([
   ...[
@@ -157,7 +158,9 @@ export function planLandTerrain(poly, seed, mountainous = false) {
     const dx = coast.point.x - source.x;
     const dy = coast.point.y - source.y;
     const length = Math.hypot(dx, dy);
-    const bend = (random() - 0.5) * Math.min(70, length * 0.35);
+    const bend =
+      (random() < 0.5 ? -1 : 1) *
+      Math.min(45, length * (0.18 + random() * 0.1));
     const points = [source];
     // The disk bounded by the nearest coastline is entirely inland. These
     // control points stay in that disk, including their smoothed river curve.
@@ -169,23 +172,28 @@ export function planLandTerrain(poly, seed, mountainous = false) {
       });
     }
     rivers.push([...points, coast.point]);
-    const side = i % 2 === 0 ? 1 : -1;
-    // Join at an actual point on the quadratic curve used by the renderer.
-    const join = {
-      x: (points[2].x + points[3].x) / 2,
-      y: (points[2].y + points[3].y) / 2,
-    };
-    tributaries.push([
-      {
-        x: source.x + dx * 0.12 - dy * 0.32 * side,
-        y: source.y + dy * 0.12 + dx * 0.32 * side,
-      },
-      {
-        x: source.x + dx * 0.3 - dy * 0.18 * side,
-        y: source.y + dy * 0.3 + dx * 0.18 * side,
-      },
-      join,
-    ]);
+    for (const [branch, side] of [
+      [2, 1],
+      [3, -1],
+    ]) {
+      // Midpoints are exact endpoints on the rendered quadratic curve.
+      const join = {
+        x: (points[branch].x + points[branch + 1].x) / 2,
+        y: (points[branch].y + points[branch + 1].y) / 2,
+      };
+      const controls = [
+        [0.06, 0.42],
+        [0.18, 0.28],
+        [0.3, 0.33],
+      ];
+      tributaries.push([
+        ...controls.map(([along, across]) => ({
+          x: source.x + dx * along - dy * across * side,
+          y: source.y + dy * along + dx * across * side,
+        })),
+        join,
+      ]);
+    }
   }
 
   const plains = [];
@@ -214,10 +222,21 @@ export function planTerrainIllustration(
   { mountainous = false, biome = "temperate", clearings = [] } = {},
 ) {
   const terrain = planLandTerrain(poly, seed, mountainous);
-  const result = { ...terrain, biome, ridges: [], groves: [] };
+  const riverDetails = planRiverDetails(
+    poly,
+    terrain.rivers,
+    terrain.tributaries,
+    clearings,
+  );
+  const result = { ...terrain, riverDetails, biome, ridges: [], groves: [] };
   if (poly.length < 3 || polygonArea(poly) < 300) return result;
   const random = randomSource(seed + 7919);
   const clear = (point, radius) =>
+    riverDetails.settlements.every(
+      (house) =>
+        Math.hypot(point.x - house.x, point.y - house.y) >
+        radius + house.size * 2,
+    ) &&
     clearings.every(
       (zone) =>
         ((point.x - zone.x) / (zone.rx + radius)) ** 2 +
