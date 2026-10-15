@@ -1482,6 +1482,39 @@ function drawShipRegisterArt(vesselClass) {
   c.restore();
 }
 
+function setupCrewRoleTooltip(info) {
+  const button = info.querySelector("button");
+  const tooltip = info.querySelector('[role="tooltip"]');
+  let pinned = false;
+  const show = () => {
+    tooltip.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+  };
+  const hide = () => {
+    pinned = false;
+    tooltip.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+  };
+  info.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse") show();
+  });
+  info.addEventListener("pointerleave", () => {
+    if (!pinned) hide();
+  });
+  button.addEventListener("focus", show);
+  button.addEventListener("blur", hide);
+  button.addEventListener("click", () => {
+    pinned = !pinned;
+    if (pinned) show();
+    else hide();
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    hide();
+  });
+}
+
 export function renderShipPanel() {
   syncPanelContext();
 
@@ -1492,9 +1525,6 @@ export function renderShipPanel() {
 
   document.getElementById("shipRegisterName").textContent =
     activeClass.vesselName;
-  document.getElementById("shipRegisterDescription").textContent =
-    activeClass.name + " — " + activeClass.description;
-
   drawShipRegisterArt(activeClass.id);
 
   document.getElementById("shipRegisterStats").innerHTML =
@@ -1553,9 +1583,13 @@ export function renderShipPanel() {
   )
     .map(
       ([role, group]) =>
-        `<article class="crew-card"><header><b>${CREW_ROLES[role].label}</b><strong>${group.count}</strong></header><span>${Math.round(group.experience)} experience · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span><p>${CREW_ROLES[role].description}</p></article>`,
+        `<article class="crew-card"><header><span class="crew-role-name"><b>${CREW_ROLES[role].label}</b><span class="crew-role-info"><button type="button" class="crew-info-button" aria-label="About ${CREW_ROLES[role].label}" aria-describedby="crew-tooltip-${role}" aria-expanded="false"><span aria-hidden="true">i</span></button><span id="crew-tooltip-${role}" class="crew-role-tooltip" role="tooltip" hidden>${CREW_ROLES[role].description}</span></span></span><strong>${group.count}</strong></header><span>${Math.round(group.experience)} experience · ${Math.round(group.fatigue)} fatigue</span><span>${group.injuries} injured · ${Math.round(group.loyalty)} loyalty</span></article>`,
     )
     .join("");
+
+  document
+    .querySelectorAll("#shipRegisterCrewGroups .crew-role-info")
+    .forEach(setupCrewRoleTooltip);
 
   document.getElementById("shipRegisterComponents").innerHTML = Object.entries(
     SHIP_COMPONENTS,
