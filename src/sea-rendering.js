@@ -33,6 +33,7 @@ import {
   regionalWaveProfile,
   regionalWaterInk,
 } from "./core/regional-water.js";
+import { createObstacleFoamRendering } from "./obstacle-foam-rendering.js";
 import { seasonAtDay } from "./core/seasons.js";
 
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
@@ -266,6 +267,7 @@ export function createSeaRendering({
       poly,
     };
   });
+  const obstacleFoam = createObstacleFoamRendering({ WORLD, coasts, currents });
   const surfaceMarks = [];
   const sampleRegion = createRegionalWaterSampler({
     world: WORLD,
@@ -1192,6 +1194,15 @@ export function createSeaRendering({
           encounterCreature === index ? 1 - index * 3.7 : t,
         );
     });
+    obstacleFoam.draw(c, {
+      camera,
+      time: t,
+      roughness,
+      windAngle,
+      detail,
+      view: detailView,
+      reducedMotion,
+    });
     for (const { shoreline, depth, offset } of visible) {
       c.save();
       c.translate(offset, 0);
@@ -1553,6 +1564,7 @@ export function createSeaRendering({
   }
   return {
     drawSurface,
+    setHarborObstacles: (obstacles) => obstacleFoam.setHarbors(obstacles),
     drawLighting: (c, options) =>
       seaLightRendering.draw(c, {
         ...options,

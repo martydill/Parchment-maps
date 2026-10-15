@@ -1,3 +1,4 @@
+import { harborFoamObstacles } from "./core/obstacle-foam.js";
 import { createCartographicRendering } from "./cartographic-rendering.js";
 import { labelZoomOpacity } from "./core/cartography.js";
 import { createSeasonalWorldRendering } from "./seasonal-world-rendering.js";
@@ -17,7 +18,7 @@ import {
   refreshPortWorkspaces,
   readingPages,
 } from "./ui/port-workspace.js?v=5";
-import { createSeaRendering } from "./sea-rendering.js?v=10";
+import { createSeaRendering } from "./sea-rendering.js?v=11";
 import {
   advanceEncounter,
   beginEncounter,
@@ -1511,6 +1512,14 @@ const portMiniaturePlacements = new Map(
   ports
     .filter((port) => hasPortMiniature(port.name))
     .map((port) => [port.name, planPortIllustration(port, lands, WORLD.w)]),
+);
+seaRendering.setHarborObstacles(
+  ports.flatMap((port) =>
+    harborFoamObstacles(
+      getHarborLayout(port.name),
+      portMiniaturePlacements.get(port.name),
+    ),
+  ),
 );
 const chartPortArt = createPortMiniatureCache();
 const menuPortArt = createPortMiniatureCache(4);
