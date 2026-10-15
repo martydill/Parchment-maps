@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planShoreline, shorelineCliffFaces } from "../src/core/shoreline.js";
+import {
+  planShoreline,
+  shorelineCliffFaces,
+  planTidalShoreline,
+  sampleVisualTide,
+} from "../src/core/shoreline.js";
 import { drawCliffDetails } from "../src/sculpted-terrain-rendering.js";
 import {
   drawCoastalWater,
@@ -8,6 +13,7 @@ import {
   drawCoastalLand,
   drawPigmentGranulation,
   drawShoreBreak,
+  drawTidalShore,
 } from "../src/shoreline-rendering.js";
 
 function recordingContext() {
@@ -52,6 +58,57 @@ const poly = [
   [180, 180],
   [10, 180],
 ];
+
+test("low tide reveals sand, wet stone and pools with balanced canvas state", () => {
+  const patches = ["tropical", "volcanic", "alpine"].flatMap((biome) =>
+    planTidalShoreline(planShoreline(poly, 811, biome)),
+  );
+  const high = recordingContext();
+  patches.forEach((p) =>
+    drawTidalShore(high.context, p, 12, sampleVisualTide(0)),
+  );
+  assert.deepEqual(high.calls, []);
+  const low = recordingContext();
+  patches.forEach((p) =>
+    drawTidalShore(low.context, p, 12, sampleVisualTide(120)),
+  );
+  for (const color of ["#c5b780", "#3b4b49", "#264e50", "#5e9188"])
+    assert.ok(
+      low.calls.some(([key, value]) => key === "fillStyle" && value === color),
+      color,
+    );
+  assert.ok(low.calls.some(([key]) => key === "clip"));
+  assert.ok(
+    low.calls
+      .flat()
+      .filter((v) => typeof v === "number")
+      .every(Number.isFinite),
+  );
+  assert.equal(low.context.globalAlpha, 0.4);
+  assert.equal(low.states.length, 0);
+  const segment = {
+    ...planShoreline(poly, 1)[0],
+    grain: 0.8,
+    kind: "sand",
+    phase: Math.PI / 2,
+  };
+  const surf = (time) => {
+    const target = recordingContext();
+    drawShoreBreak(
+      target.context,
+      segment,
+      12,
+      0,
+      0,
+      1,
+      sampleVisualTide(time),
+    );
+    return target.calls.find(([key]) => key === "moveTo").slice(1);
+  };
+  const a = surf(0),
+    b = surf(120);
+  assert.ok(Math.abs(Math.hypot(b[0] - a[0], b[1] - a[1]) - 8) < 1e-9);
+});
 
 test("baked pigment keeps water masked from land and cliff faces and restores canvas state", () => {
   for (const biome of ["tropical", "volcanic", "marsh", "alpine"]) {

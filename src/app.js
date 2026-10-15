@@ -5003,6 +5003,7 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
         placement.heading,
         lighting,
         portSeason(port),
+        reducedMotion.matches ? 0 : time,
       );
       drawPortActivity(
         c,
