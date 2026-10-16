@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { currentObjective, voyageWarnings } from "../src/core/guidance.js";
+import { QUESTS } from "../src/core/quests.js";
 
 function game(overrides = {}) {
   return {
@@ -131,6 +132,7 @@ test("currentObjective warns under-provisioned captains and advances milestones"
           shortageExploited: true,
           lawChanged: true,
         },
+        quests: { completed: QUESTS.map((item) => item.id) },
       }),
     }).urgency,
     "complete",

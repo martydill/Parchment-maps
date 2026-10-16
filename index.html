@@ -324,6 +324,9 @@
           <span id="courseDetail">Take your first Guild commission.</span>
           <span id="courseAction">Show me where →</span>
         </button>
+        <button id="questButton" type="button">
+          Quests &amp; goals · 0/15
+        </button>
         <div id="plottedCourse" hidden>
           <span class="hud-paper-edge" aria-hidden="true"></span>
           <span class="course-kicker">Plotted course</span>
@@ -1093,6 +1096,9 @@
             >
               Milestone
             </button>
+            <button type="button" class="port-tab" data-tab="quests" role="tab">
+              Quests &amp; goals
+            </button>
             <button type="button" class="port-tab" data-tab="legacy" role="tab">
               Legacies
             </button>
@@ -1147,6 +1153,24 @@
               <div class="detail-card">
                 <h3>Merchant-prince milestone</h3>
                 <div id="milestoneLedger"></div>
+              </div>
+            </section>
+            <section class="port-panel" data-tab="quests" role="tabpanel">
+              <div class="detail-card">
+                <h3>Quests &amp; goals</h3>
+                <p class="small">
+                  Follow three quest chains at your own pace. Earlier
+                  achievements count toward later quests. Collect each reward to
+                  unlock the next quest in its chain. Track a quest to put it on
+                  the Captain’s course; active delivery deadlines take priority.
+                </p>
+                <p
+                  id="questStatus"
+                  class="quest-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+                <div id="questJournal"></div>
               </div>
             </section>
             <section class="port-panel" data-tab="legacy" role="tabpanel">
