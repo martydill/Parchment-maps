@@ -67,6 +67,7 @@ function vesselSailResponse(key, options) {
   return response;
 }
 const patchSpawns = new WeakMap();
+const hullFaceCache = new WeakMap();
 let smokeStamp = null;
 function getSmokeStamp() {
   if (!smokeStamp) {
@@ -93,21 +94,30 @@ const HULL_STATIONS = Object.freeze([
   [0.5, 0.05],
 ]);
 
-function rotatePoint([x, y, z], heading, motion) {
+function shipTransform(heading, motion) {
+  // Hull, rigging, cloth, and reflections share one rotation per vessel draw.
+  return {
+    ...motion,
+    cosRoll: Math.cos(motion.roll),
+    sinRoll: Math.sin(motion.roll),
+    cosPitch: Math.cos(motion.pitch),
+    sinPitch: Math.sin(motion.pitch),
+    cosHeading: Math.cos(heading),
+    sinHeading: Math.sin(heading),
+  };
+}
+
+function rotatePoint([x, y, z], _heading, motion) {
   // Roll around the keel, then pitch around the beam, before heading and
   // orthographic projection. Rigging and cloth use this same transform.
-  const rolledX = x * Math.cos(motion.roll) + z * Math.sin(motion.roll);
-  const rolledZ = z * Math.cos(motion.roll) - x * Math.sin(motion.roll);
-  const pitchedY =
-    y * Math.cos(motion.pitch) - rolledZ * Math.sin(motion.pitch);
-  z =
-    y * Math.sin(motion.pitch) +
-    rolledZ * Math.cos(motion.pitch) +
-    motion.heave;
+  const rolledX = x * motion.cosRoll + z * motion.sinRoll;
+  const rolledZ = z * motion.cosRoll - x * motion.sinRoll;
+  const pitchedY = y * motion.cosPitch - rolledZ * motion.sinPitch;
+  z = y * motion.sinPitch + rolledZ * motion.cosPitch + motion.heave;
   x = rolledX;
   y = pitchedY;
-  const cosine = Math.cos(heading);
-  const sine = Math.sin(heading);
+  const cosine = motion.cosHeading;
+  const sine = motion.sinHeading;
   return {
     x: x * cosine - y * sine,
     y: x * sine + y * cosine,
@@ -260,17 +270,35 @@ function buildHullFaces(profile, seed = 0) {
   return faces;
 }
 
+function hullFaces(profile, seed = 0) {
+  // Only model dimensions and the timber seed affect this geometry. Keep
+  // transformed faces separate so damage, heading, and light remain live.
+  if (!Object.isFrozen(profile)) return buildHullFaces(profile, seed);
+  let variants = hullFaceCache.get(profile);
+  if (!variants) {
+    variants = new Map();
+    hullFaceCache.set(profile, variants);
+  }
+  if (!variants.has(seed)) {
+    // Bound memory even when a long voyage introduces many merchant seeds.
+    if (variants.size >= 32) variants.delete(variants.keys().next().value);
+    variants.set(seed, buildHullFaces(profile, seed));
+  }
+  return variants.get(seed);
+}
+
 // The caller centers/scales this pass and clips it to water. Mirror height
 // across z = 0, keeping the keel's map position and the live hull's pose.
 export function drawHullReflection(c, profile, heading, environment = {}) {
-  const motion = sampleShipMotion(environment);
+  let motion = sampleShipMotion(environment);
   // A damaged hull lists and settles; its ink reflection leans with it.
   motion.roll += environment.heel || 0;
   motion.heave -= environment.settle || 0;
+  motion = shipTransform(heading, motion);
   const time = environment.reducedMotion ? 0 : (environment.time ?? 0);
   const roughness = environment.roughness ?? 0;
   const daylight = environment.lighting?.daylight ?? 1;
-  const polygons = buildHullFaces(profile).map(({ vertices }) => {
+  const polygons = hullFaces(profile).map(({ vertices }) => {
     const points = vertices.map((vertex) => {
       const point = rotatePoint(vertex, heading, motion);
       return [point.x, point.y + Math.max(0, point.z) * MAP_TILT_TAN];
@@ -1220,6 +1248,7 @@ function drawShipModel(
       roll: motion.roll + damage.heel,
       heave: motion.heave - damage.settle,
     };
+  motion = shipTransform(heading, motion);
   c.save();
   c.translate(x, y);
   drawHullWater(c, profile, motion, heading, z, bioluminescence, windX, windY);
@@ -1247,7 +1276,7 @@ function drawShipModel(
   if (damage?.splinters > 0)
     drawSplinterFlecks(c, profile, heading, z, motion, damage, time, seed);
 
-  const hull = buildHullFaces(profile, seed);
+  const hull = hullFaces(profile, seed);
   const cabinStart = profile.length * 0.17;
   const cabinEnd = profile.length * 0.43;
   const cabinWidth = profile.beam * (profile.cabin === "high" ? 0.62 : 0.48);

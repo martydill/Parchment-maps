@@ -42,8 +42,10 @@ export function createObstacleFlow(obstacles, worldWidth, currents = []) {
   const columns = Math.max(1, Math.ceil(worldWidth / 64));
   const cell = worldWidth / columns;
   const grid = new Map();
+  const neighborhoods = new Map();
   const sources = [];
-  const key = (x, y) => `${((x % columns) + columns) % columns}:${y}`;
+  // Row-stride IDs avoid allocating grid-key strings for every particle.
+  const key = (x, y) => y * columns + (((x % columns) + columns) % columns);
   const insert = (entry) => {
     const id = key(Math.floor(entry.x / cell), Math.floor(entry.y / cell));
     if (!grid.has(id)) grid.set(id, []);
@@ -139,6 +141,29 @@ export function createObstacleFlow(obstacles, worldWidth, currents = []) {
     (s) => !contains(s.x + s.nx * 3, s.y + s.ny * 3),
   );
 
+  function neighborhood(column, row) {
+    const id = key(column, row);
+    let entries = neighborhoods.get(id);
+    if (entries) return entries;
+    entries = [];
+    const visited = new Set();
+    // Geometry is static, so particles in the same cell share these nine
+    // buckets. Preserve their order and deduplicate narrow wrapped worlds.
+    for (let ix = column - 1; ix <= column + 1; ix++) {
+      for (let iy = row - 1; iy <= row + 1; iy++) {
+        const neighbor = key(ix, iy);
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        for (const entry of grid.get(neighbor) ?? []) entries.push(entry);
+      }
+    }
+    // Keep the cache bounded as voyages move through new coastlines.
+    if (neighborhoods.size >= 256)
+      neighborhoods.delete(neighborhoods.keys().next().value);
+    neighborhoods.set(id, entries);
+    return entries;
+  }
+
   function sample(x, y, windAngle, roughness) {
     const current = currentAtPosition({ x, y }, currents, worldWidth);
     const speed = 4 + clamp(roughness, 0, 1) * 4;
@@ -150,39 +175,31 @@ export function createObstacleFlow(obstacles, worldWidth, currents = []) {
     let nearest = null;
     const column = Math.floor(x / cell),
       row = Math.floor(y / cell);
-    const visited = new Set();
-    for (let ix = column - 1; ix <= column + 1; ix++) {
-      for (let iy = row - 1; iy <= row + 1; iy++) {
-        const id = key(ix, iy);
-        if (visited.has(id)) continue;
-        visited.add(id);
-        for (const s of grid.get(id) ?? []) {
-          const px = nearestWrapped(s.x, x, worldWidth);
-          if (s.vortex) {
-            const downstream = (flowX * s.nx + flowY * s.ny) / magnitude;
-            if (downstream <= 0.12) continue;
-            const dx = x - px - s.nx * s.radius * 1.35,
-              dy = y - s.y - s.ny * s.radius * 1.35;
-            const r = Math.hypot(dx, dy) / s.radius;
-            if (r >= 2.6) continue;
-            const spin = Math.sign(flowX * s.ny - flowY * s.nx) || 1;
-            const strength = Math.exp(-r * r * 0.65) * downstream;
-            vx += ((-dy / s.radius) * spin * 19 - flowX * 0.7) * strength;
-            vy += ((dx / s.radius) * spin * 19 - flowY * 0.7) * strength;
-            continue;
-          }
-          const ax = px - (s.tx * s.length) / 2;
-          const ay = s.ay;
-          const along = clamp((x - ax) * s.tx + (y - ay) * s.ty, 0, s.length);
-          const qx = ax + s.tx * along,
-            qy = ay + s.ty * along;
-          const dx = x - qx,
-            dy = y - qy,
-            distance = Math.hypot(dx, dy);
-          if (distance < 42 && (!nearest || distance < nearest.distance))
-            nearest = { s, distance, qx, qy, side: dx * s.nx + dy * s.ny };
-        }
+    for (const s of neighborhood(column, row)) {
+      const px = nearestWrapped(s.x, x, worldWidth);
+      if (s.vortex) {
+        const downstream = (flowX * s.nx + flowY * s.ny) / magnitude;
+        if (downstream <= 0.12) continue;
+        const dx = x - px - s.nx * s.radius * 1.35,
+          dy = y - s.y - s.ny * s.radius * 1.35;
+        const r = Math.hypot(dx, dy) / s.radius;
+        if (r >= 2.6) continue;
+        const spin = Math.sign(flowX * s.ny - flowY * s.nx) || 1;
+        const strength = Math.exp(-r * r * 0.65) * downstream;
+        vx += ((-dy / s.radius) * spin * 19 - flowX * 0.7) * strength;
+        vy += ((dx / s.radius) * spin * 19 - flowY * 0.7) * strength;
+        continue;
       }
+      const ax = px - (s.tx * s.length) / 2;
+      const ay = s.ay;
+      const along = clamp((x - ax) * s.tx + (y - ay) * s.ty, 0, s.length);
+      const qx = ax + s.tx * along,
+        qy = ay + s.ty * along;
+      const dx = x - qx,
+        dy = y - qy,
+        distance = Math.hypot(dx, dy);
+      if (distance < 42 && (!nearest || distance < nearest.distance))
+        nearest = { s, distance, qx, qy, side: dx * s.nx + dy * s.ny };
     }
     if (nearest) {
       const { s, distance } = nearest;

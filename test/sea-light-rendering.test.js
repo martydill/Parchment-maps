@@ -207,13 +207,45 @@ test("moon phase, source position, sea state, and quality invalidate cached glit
     { lighting: { daylight: 0, sunset: 1 } },
     { roughness: 0.7 },
     { detail: 0.5 },
-    { camera: { ...options.camera, x: 12 } },
+    { camera: { ...options.camera, x: 14 } },
   ];
   for (const change of changes) {
     const count = env.paints.length;
     env.renderer.draw(env.target, { ...options, ...change });
     assert.equal(env.paints.length, count + 1);
   }
+});
+
+test("slow sailing and continuous sea-state changes do not defeat glitter caching", (t) => {
+  const env = setup(t);
+  for (let frame = 0; frame < 120; frame++)
+    env.renderer.draw(env.target, {
+      ...options,
+      time: 1000 + frame * (1000 / 60),
+      camera: { ...options.camera, x: options.camera.x + frame * 0.6 },
+      roughness: 0.1 + frame * 0.00001,
+    });
+  assert.ok(
+    env.paints.length <= 60,
+    "slow glitter updates run at most at 30 Hz",
+  );
+  assert.equal(
+    env.blits.length,
+    120,
+    "world-anchored light stays visible every frame",
+  );
+  const previous = env.paints.length;
+  env.renderer.draw(env.target, {
+    ...options,
+    time: 2990,
+    camera: { ...options.camera, x: options.camera.x + 119 * 0.6 },
+    roughness: 0.2,
+  });
+  assert.equal(
+    env.paints.length,
+    previous + 1,
+    "larger sea-state changes refresh immediately",
+  );
 });
 
 test("buffered ripples reuse a padded world anchor and refresh at edges and projection changes", (t) => {

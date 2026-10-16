@@ -19,7 +19,17 @@ function darknessUnchanged(
   lighthouses,
   maskScale,
   focusRadius,
+  time,
 ) {
+  // The mask is soft and already downsampled. Reuse it for one display frame
+  // during slow movement, measuring drift from the last paint so it cannot
+  // accumulate. Beams and flames still animate at the full frame rate.
+  const tolerance =
+    darknessState &&
+    time >= darknessState.time &&
+    time - darknessState.time < 1000 / 30
+      ? 2
+      : 0;
   return (
     darknessState &&
     darknessState.width === width &&
@@ -29,14 +39,14 @@ function darknessUnchanged(
     darknessState.night === lighting.night &&
     darknessState.moon === lighting.moon &&
     darknessState.storm === lighting.storm &&
-    darknessState.shipX === ship.x &&
-    darknessState.shipY === ship.y &&
+    Math.abs(darknessState.shipX - ship.x) <= tolerance &&
+    Math.abs(darknessState.shipY - ship.y) <= tolerance &&
     darknessState.lighthouses.length === lighthouses.length &&
     lighthouses.every((light, index) => {
       const previous = darknessState.lighthouses[index];
       return (
-        previous.x === light.x &&
-        previous.y === light.y &&
+        Math.abs(previous.x - light.x) <= tolerance &&
+        Math.abs(previous.y - light.y) <= tolerance &&
         previous.index === light.index
       );
     })
@@ -291,6 +301,7 @@ export function drawNightAtmosphere(
       lighthouses,
       maskScale,
       focusRadius,
+      time,
     )
   ) {
     paintDarkness(
@@ -307,6 +318,7 @@ export function drawNightAtmosphere(
       height,
       maskScale,
       focusRadius,
+      time,
       night: lighting.night,
       moon: lighting.moon,
       storm: lighting.storm,

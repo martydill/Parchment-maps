@@ -36,12 +36,12 @@ export function createSeaLightRendering(drawBands) {
         cached.alpha !== alpha ||
         Math.abs(cached.windAngle - windAngle) > 0.01 ||
         cached.lightKey !== lightKey ||
-        cached.roughness !== roughness ||
+        Math.abs(cached.roughness - roughness) > 0.01 ||
         cached.detail !== detail ||
         time < cached.time ||
         time - cached.time >= 1000 / 30 ||
-        Math.abs(camera.x - cached.x) * z > 0.5 ||
-        Math.abs(camera.y - cached.y) * z * MAP_TILT_COS > 0.5
+        Math.abs(camera.x - cached.x) * z > 2 ||
+        Math.abs(camera.y - cached.y) * z * MAP_TILT_COS > 2
       ) {
         if (layer.width !== width || layer.height !== height) {
           layer.width = width;

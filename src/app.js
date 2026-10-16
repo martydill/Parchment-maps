@@ -5597,7 +5597,7 @@ function render() {
     detail: effectDetail(),
   });
   seaRendering.drawSurface(ctx, {
-    bufferSurface: !encounters.active && z < 1 && vw * vh > 1_000_000,
+    bufferSurface: !encounters.active,
     deferLighting: true,
     cacheLightBands: true,
     detail: effectDetail(),
@@ -5769,6 +5769,8 @@ function render() {
   shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
   shipScreen.angle = ship.angle;
   depthRendering.draw(ctx, {
+    time,
+    camera,
     width: vw,
     height: vh,
     ship: shipScreen,

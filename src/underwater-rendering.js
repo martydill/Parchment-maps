@@ -232,40 +232,66 @@ export function createUnderwaterRendering({
       const halfW = vw / (2 * camera.zoom);
       const halfH = vh / (2 * camera.zoom * MAP_TILT_COS);
       const visible = [];
+      const region = {
+        left: Infinity,
+        right: -Infinity,
+        top: Infinity,
+        bottom: -Infinity,
+      };
       for (const site of sites) {
+        if (Math.abs(site.y - camera.y) > halfH + site.radius) continue;
         const base = nearestWrapped(site.x, camera.x, WORLD.w);
-        for (
-          let x = base - WORLD.w;
-          x <= camera.x + halfW + site.radius;
-          x += WORLD.w
-        ) {
-          if (
-            x + site.radius < camera.x - halfW ||
-            Math.abs(site.y - camera.y) > halfH + site.radius
-          )
-            continue;
-          visible.push({ site, x });
-        }
-      }
-      if (!visible.length) return;
-      c.save();
-      clipWater(c, visibleCoasts(camera, vw, vh));
-      const inheritedAlpha = c.globalAlpha;
-      const strips = detail < 0.7 ? 12 : detail < 0.9 ? 20 : 32;
-      const pixels = PLATE_SIZE / strips;
-      for (const { site, x } of visible) {
+        const left = camera.x - halfW - site.radius;
+        const right = camera.x + halfW + site.radius;
+        const first = base + Math.ceil((left - base) / WORLD.w) * WORLD.w;
+        if (first > right) continue;
+        // Dark water needs neither a plate nor a coastline clip. This sample
+        // was previously repeated after collecting every visible world copy.
         if (
           sampleUnderwaterVeil(site, 0, options.time, WORLD.w, options).alpha <
           0.001
         )
           continue;
+        for (let x = first; x <= right; x += WORLD.w) {
+          visible.push({ site, x });
+          // Refraction moves a strip by at most 2.925 world units. Include
+          // that shift and a screen pixel for filtering at the plate edge.
+          const margin = site.radius + 3 + 1 / camera.zoom;
+          region.left = Math.min(region.left, x - margin);
+          region.right = Math.max(region.right, x + margin);
+          const verticalMargin = site.radius + 1 / (camera.zoom * MAP_TILT_COS);
+          region.top = Math.min(region.top, site.y - verticalMargin);
+          region.bottom = Math.max(region.bottom, site.y + verticalMargin);
+        }
+      }
+      if (!visible.length) return;
+      c.save();
+      // Scissor the inverse coastline masks to the submerged artwork rather
+      // than rasterizing them across the entire Retina canvas.
+      clipWater(c, visibleCoasts(camera, vw, vh), region);
+      const inheritedAlpha = c.globalAlpha;
+      const strips = detail < 0.7 ? 12 : detail < 0.9 ? 20 : 32;
+      const pixels = PLATE_SIZE / strips;
+      const edge = 1 / (camera.zoom * MAP_TILT_COS);
+      const top = camera.y - halfH - edge;
+      const bottom = camera.y + halfH + edge;
+      for (const { site, x } of visible) {
         if (!plates.has(site)) {
           if (plates.size >= 96) plates.delete(plates.keys().next().value);
           plates.set(site, bakeSite(site));
         }
         const plate = plates.get(site);
         const span = site.radius * 2;
-        for (let strip = 0; strip < strips; strip++) {
+        const stripHeight = span / strips;
+        const first = Math.max(
+          0,
+          Math.floor((top - site.y + site.radius) / stripHeight),
+        );
+        const last = Math.min(
+          strips,
+          Math.ceil((bottom - site.y + site.radius) / stripHeight),
+        );
+        for (let strip = first; strip < last; strip++) {
           const y = (strip / strips - 0.5) * span;
           const veil = sampleUnderwaterVeil(
             site,
