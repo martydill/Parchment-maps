@@ -339,10 +339,7 @@ import {
   worldMonsters,
   worldShoals,
 } from "./world-data.js";
-import {
-  bioluminescentSeaAt,
-  vesselBioluminescence,
-} from "./core/bioluminescence.js";
+import { vesselBioluminescence } from "./core/bioluminescence.js";
 import {
   createDistinctMapSeed,
   createMapTransform,
@@ -549,7 +546,6 @@ const keys = new Set();
 let last = performance.now();
 let gameStarted = false;
 let nearPort = null;
-let glowingSeaName = null;
 let nearExplorationSite = null;
 let nearDiscovery = null;
 let currentPort = null;
@@ -764,33 +760,6 @@ function currentStormArc() {
   if (debugStormArc) return debugStormArc;
   const weather = getInterpolatedWeather();
   return stormArc({ front: weather.front, roughness: weather.roughness });
-}
-
-const ARC_STAGE_MESSAGES = {
-  gathering: "A dark line settles along the horizon — the wind is rising.",
-  brewing: "The gulls have gone quiet. Cloud stacks over the outer sea.",
-  tempest: "ALL HANDS ON DECK — the squall is upon you!",
-  breaking: "The sky tears open — gold light across the water.",
-  afterglow: "A watercolor rainbow arches over the wake.",
-};
-
-let announcedArcStage = null;
-let arcAnnounceCooldown = 0;
-function announceStormArc(dt) {
-  const arc = currentStormArc();
-  if (announcedArcStage === null || debugStormArc) {
-    // Baseline the tracker silently so a load mid-storm never spams news.
-    announcedArcStage = arc.stage;
-    return;
-  }
-  arcAnnounceCooldown = Math.max(0, arcAnnounceCooldown - dt);
-  if (arc.stage === announcedArcStage) return;
-  announcedArcStage = arc.stage;
-  if (arcAnnounceCooldown > 0) return;
-  const line = ARC_STAGE_MESSAGES[arc.stage];
-  if (!line) return;
-  showMessage(line, arc.stage === "tempest" ? 3 : 3.4);
-  arcAnnounceCooldown = 7;
 }
 
 const ARC_STAGE_PHRASES = {
@@ -6605,20 +6574,6 @@ function update(dt) {
         3.8,
       );
     }
-    // The luminous seas announce themselves once the wake starts to glow.
-    const glow = vesselBioluminescence(
-      ship,
-      bioluminescentSeas,
-      WORLD.w,
-      sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
-    );
-    const litSea =
-      glow > 0.08 && ship.speed > 12
-        ? bioluminescentSeaAt(ship, bioluminescentSeas, WORLD.w)?.name
-        : null;
-    if (litSea && litSea !== glowingSeaName)
-      showMessage(`${litSea} glows in your wake.`, 3.4);
-    glowingSeaName = litSea;
   }
   if (!encounters.active || reducedMotion.matches) {
     camera.x += (ship.x - camera.x) * Math.min(1, dt * 4.5);
@@ -6692,7 +6647,6 @@ function update(dt) {
     messageTimer -= dt;
     if (messageTimer <= 0) ui.message.classList.remove("show");
   }
-  announceStormArc(dt);
   updateSeaWarning();
   updateHud();
 }
