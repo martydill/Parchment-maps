@@ -134,7 +134,7 @@ test("night stars reuse a fine palette without losing their twinkle", () => {
   assert.ok(colors.size > 20 && colors.size <= 128);
 });
 
-test("mask changes invalidate immediately, including in-place state edits", () => {
+test("mask changes repaint by the next update, including in-place state edits", () => {
   const context = canvasContext();
   const state = options();
   drawNightAtmosphere(context, state);
@@ -155,6 +155,7 @@ test("mask changes invalidate immediately, including in-place state edits", () =
   ];
   for (const change of changes) {
     const previous = paints();
+    state.time += 34;
     change();
     drawNightAtmosphere(context, state);
     assert.equal(paints(), previous + 1);
@@ -163,6 +164,64 @@ test("mask changes invalidate immediately, including in-place state edits", () =
   }
   assert.equal(mask.canvas.width, 321);
   assert.equal(mask.canvas.height, 241);
+});
+
+test("sailing reuses the soft night mask briefly without accumulating drift", () => {
+  const context = canvasContext();
+  const state = options();
+  state.time = 10000;
+  drawNightAtmosphere(context, state);
+  const initial = paints();
+  for (const time of [10008, 10016, 10024]) {
+    state.time = time;
+    state.ship.x += 0.5;
+    for (const light of state.lighthouses) light.x += 0.5;
+    drawNightAtmosphere(context, state);
+    assert.equal(paints(), initial);
+  }
+  state.time = 10034;
+  drawNightAtmosphere(context, state);
+  assert.equal(paints(), initial + 1);
+  state.time = 10040;
+  state.lighthouses[0].y += 2.01;
+  drawNightAtmosphere(context, state);
+  assert.equal(paints(), initial + 2, "larger movement repaints immediately");
+  state.time = 10048;
+  state.ship.x += 1.1;
+  drawNightAtmosphere(context, state);
+  assert.equal(paints(), initial + 2);
+  state.time = 10056;
+  state.ship.x += 1.1;
+  drawNightAtmosphere(context, state);
+  assert.equal(paints(), initial + 3, "small steps cannot accumulate drift");
+  state.time = 0;
+  state.ship.y += 0.01;
+  drawNightAtmosphere(context, state);
+  assert.equal(paints(), initial + 4, "rewinding time refreshes a moved mask");
+});
+
+test("night mask lighting, beacon identity, and quality changes bypass cadence", () => {
+  const context = canvasContext();
+  const state = options();
+  drawNightAtmosphere(context, state);
+  for (const change of [
+    () => (state.lighting.night = 0.9),
+    () => (state.lighting.moon = 0.6),
+    () => (state.lighting.storm = 0.2),
+    () => state.lighthouses[0].index++,
+    () => state.lighthouses.push({ x: 20, y: 30, index: 4 }),
+    () => state.lighthouses.pop(),
+    () => (state.maskScale = 0.3),
+    () => (state.zoom = 2),
+    () => state.width++,
+    () => state.height++,
+  ]) {
+    const previous = paints();
+    state.time++;
+    change();
+    drawNightAtmosphere(context, state);
+    assert.equal(paints(), previous + 1);
+  }
 });
 
 test("daylight skips darkness and reduced motion retains a stable beam", () => {

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createUnderwaterRendering } from "../src/underwater-rendering.js";
+import { MAP_TILT_COS } from "../src/core/projection.js";
 
 function recorder() {
   const calls = [];
@@ -141,10 +142,54 @@ test("quality reduces reveal sampling while distant, deep, and dark water alloca
   assert.equal(env.canvases.length, 0);
   assert.equal(env.draw({ lighting: { daylight: 0 } }).calls.length, 0);
   assert.equal(env.canvases.length, 0);
+  assert.equal(
+    env.clips.length,
+    0,
+    "invisible plates never set up coastline masks",
+  );
   const high = env.draw().calls.length;
   assert.equal(env.draw({ detail: 0.75 }).calls.length, (high * 20) / 32);
   assert.equal(env.draw({ detail: 0.6 }).calls.length, (high * 12) / 32);
   const deep = setup(t, []);
   assert.equal(deep.draw().calls.length, 0);
   assert.equal(deep.canvases.length, 0);
+});
+
+test("water scissoring contains every refracted strip across wrapped views", (t) => {
+  const env = setup(t);
+  for (const x of [700, -1100, 2500]) {
+    const { calls } = env.draw({
+      camera: { x, y: 280, zoom: 1.5 },
+      vw: 300,
+      vh: 240,
+    });
+    assert.ok(calls.length > 0);
+    const region = env.clips.at(-1)[2];
+    for (const { args } of calls) {
+      assert.ok(args[5] >= region.left);
+      assert.ok(args[5] + args[7] <= region.right);
+      assert.ok(args[6] >= region.top);
+      assert.ok(args[6] + args[8] <= region.bottom);
+    }
+    assert.ok(
+      region.right - region.left < 1800,
+      "the scissor is local to the artwork",
+    );
+  }
+});
+
+test("partly offscreen plates only sample strips that can reach the viewport", (t) => {
+  const env = setup(t);
+  const camera = { x: 700, y: 280, zoom: 1 };
+  const full = env.draw({ camera, vw: 1500, vh: 1000 });
+  const narrow = env.draw({ camera, vw: 1500, vh: 10 });
+  assert.ok(narrow.calls.length > 0);
+  assert.ok(narrow.calls.length < full.calls.length);
+  const edge = 1 / MAP_TILT_COS;
+  const top = camera.y - 10 / (2 * MAP_TILT_COS) - edge;
+  const bottom = camera.y + 10 / (2 * MAP_TILT_COS) + edge;
+  for (const { args } of narrow.calls) {
+    assert.ok(args[6] + args[8] >= top);
+    assert.ok(args[6] <= bottom);
+  }
 });

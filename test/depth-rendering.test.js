@@ -62,6 +62,12 @@ test("the distance wash preserves a transparent, projected focus and reuses its 
     assert.equal(layer.height, Math.ceil(481 * 0.3));
     assert.deepEqual(copies[0], [c.canvas, 0, 0, layer.width, layer.height]);
     assert.deepEqual(blits[0], [layer, 0, 0, 641, 481]);
+    assert.equal(c.imageSmoothingEnabled, true);
+    assert.equal(
+      c.imageSmoothingQuality,
+      "low",
+      "blurred pigment uses inexpensive upscaling",
+    );
     assert.deepEqual(transforms[1], [0.3, 0, 0, 0.3 * MAP_TILT_COS, -6, 45]);
     assert.equal(
       gradients[0][2],
@@ -90,5 +96,78 @@ test("the distance wash preserves a transparent, projected focus and reuses its 
   } finally {
     if (originalDocument === undefined) delete globalThis.document;
     else globalThis.document = originalDocument;
+  }
+});
+
+test("the distance wash limits scene copies while refreshing view and lighting changes", (t) => {
+  const originalDocument = globalThis.document;
+  let copies = 0;
+  let blits = 0;
+  const wash = new Proxy(
+    {
+      drawImage() {
+        copies++;
+      },
+      createRadialGradient() {
+        return { addColorStop() {} };
+      },
+    },
+    { get: (target, key) => target[key] ?? (() => {}) },
+  );
+  globalThis.document = {
+    createElement: () => ({ getContext: () => wash }),
+  };
+  t.after(() => {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  });
+  const renderer = createDepthRendering();
+  const target = {
+    canvas: {},
+    save() {},
+    restore() {},
+    drawImage() {
+      blits++;
+    },
+  };
+  const frame = {
+    width: 800,
+    height: 600,
+    zoom: 1,
+    camera: { x: 100, y: 200 },
+    ship: { x: 400, y: 300 },
+    lighting: sceneLighting(0),
+    time: 1000,
+  };
+  renderer.draw(target, frame);
+  frame.time = 1016;
+  frame.camera.x++;
+  frame.ship.x++;
+  frame.ship.y++;
+  renderer.draw(target, frame);
+  assert.equal(copies, 1, "a nearby frame reuses the scene copy");
+  assert.equal(blits, 2, "the wash remains visible on every frame");
+  frame.time = 1034;
+  renderer.draw(target, frame);
+  assert.equal(copies, 2, "the moving background updates at 30 Hz");
+  for (const change of [
+    () => (frame.camera.x += 2.1),
+    () => (frame.camera.y += 3 / MAP_TILT_COS),
+    () => (frame.camera.x -= 5000),
+    () => frame.width++,
+    () => frame.height++,
+    () => (frame.zoom = 0.7),
+    () => (frame.maskScale = 0.2),
+    () => (frame.ship.x += 2.1),
+    () => (frame.ship.y += 2.1),
+    () => (frame.lighting = sceneLighting(0.73)),
+    () => (frame.lighting = sceneLighting(0.73, 1)),
+    () => (frame.time = 0),
+  ]) {
+    const before = copies;
+    frame.time++;
+    change();
+    renderer.draw(target, frame);
+    assert.equal(copies, before + 1, "changed scenes update immediately");
   }
 });

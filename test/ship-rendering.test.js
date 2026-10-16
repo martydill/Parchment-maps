@@ -58,6 +58,66 @@ test("each merchant vessel class draws a detailed projected model", () => {
   }
 });
 
+test("warm hull geometry saves work, preserves timber variants, and survives eviction", () => {
+  const merchant = {
+    x: 10,
+    y: 20,
+    angle: 0.7,
+    vesselClass: "brig",
+    idNum: 12345,
+  };
+  const render = (idNum = merchant.idNum) => {
+    const context = canvasContext();
+    drawMerchantShip(context, { ...merchant, idNum }, 1, 10, {
+      reducedMotion: true,
+    });
+    return context.calls;
+  };
+  const sin = Math.sin;
+  let samples = 0;
+  let first;
+  let second;
+  let coldSamples;
+  let warmSamples;
+  try {
+    Math.sin = (...args) => {
+      samples++;
+      return sin(...args);
+    };
+    first = render();
+    coldSamples = samples;
+    samples = 0;
+    second = render();
+    warmSamples = samples;
+  } finally {
+    Math.sin = sin;
+  }
+  assert.ok(
+    warmSamples < coldSamples,
+    "warm frames skip procedural timber work",
+  );
+  assert.deepEqual(second, first);
+  assert.notDeepEqual(
+    render(12346),
+    first,
+    "each timber seed retains its colors",
+  );
+  for (let seed = 20000; seed < 20040; seed++) render(seed);
+  assert.deepEqual(render(), first, "evicted geometry rebuilds identically");
+});
+
+test("custom mutable reflection profiles continue to respond to dimension changes", () => {
+  const profile = { ...getShipModelProfile("brig") };
+  const draw = () => {
+    const context = canvasContext();
+    drawHullReflection(context, profile, 0.4, { reducedMotion: true });
+    return context.calls;
+  };
+  const initial = draw();
+  profile.beam *= 2;
+  assert.notDeepEqual(draw(), initial);
+});
+
 test("ship foam uses bounded colors as speed changes and disappears at anchor", () => {
   const palettes = new Map([
     ["35,88,86", new Set()],

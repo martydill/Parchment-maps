@@ -104,6 +104,37 @@ test("incoming water splits toward both ends of a rock and slips along the face"
   assert.ok(flow.sample(240, 197, Math.PI / 4, 0.5).vx > 0);
 });
 
+test("cached obstacle neighborhoods retain live positions, wind, and roughness", () => {
+  const flow = make();
+  for (const [x, y, wind, roughness] of [
+    [198, 220, 0, 0.5],
+    [196, 225, Math.PI / 2, 0.1],
+    [197, 240, Math.PI, 0.9],
+    [198, 260, -Math.PI / 2, 0],
+  ]) {
+    assert.deepEqual(
+      flow.sample(x, y, wind, roughness),
+      make().sample(x, y, wind, roughness),
+    );
+  }
+});
+
+test("neighborhood eviction and negative latitude preserve the same flow", () => {
+  const flow = make();
+  const initial = flow.sample(198, 220, 0, 0.5);
+  // A long voyage must not retain every empty cell or alter later samples.
+  for (let row = -300; row < 300; row++)
+    assert.ok(Number.isFinite(flow.sample(500, row * 64, 0.2, 0.7).vx));
+  assert.deepEqual(flow.sample(198, 220, 0, 0.5), initial);
+  const narrow = createObstacleFlow([{ poly: square }], 100);
+  const sample = narrow.sample(185, 220, 0.3, 0.6);
+  for (const offset of [-300, -100, 100, 400]) {
+    const wrapped = narrow.sample(185 + offset, 220, 0.3, 0.6);
+    assert.equal(wrapped.vx, sample.vx);
+    assert.equal(wrapped.vy, sample.vy);
+  }
+});
+
 test("convex headlands shed opposite circulating lee eddies and currents steer water", () => {
   const flow = make();
   const above = flow.sample(300, 190, 0, 0.5);
