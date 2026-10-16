@@ -1,4 +1,5 @@
 import { PORT_NAMES, FACTION_NAMES } from "../names.js";
+import { questObjective } from "./quests.js";
 export function currentObjective({
   game,
   currentPortName = null,
@@ -48,11 +49,16 @@ export function currentObjective({
     };
   }
 
+  const trackedQuest = questObjective(game);
+  if (trackedQuest) return trackedQuest;
+
   if (game.completedContracts < 3) {
     if (currentPortName === homePortName) {
       return {
         id: "accept-contract",
-        title: "Accept your first commission",
+        title: game.completedContracts
+          ? "Accept another commission"
+          : "Accept your first commission",
         detail: `Open Trade and choose an ${PORT_NAMES.orvessaQuay} commission. Sealed cargo loads automatically and its destination appears on the chart.`,
         action: "trade",
         destination: homePortName,
@@ -118,15 +124,17 @@ export function currentObjective({
     };
   }
 
-  return {
-    id: "merchant-prince",
-    title: "Merchant Prince",
-    detail:
-      "Your charter is secure. Trade, explore, invest in ports, build faction alliances, and expand your fleet.",
-    action: "ledger",
-    destination: null,
-    urgency: "complete",
-  };
+  return (
+    questObjective(game, true) || {
+      id: "merchant-prince",
+      title: "Merchant Prince",
+      detail:
+        "Your charter is secure. Trade, explore, invest in ports, build faction alliances, and expand your fleet.",
+      action: "ledger",
+      destination: null,
+      urgency: "complete",
+    }
+  );
 }
 
 export function voyageWarnings(operations, estimate) {

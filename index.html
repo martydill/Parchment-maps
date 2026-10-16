@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=33" />
+    <link rel="stylesheet" href="./styles.css?v=34" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -323,6 +323,9 @@
           <b id="courseTitle">Dock at home port</b>
           <span id="courseDetail">Take your first Guild commission.</span>
           <span id="courseAction">Show me where →</span>
+        </button>
+        <button id="questButton" type="button">
+          Quests &amp; goals · 0/15
         </button>
         <div id="plottedCourse" hidden>
           <span class="hud-paper-edge" aria-hidden="true"></span>
@@ -1102,6 +1105,9 @@
             >
               Milestone
             </button>
+            <button type="button" class="port-tab" data-tab="quests" role="tab">
+              Quests &amp; goals
+            </button>
             <button type="button" class="port-tab" data-tab="legacy" role="tab">
               Legacies
             </button>
@@ -1156,6 +1162,24 @@
               <div class="detail-card">
                 <h3>Merchant-prince milestone</h3>
                 <div id="milestoneLedger"></div>
+              </div>
+            </section>
+            <section class="port-panel" data-tab="quests" role="tabpanel">
+              <div class="detail-card">
+                <h3>Quests &amp; goals</h3>
+                <p class="small">
+                  Follow three quest chains at your own pace. Earlier
+                  achievements count toward later quests. Collect each reward to
+                  unlock the next quest in its chain. Track a quest to put it on
+                  the Captain’s course; active delivery deadlines take priority.
+                </p>
+                <p
+                  id="questStatus"
+                  class="quest-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+                <div id="questJournal"></div>
               </div>
             </section>
             <section class="port-panel" data-tab="legacy" role="tabpanel">
@@ -1518,6 +1542,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=68"></script>
+    <script type="module" src="./src/app.js?v=69"></script>
   </body>
 </html>

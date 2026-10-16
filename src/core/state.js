@@ -12,6 +12,7 @@ import { createRivalState } from "./rivals.js";
 import { createMaritimeHazardState } from "./maritime-hazards.js";
 import { createSeaRaidState } from "./sea-raiders.js";
 import { createLegacyState } from "./legacies.js";
+import { createQuestState } from "./quests.js";
 
 export function createGameState() {
   return {
@@ -70,6 +71,7 @@ export function createGameState() {
     maritimeHazards: createMaritimeHazardState(),
     seaRaid: createSeaRaidState(),
     legacy: createLegacyState(),
+    quests: createQuestState(),
     legacyProgress: { piratesRepelled: 0 },
   };
 }

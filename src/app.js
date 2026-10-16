@@ -236,6 +236,11 @@ import {
 } from "./core/intelligence.js";
 import { currentObjective } from "./core/guidance.js";
 import {
+  normalizeQuestState,
+  recordQuestPort,
+  updateQuestProgress,
+} from "./core/quests.js";
+import {
   completeLegacyCapstone,
   continueLegacySandbox,
   legacyChecklist,
@@ -388,7 +393,7 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=20";
+} from "./ui/panels.js?v=21";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels, renderShipyard } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
@@ -3351,6 +3356,7 @@ function revealExplorationSurvey(site, surveyed) {
 
 function saveGameState() {
   if (!gameStarted || suppressSaving) return;
+  updateQuestProgress(game);
   try {
     const data = createSaveData({
       game,
@@ -3413,6 +3419,7 @@ function loadGameState() {
   game.maritimeHazards = normalizeMaritimeHazardState(game.maritimeHazards);
   game.seaRaid = normalizeSeaRaidState(game.seaRaid);
   game.legacy = normalizeLegacyState(game.legacy);
+  game.quests = normalizeQuestState(saved.game.quests);
   game.legacyProgress ||= { piratesRepelled: 0 };
   game.legacyProgress.piratesRepelled = Math.max(
     0,
@@ -3975,6 +3982,10 @@ function beginGame() {
     `The ${FACTION_NAMES.syrrelwakeOarwrightPact} has posted three introductory commissions at ${PORT_NAMES.orvessaQuay}. Fulfill them to build influence.`,
   );
   addNews(
+    "A captain’s prospects",
+    "Open Quests & goals to follow commerce, exploration, and command quests. Track a goal on your course and collect crowns as you complete each step.",
+  );
+  addNews(
     "Sails on the horizon",
     "Independent merchants now carry real cargo between the archipelago’s ports. Their arrivals will change local stock and prices.",
   );
@@ -4020,9 +4031,12 @@ function followCurrentObjective() {
     document.getElementById("portPanel").style.display = "grid";
     return;
   }
-  if (objective.action === "ledger") {
+  if (["ledger", "quests"].includes(objective.action)) {
     renderLedger();
-    activateSectionTabs(document.getElementById("ledgerPanel"), "milestone");
+    activateSectionTabs(
+      document.getElementById("ledgerPanel"),
+      objective.action === "quests" ? "quests" : "milestone",
+    );
     document.getElementById("ledgerPanel").style.display = "grid";
     return;
   }
@@ -4031,6 +4045,11 @@ function followCurrentObjective() {
 }
 
 ui.course.addEventListener("click", followCurrentObjective);
+document.getElementById("questButton").addEventListener("click", () => {
+  renderLedger();
+  activateSectionTabs(document.getElementById("ledgerPanel"), "quests");
+  document.getElementById("ledgerPanel").style.display = "grid";
+});
 ui.plottedCourseOpen.addEventListener("click", () => {
   minimapWrap.style.display = "grid";
   renderChart();
@@ -7035,6 +7054,7 @@ function openPort() {
   selectedTown = null;
   minimapWrap.style.display = "none";
   currentPort = nearPort;
+  recordQuestPort(game, currentPort.name);
   document.body.classList.add("port-open");
   game.seaRaid.raider = null;
   document.getElementById("seaWarning").hidden = true;

@@ -23,6 +23,8 @@ import {
 } from "../core/fleet.js";
 import { drawShip } from "../rendering.js?v=5";
 import { renderOfficerCards } from "./officer-ambitions.js";
+import { renderQuestJournal } from "./quest-journal.js";
+import { QUESTS, questJournal, recordQuestTrade } from "../core/quests.js";
 
 let panelContext;
 let acceptContract,
@@ -208,6 +210,14 @@ function syncPanelContext() {
 
 export function updateHud() {
   syncPanelContext();
+  const quests = questJournal(game);
+  const readyRewards = quests.filter((item) => item.ready).length;
+
+  updateElementProperty(
+    document.getElementById("questButton"),
+    "textContent",
+    `Quests & goals · ${game.quests.completed.length}/${QUESTS.length}${readyRewards ? ` · ${readyRewards} ready` : ""}`,
+  );
 
   const request = game.specialists.officers.find((officer) =>
     ["offered", "accepted"].includes(officer.ambition.status),
@@ -341,9 +351,11 @@ export function updateHud() {
           ? "Prepare at dock →"
           : objective.action === "politics"
             ? "Open politics →"
-            : objective.action === "ledger"
-              ? "Open ledger →"
-              : "Open chart →",
+            : objective.action === "quests"
+              ? "Open quests & goals →"
+              : objective.action === "ledger"
+                ? "Open ledger →"
+                : "Open chart →",
   );
   let destination = getPortByName(game.navigation.destination);
   if (destination && nearPort?.name === destination.name) {
@@ -920,6 +932,14 @@ function executeMarketOrder() {
       game.cargoLots.push(lot);
     });
   } else {
+    recordQuestTrade(
+      game,
+      plan.total -
+        plan.soldLots.reduce(
+          (total, lot) => total + (lot.cost ?? goods[key].base),
+          0,
+        ),
+    );
     const sold = new Set(plan.soldLots);
     game.cargoLots = game.cargoLots.filter((lot) => !sold.has(lot));
     const competition = recordPlayerCompetition(game.rivals, {
@@ -976,6 +996,20 @@ function executeMarketOrder() {
 export function renderLedger() {
   syncPanelContext();
 
+  renderQuestJournal(document.getElementById("questJournal"), {
+    game,
+    onChange: () => {
+      renderPortSystems();
+      renderLedger();
+      updateHud();
+      saveGameState();
+    },
+    onMessage: (message) => {
+      document.getElementById("questStatus").textContent = message;
+      addNews("Quest completed", message);
+      showMessage(message);
+    },
+  });
   renderMilestone(document.getElementById("milestoneLedger"));
   renderLegacies(document.getElementById("legacyLedger"));
   renderContractList(
