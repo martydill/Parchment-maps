@@ -3923,7 +3923,7 @@ configureUiPanels(panelContext);
 configurePortPanels(panelContext);
 
 function applyNarrativeNames() {
-  document.title = `${GAME_NAME} — Encircling World V9`;
+  document.title = GAME_NAME;
   document.getElementById("homePortLabel").textContent = PORT_NAMES.orvessaQuay;
 }
 applyNarrativeNames();
