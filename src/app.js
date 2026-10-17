@@ -372,7 +372,6 @@ import {
 } from "./core/lighting.js";
 import {
   drawHarborBoats,
-  drawPortScene,
   drawSeasonalFishingBoat,
   createPortMiniatureCache,
   drawPortActivity,
@@ -4154,15 +4153,6 @@ function renderHarborPresentation() {
   document.getElementById("portCondition").textContent =
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
-  const harbor = document.getElementById("portHarborIllustration");
-  const landmark = getHarborLayout(currentPort.name)?.composition.title;
-  harbor.setAttribute(
-    "aria-label",
-    `Your ship berthed at ${currentPort.name}${landmark ? `, beside ${landmark}` : ""}`,
-  );
-  document.querySelector(".dock-harbor-caption").textContent =
-    landmark ?? "Alongside the quay";
-  drawMenuPort(harbor, currentPort, performance.now());
   renderDepartureReadiness();
 }
 
@@ -4446,11 +4436,7 @@ function renderTownOverview(port) {
 // Menu artwork shares the chart's architecture and reflects actual regional
 // development. Unillustrated ports use a matching architectural archetype.
 const portScenePointers = new WeakMap();
-for (const id of [
-  "portCityIllustration",
-  "portHarborIllustration",
-  "townIllustration",
-]) {
+for (const id of ["portCityIllustration", "townIllustration"]) {
   const surface = document.getElementById(id);
   const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
   portScenePointers.set(surface, pointer);
@@ -4474,13 +4460,6 @@ for (const id of [
 }
 
 function drawMenuPort(surface, port, time) {
-  if (surface.id === "portHarborIllustration") {
-    const rect = surface.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      const height = Math.round((surface.width * rect.height) / rect.width);
-      if (surface.height !== height) surface.height = height;
-    }
-  }
   const pointer = portScenePointers.get(surface);
   const lighting = sceneLighting(
     sceneTimeOfDay(),
@@ -4539,10 +4518,7 @@ function drawMenuPort(surface, port, time) {
       c.restore();
     },
   };
-  const atlas =
-    surface.id === "portCityIllustration" || surface.id === "townIllustration";
-  if (atlas) drawHarborPlate(surface, port, { ...options, art: menuPortArt });
-  else drawPortScene(surface.getContext("2d"), options);
+  drawHarborPlate(surface, port, { ...options, art: menuPortArt });
 }
 
 let lastPortPanelFrame = 0;
@@ -4552,7 +4528,6 @@ function animatePortPanels(now) {
   lastPortPanelFrame = now;
   for (const [id, port] of [
     ["portCityIllustration", currentPort],
-    ["portHarborIllustration", currentPort],
     ["townIllustration", selectedTown],
   ]) {
     const surface = document.getElementById(id);
