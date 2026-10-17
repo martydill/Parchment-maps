@@ -156,31 +156,6 @@ export function createMapTransform(
   };
 }
 
-export function transformPointRecord(record, transform) {
-  const mapped = transform.point(record.x, record.y);
-  record.x = mapped.x;
-  record.y = mapped.y;
-  return record;
-}
-
-export function transformTuple(tuple, transform, scaleSize = true) {
-  const mapped = transform.point(tuple[0], tuple[1]);
-  tuple[0] = mapped.x;
-  tuple[1] = mapped.y;
-  if (scaleSize && typeof tuple[2] === "number")
-    tuple[2] = transform.averageLength(tuple[2]);
-  return tuple;
-}
-
-export function transformPath(path, transform) {
-  for (const point of path) {
-    const mapped = transform.point(point[0], point[1]);
-    point[0] = mapped.x;
-    point[1] = mapped.y;
-  }
-  return path;
-}
-
 export function separateWrappedPoints(
   records,
   {

@@ -1,6 +1,6 @@
 // Deterministic generators for the hand-inked chart furniture baked into the
-// world map layer: the portolan rhumb web, Catalan wind roses, coastal
-// toponymy, and the physical wear of a surviving
+// world map layer: the portolan rhumb web, Catalan wind roses, and the
+// physical wear of a surviving
 // parchment (foxing, tidelines, wax drips, fold creases, tattered edges).
 // Everything here is pure math so the canvas work in rendering.js stays thin.
 
@@ -101,74 +101,6 @@ export function createRhumbWeb(
     });
   }
   return centers;
-}
-
-// The 16 principal bearings of a rose, starting at north.
-export function roseTickPoints(radius, points = 32) {
-  if (radius <= 0) return [];
-  return Array.from({ length: points }, (_, index) => {
-    const angle = -Math.PI / 2 + (index * TAU) / points;
-    const reach =
-      index % 8 === 0
-        ? radius
-        : index % 4 === 0
-          ? radius * 0.78
-          : index % 2 === 0
-            ? radius * 0.55
-            : radius * 0.34;
-    return [Math.cos(angle) * reach, Math.sin(angle) * reach];
-  });
-}
-
-// Estimate the local coastline direction around a coastal point by comparing
-// the land and water halves of a sample ring. Returns null when the point is
-// not on a recognizable shore (open water or deep inland).
-export function coastAspect(isLandAt, x, y, probe = 42) {
-  if (!(probe > 0)) return null;
-  let landX = 0;
-  let landY = 0;
-  let seaX = 0;
-  let seaY = 0;
-  let landCount = 0;
-  const rays = 16;
-  for (let index = 0; index < rays; index += 1) {
-    const angle = (index * TAU) / rays;
-    const px = x + Math.cos(angle) * probe;
-    const py = y + Math.sin(angle) * probe;
-    if (isLandAt(px, py)) {
-      landX += Math.cos(angle);
-      landY += Math.sin(angle);
-      landCount += 1;
-    } else {
-      seaX += Math.cos(angle);
-      seaY += Math.sin(angle);
-    }
-  }
-  if (landCount === 0 || landCount === rays) return null;
-  const towardSea = Math.atan2(seaY - landY, seaX - landX);
-  let angle = towardSea + Math.PI / 2;
-  // Keep chart text upright: labels never run upside-down along the coast.
-  let flipped = false;
-  while (angle > Math.PI / 2) {
-    angle -= Math.PI;
-    flipped = true;
-  }
-  while (angle <= -Math.PI / 2) {
-    angle += Math.PI;
-    flipped = true;
-  }
-  return {
-    angle,
-    flipped,
-    seaward: { x: Math.cos(towardSea), y: Math.sin(towardSea) },
-  };
-}
-
-// Portolan toponymy: red ink and a shield box for the ports that matter to
-// merchants, plain black for minor landings.
-export function portChartLabel(port, illustrated) {
-  const major = Boolean(port?.home) || Boolean(illustrated);
-  return major ? { tone: "red", boxed: true } : { tone: "black", boxed: false };
 }
 
 // Torn, deckled north and south sheet edges. Points sweep the edge left to

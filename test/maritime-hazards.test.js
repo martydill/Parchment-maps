@@ -7,8 +7,6 @@ import {
   hazardAhead,
   markHazardEncounter,
   normalizeMaritimeHazardState,
-  resolveShoalAction,
-  resolveStormAction,
   resolveUnderwayHazard,
   roughSeaAtPosition,
   shoalAtPosition,
@@ -230,85 +228,5 @@ test("hazard encounters update the matching persistent cooldown", () => {
       lastShoalDistance: 700,
       encounters: 2,
     },
-  );
-});
-
-test("shoal decisions trade speed, safety, morale, and cargo risk", () => {
-  const safe = resolveShoalAction({
-    action: "soundings",
-    exposure: 0.2,
-    speed: 20,
-    seamanship: 2,
-  });
-  assert.deepEqual(safe.componentDamage, {});
-  assert.equal(safe.speedMultiplier, 0.32);
-  const hardSoundings = resolveShoalAction({
-    action: "soundings",
-    exposure: 1,
-    speed: 175,
-  });
-  assert.deepEqual(hardSoundings.componentDamage, { hull: 1 });
-  assert.equal(
-    resolveShoalAction({
-      action: "back-sails",
-      exposure: 1,
-      speed: 175,
-    }).speedMultiplier,
-    0,
-  );
-  const forced = resolveShoalAction({
-    action: "force",
-    exposure: 0.8,
-    speed: 150,
-  });
-  assert.ok(forced.componentDamage.hull > 1);
-  assert.equal(forced.moraleChange, -7);
-  assert.ok(forced.cargoLossRisk > 0);
-  assert.equal(
-    resolveShoalAction({
-      action: "force",
-      exposure: 0.05,
-      speed: 5,
-      seamanship: 2,
-    }).moraleChange,
-    -3,
-  );
-});
-
-test("storm decisions distinguish shelter, endurance, and speed", () => {
-  const heave = resolveStormAction({
-    action: "heave-to",
-    roughness: 0.5,
-    stormResistance: 2,
-    seamanship: 2,
-  });
-  assert.equal(heave.speedMultiplier, 0);
-  assert.equal(heave.provisionsUsed, 1);
-  assert.equal(heave.daysLost, 1);
-  assert.ok(heave.componentDamage.hull >= 1);
-  const shelter = resolveStormAction({
-    action: "seek-lee",
-    roughness: 0.8,
-    stormResistance: 1,
-  });
-  assert.equal(shelter.moraleChange, 3);
-  assert.equal(shelter.provisionsUsed, 2);
-  assert.equal(shelter.daysLost, 2);
-  const dangerousRun = resolveStormAction({
-    action: "run",
-    roughness: 1,
-    stormResistance: 0.5,
-  });
-  assert.equal(dangerousRun.moraleChange, -5);
-  assert.ok(dangerousRun.componentDamage.rigging > 1);
-  assert.equal(dangerousRun.daysLost, 0);
-  assert.equal(
-    resolveStormAction({
-      action: "run",
-      roughness: 0.2,
-      stormResistance: 2,
-      seamanship: 2,
-    }).moraleChange,
-    2,
   );
 });

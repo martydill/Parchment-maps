@@ -2,9 +2,7 @@
   --ink: #302519;
   --deep-ink: #170e08;
   --paper: #ceb584;
-  --paper-light: #f0dfb4;
   --paper-dark: #967344;
-  --panel: rgba(45, 28, 15, 0.96);
   --gold: #c9a568;
   --cream: #f0e1bf;
   --font-display: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
@@ -1355,29 +1353,7 @@ button.parchment {
     padding-right: 18px;
   }
 }
-.trade-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(71, 44, 23, 0.24);
-}
-.trade-good {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
-  min-width: 0;
-}
-.trade-good-details {
-  display: block;
-  min-width: 0;
-}
-.trade-good-details > .small {
-  display: block;
-  margin-top: 2px;
-}
+
 .resource-icon-frame {
   display: grid;
   place-items: center;
@@ -1399,39 +1375,6 @@ button.parchment {
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.trade-row button {
-  min-width: 54px;
-  height: 34px;
-  padding: 0 7px;
-  border: 1px solid #66533a;
-  background: linear-gradient(#54483a, #302d29);
-  color: #f1e2c0;
-  border-radius: 4px;
-  font: 700 11px var(--font-ui);
-}
-.trade-row button:disabled {
-  opacity: 0.42;
-  filter: grayscale(0.35);
-  cursor: not-allowed;
-}
-
-.legal-status {
-  font-weight: 700;
-}
-
-.legal-legal {
-  color: #315e3c;
-}
-
-.legal-taxed,
-.legal-licensed,
-.legal-rationed {
-  color: #8a5a18;
-}
-
-.legal-prohibited {
-  color: #8b2727;
 }
 
 .customs-actions {
@@ -1557,19 +1500,7 @@ button.parchment {
     grid-template-columns: 1fr;
   }
 }
-.market-spread-note {
-  margin: 8px 0 2px;
-  padding: 7px 9px;
-  border-left: 3px solid rgba(91, 58, 33, 0.65);
-  background: rgba(255, 244, 205, 0.13);
-}
-.port-evolution {
-  margin: 10px 0;
-  padding: 10px 12px;
-  border-left: 5px solid #8b5428;
-  background: rgba(124, 76, 31, 0.12);
-}
-.port-evolution span,
+
 .magnate {
   display: block;
   margin-top: 4px;
@@ -1917,44 +1848,7 @@ button.parchment {
 .contract-card.completed {
   opacity: 0.75;
 }
-.market-stock {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  opacity: 0.75;
-}
-.cargo-manifest {
-  display: grid;
-  gap: 2px;
-  margin-top: 5px;
-  color: #5a351c;
-  font-size: 11px;
-  line-height: 1.25;
-}
-.cargo-manifest span {
-  display: block;
-}
-.cargo-quality {
-  border-left: 3px solid transparent;
-  padding-left: 5px;
-}
-.cargo-quality.quality-poor {
-  border-color: #8b5c42;
-}
-.cargo-quality.quality-fine {
-  border-color: #52723d;
-}
-.cargo-quality.quality-masterwork {
-  border-color: #9a711c;
-}
-.cargo-quality.condition-stale {
-  color: #8a5a18;
-}
-.cargo-quality.condition-spoiled {
-  color: #8b2727;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
+
 .cargo-compartment {
   min-width: 0;
   padding: 9px;
@@ -2088,19 +1982,7 @@ button.parchment {
 .condition-surplus {
   color: #275b38;
 }
-.progress-track {
-  height: 9px;
-  border-radius: 99px;
-  overflow: hidden;
-  background: rgba(60, 35, 17, 0.18);
-  border: 1px solid rgba(60, 35, 17, 0.22);
-  margin: 5px 0 8px;
-}
-.progress-track span {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #6b3d20, #c0924d);
-}
+
 .milestone-step.done {
   border-left: 5px solid #4c7548;
 }
@@ -2255,17 +2137,7 @@ button.parchment {
   border-color: rgba(141, 35, 28, 0.55);
   background: rgba(141, 35, 28, 0.09);
 }
-.component-repairs {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-}
-.component-repairs button.parchment {
-  min-width: 0;
-  margin: 0;
-  padding: 6px 4px;
-  font-size: 11px;
-}
+
 .specialist-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2350,7 +2222,6 @@ button.parchment {
 }
 @media (max-width: 620px) {
   .component-grid,
-  .component-repairs,
   .crew-grid,
   .crew-recruiting,
   .route-plan-grid {
@@ -2417,28 +2288,24 @@ button.parchment {
     padding-right: 18px;
   }
 }
-.intel-card,
-.vessel-card {
+.intel-card {
   background: rgba(255, 244, 205, 0.13);
   border: 1px solid rgba(79, 47, 22, 0.3);
   border-radius: 8px;
   padding: 10px 12px;
   margin: 8px 0;
 }
-.intel-head,
-.vessel-head {
+.intel-head {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
 }
-.intel-card h4,
-.vessel-card h4 {
+.intel-card h4 {
   margin: 0 0 4px;
   font-size: 14px;
 }
-.intel-meta,
-.vessel-meta {
+.intel-meta {
   font-size: 11px;
   opacity: 0.78;
   line-height: 1.35;
@@ -2622,9 +2489,7 @@ button.parchment {
   font-size: 12px;
   opacity: 0.72;
 }
-.report-effect {
-  border-left: 5px solid #4e7650;
-}
+
 .report-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2673,14 +2538,7 @@ button.parchment {
 .merchant-sighting:last-child {
   border-bottom: 0;
 }
-.traffic-pill {
-  display: inline-block;
-  margin: 3px 4px 0 0;
-  padding: 3px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(75, 43, 20, 0.28);
-  font-size: 10px;
-}
+
 @media (max-width: 520px) {
   .manifest-grid {
     grid-template-columns: 1fr;
@@ -3087,13 +2945,7 @@ button.parchment {
   outline: 2px solid #805420;
   outline-offset: 3px;
 }
-.harbor-arrival {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-  margin: 8px 0 18px;
-}
+
 .harbor-scene,
 .town-overview-scene {
   position: relative;
@@ -3110,87 +2962,7 @@ button.parchment {
   width: 100%;
   height: auto;
 }
-.scene-caption {
-  position: absolute;
-  top: 13px;
-  left: 16px;
-  right: 16px;
-  z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  font: 11px/1.4 var(--font-ui);
-  color: #61492d;
-}
-.scene-caption .town-kicker {
-  margin: 0;
-}
-.harbor-services {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  padding: 12px;
-  border-top: 1px solid #b8a37e;
-  background: #ecdfbd;
-}
-.harbor-services button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 10px;
-  min-height: 56px;
-  border: 1px solid #af976d;
-  border-radius: 2px;
-  color: #3e2d1d;
-  background: linear-gradient(135deg, #f8edcd, #e6d4ac);
-  box-shadow: 0 2px 0 #6f4d2320;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    transform 0.15s;
-}
-.harbor-services button:hover {
-  border-color: #805420;
-  background: #fff0c6;
-  transform: translateY(-1px);
-}
-.harbor-services svg {
-  width: 27px;
-  height: 27px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.harbor-services span {
-  font: 700 12px/1.4 var(--font-ui);
-}
-.harbor-services small {
-  display: block;
-  font-weight: 400;
-  font-size: 10px;
-  color: #735b3d;
-}
-.scene-footnote {
-  padding: 0 12px 12px;
-  text-align: center;
-  font: italic 11px/1.4 var(--font-ui);
-  color: #745c3e;
-}
-#portPanel .port-opportunities-card {
-  margin: 0;
-  padding: 18px;
-  background: #fbefcd70;
-}
-#portPanel .port-opportunities-card h3 {
-  font-size: 21px;
-  margin: 4px 0 12px;
-}
+
 #portPanel .port-opportunity {
   display: block;
   position: relative;
@@ -3350,16 +3122,14 @@ button.parchment {
   font: 11px/1.5 var(--font-ui);
   color: #655234;
 }
-.atlas-section-heading,
-.market-heading {
+.atlas-section-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 14px;
   margin-bottom: 12px;
 }
-.atlas-section-heading h3,
-.market-heading h3 {
+.atlas-section-heading h3 {
   margin: 3px 0;
 }
 .town-demand {
@@ -3655,9 +3425,6 @@ button.parchment {
   margin-top: 12px;
 }
 @media (max-width: 760px) {
-  .harbor-arrival {
-    grid-template-columns: 1fr;
-  }
   .market-workspace {
     grid-template-columns: 1fr;
   }
@@ -3665,12 +3432,7 @@ button.parchment {
     position: static;
     grid-row: 1;
   }
-  .harbor-services {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .harbor-services button {
-    gap: 6px;
-  }
+
   .atlas-overview-grid {
     gap: 10px;
   }
@@ -3717,16 +3479,7 @@ button.parchment {
   #townPanel .port-header p {
     font-size: 11px;
   }
-  .harbor-services {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 9px;
-  }
-  .scene-caption {
-    font-size: 9px;
-  }
-  .scene-caption .town-kicker {
-    font-size: 9px;
-  }
+
   .departure-bar {
     padding: 10px 14px;
     gap: 9px;
@@ -3787,13 +3540,7 @@ button.parchment {
   .demand-card small {
     font-size: 10px;
   }
-  .market-heading {
-    align-items: flex-start;
-  }
-  .market-heading > .small {
-    max-width: 90px;
-    font-size: 10px;
-  }
+
   .market-filters {
     gap: 4px;
   }
@@ -3831,74 +3578,15 @@ button.parchment {
     padding: 8px 10px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .harbor-services button {
-    transition: none;
-  }
-}
-.order-good-picker {
-  display: none;
-}
-/* Keep service shortcuts in view on shorter desktop displays. */
+
+/* Fit the harbor scene and market order on shorter desktop displays. */
 @media (min-width: 761px) and (max-height: 780px) {
   #portPanel .harbor-scene {
     min-height: 260px;
   }
-  #portPanel .harbor-services {
-    position: absolute;
-    inset: 48px 12px 38px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    grid-template-columns: 130px 130px;
-    justify-content: space-between;
-    align-content: start;
-  }
-  #portPanel .harbor-services button {
-    padding: 7px;
-    gap: 6px;
-    min-height: 46px;
-    background: #f4e6c8ee;
-  }
-  #portPanel .harbor-services svg {
-    width: 20px;
-    height: 20px;
-  }
-  #portPanel .harbor-services span {
-    font-size: 10px;
-  }
-  #portPanel .harbor-services small {
-    font-size: 9px;
-  }
-  #portPanel .scene-footnote {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 8px;
-    background: #eddfbd;
-  }
+
   .market-order {
     position: static;
-  }
-}
-@media (max-width: 760px) {
-  .order-good-picker {
-    display: block;
-    color: #675034;
-    font: 700 11px/1.5 var(--font-ui);
-    margin-bottom: 12px;
-  }
-  .order-good-picker select {
-    display: block;
-    width: 100%;
-    min-height: 44px;
-    padding: 8px;
-    margin-top: 5px;
-    border: 1px solid #b49b70;
-    color: var(--ink);
-    background-color: #fbefd0;
-    font: 700 12px/1.4 var(--font-ui);
   }
 }
 
@@ -3944,17 +3632,7 @@ button.parchment {
   width: 100%;
   height: auto;
 }
-.inspection-guide {
-  stroke: #947d552a;
-  stroke-width: 1;
-  stroke-dasharray: 5 5;
-  fill: none;
-}
-.inspection-annotation {
-  font: 10px var(--font-ui);
-  letter-spacing: 2px;
-  fill: #8a714e;
-}
+
 .inspection-diagram .ship-section {
   stroke: #6b5339;
   stroke-width: 1.4;
@@ -3964,10 +3642,7 @@ button.parchment {
   stroke: #9a6223;
   filter: drop-shadow(0 0 4px #b6834360);
 }
-.inspection-diagram .ship-section.selected .part-surface {
-  stroke: #a66922;
-  stroke-width: 3;
-}
+
 .inspection-selectors {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -4069,44 +3744,7 @@ button.parchment {
   color: #684921;
   font: 700 11px/1.5 var(--font-ui);
 }
-.inspection-cargo {
-  padding: 12px 18px 16px;
-  border-top: 1px solid #b7a079;
-}
-.inspection-cargo-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  font: 12px/1.5 var(--font-ui);
-}
-#portPanel .inspection-cargo-heading .parchment {
-  margin: 0;
-  padding: 7px 10px;
-  min-height: 40px;
-  font-size: 10px;
-}
-.inspection-compartments {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-.inspection-compartment {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px;
-  border: 1px solid #b7a07980;
-  font: 10px/1.5 var(--font-ui);
-}
-.inspection-compartment b {
-  font-size: 14px;
-}
-.inspection-compartment small {
-  color: #745d40;
-  font-size: 10px;
-}
+
 /* Local industry: inventory → next recipe → base output. */
 #portPanel .production-diagram-card {
   display: block;
@@ -4242,9 +3880,7 @@ button.parchment {
     border-left: 0;
     border-top: 1px solid #b7a079;
   }
-  .inspection-compartments {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+
   .production-flow {
     grid-template-columns: minmax(0, 1fr) 20px minmax(120px, 0.8fr);
   }
@@ -4278,9 +3914,7 @@ button.parchment {
   .inspection-detail {
     padding: 14px;
   }
-  .inspection-cargo {
-    padding: 12px;
-  }
+
   .production-flow {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -4309,13 +3943,6 @@ button.parchment {
     padding-left: 12px;
     padding-right: 12px;
   }
-}
-.inspection-diagram .ship-section.worn .part-surface {
-  fill: #d4b273;
-}
-.inspection-diagram .ship-section.damaged .part-surface {
-  fill: #c98666;
-  stroke: #93482f;
 }
 
 /* A fixed parchment spread keeps the current task and departure plan in view. */
@@ -5201,10 +4828,7 @@ body.port-open {
   margin: 8px 0;
   font-size: 26px;
 }
-#reportPanel .report-effect p {
-  margin: 0;
-  font-size: 12px;
-}
+
 @media (max-width: 1100px) {
   .collection-layout,
   .market-workspace,

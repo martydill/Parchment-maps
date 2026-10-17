@@ -1,7 +1,6 @@
 import { hash } from "./cargo.js";
 
 export const RUMOR_COST = 14;
-export const RUMOR_DURATION_DAYS = 14;
 export const BASE_RUMOR_RADIUS = 210;
 export const SPECIALIST_RUMOR_RADIUS = 135;
 

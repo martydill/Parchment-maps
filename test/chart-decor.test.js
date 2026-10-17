@@ -4,16 +4,13 @@ import test from "node:test";
 import {
   WIND_ROSE_NAMES,
   cartoucheInscription,
-  coastAspect,
   createRhumbWeb,
   edgeDepthAt,
   foldCreases,
   foxingClusters,
   islandTint,
-  portChartLabel,
   rhumbInk,
   rhumbRayAngles,
-  roseTickPoints,
   tatteredEdge,
   tidelineRingPoints,
   tidelines,
@@ -51,19 +48,6 @@ test("rhumb ray angles start at north and wrap evenly", () => {
   assert.deepEqual(rhumbRayAngles(3), []);
   assert.deepEqual(rhumbRayAngles(65), []);
   assert.deepEqual(rhumbRayAngles(7.5), []);
-});
-
-test("rose tick points alternate reach by wind rank", () => {
-  assert.deepEqual(roseTickPoints(0), []);
-  assert.deepEqual(roseTickPoints(-4), []);
-  const ticks = roseTickPoints(100);
-  assert.equal(ticks.length, 32);
-  assert.ok(Math.abs(ticks[0][0]) < 1e-9);
-  assert.ok(Math.abs(ticks[0][1] + 100) < 1e-9);
-  // Cardinal ticks reach the rim, quarter winds stop short of it.
-  assert.equal(Math.hypot(...ticks[0]), 100);
-  assert.ok(Math.hypot(...ticks[2]) < 100);
-  assert.ok(Math.hypot(...ticks[1]) < Math.hypot(...ticks[2]));
 });
 
 test("rhumb web keeps anchors and adds hidden centers on open water", () => {
@@ -119,51 +103,6 @@ test("rhumb web is deterministic and avoids land", () => {
     createRhumbWeb({ width: undefined, height: 3200 }, () => true, 5),
     [],
   );
-});
-
-test("coast aspect estimates shoreline direction and seaward side", () => {
-  // Vertical shore with land to the west: the coast runs north-south.
-  const vertical = coastAspect((x) => x < 500, 500, 800);
-  assert.ok(vertical);
-  assert.ok(Math.abs(Math.abs(vertical.angle) - Math.PI / 2) < 0.3);
-  assert.ok(vertical.seaward.x > 0.7);
-
-  // Horizontal shore with land to the north flips to keep text upright.
-  const horizontal = coastAspect((x, y) => y < 300, 800, 300);
-  assert.ok(horizontal);
-  assert.ok(Math.abs(horizontal.angle) < 0.3);
-  assert.ok(horizontal.flipped);
-  assert.ok(horizontal.seaward.y > 0.7);
-
-  // Open water and deep interior have no shoreline to label.
-  assert.equal(
-    coastAspect(() => false, 0, 0),
-    null,
-  );
-  assert.equal(
-    coastAspect(() => true, 0, 0),
-    null,
-  );
-  assert.equal(
-    coastAspect(() => false, 0, 0, 0),
-    null,
-  );
-});
-
-test("port chart labels reserve red boxes for the great ports", () => {
-  assert.deepEqual(portChartLabel({ home: true }, false), {
-    tone: "red",
-    boxed: true,
-  });
-  assert.deepEqual(portChartLabel({}, true), { tone: "red", boxed: true });
-  assert.deepEqual(portChartLabel({}, false), {
-    tone: "black",
-    boxed: false,
-  });
-  assert.deepEqual(portChartLabel(null, false), {
-    tone: "black",
-    boxed: false,
-  });
 });
 
 test("tattered edges sweep the sheet with bounded, seeded bites", () => {
