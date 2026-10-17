@@ -6254,39 +6254,6 @@ body.port-open {
   }
 }
 
-.dock-harbor-scene {
-  margin: 0 0 18px;
-}
-.dock-harbor-scene canvas {
-  height: clamp(160px, 25vh, 240px);
-  object-fit: cover;
-}
-.dock-harbor-caption {
-  position: absolute;
-  bottom: 10px;
-  left: 14px;
-  padding: 5px 10px;
-  color: #f9ebc9;
-  background: #253341a6;
-  font: 11px var(--font-ui);
-  pointer-events: none;
-}
-#portPanel .port-panel[data-tab="harbor"].active {
-  grid-template-rows: clamp(150px, 22vh, 210px) 34px minmax(0, 1fr);
-}
-#portPanel .dock-harbor-scene {
-  min-height: 0;
-  margin: 0;
-}
-#portPanel .dock-harbor-scene canvas {
-  height: 100%;
-  width: 100%;
-}
-@media (max-width: 1000px) {
-  #portPanel .port-panel[data-tab="harbor"].active {
-    grid-template-rows: 180px auto auto;
-  }
-}
 @media (min-width: 801px) and (min-height: 560px) {
   #portPanel .port-panel[data-tab="harbor"] .port-activity,
   #portPanel .port-panel[data-tab="harbor"] .inspection-detail {
