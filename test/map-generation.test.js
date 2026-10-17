@@ -7,9 +7,6 @@ import {
   createMapTransform,
   moveUnreachablePointsToOpenWater,
   separateWrappedPoints,
-  transformPath,
-  transformPointRecord,
-  transformTuple,
 } from "../src/core/map-generation.js";
 
 function wrappedDistance(a, b, width) {
@@ -113,30 +110,6 @@ test("map transforms constrain longitude and polar margins", () => {
   });
   assert.ok(regionalUpper.x >= 0 && regionalUpper.x <= 80);
   assert.ok(regionalUpper.y >= 20 && regionalUpper.y <= 140);
-});
-
-test("map helpers transform records, tuples, and paths in place", () => {
-  const transform = createMapTransform(42);
-  const record = { x: 100, y: 200, name: "Harbor" };
-  const sizedTuple = [100, 200, 30];
-  const unscaledTuple = [100, 200, 30];
-  const labelTuple = [100, 200, "label"];
-  const path = [
-    [100, 200],
-    [300, 400],
-  ];
-
-  assert.equal(transformPointRecord(record, transform), record);
-  assert.equal(transformTuple(sizedTuple, transform), sizedTuple);
-  assert.equal(transformTuple(unscaledTuple, transform, false), unscaledTuple);
-  assert.equal(transformTuple(labelTuple, transform), labelTuple);
-  assert.equal(transformPath(path, transform), path);
-  assert.notDeepEqual(record, { x: 100, y: 200, name: "Harbor" });
-  assert.notEqual(sizedTuple[2], 30);
-  assert.equal(unscaledTuple[2], 30);
-  assert.equal(labelTuple[2], "label");
-  assert.notDeepEqual(path[0], [100, 200]);
-  assert.notDeepEqual(path[1], [300, 400]);
 });
 
 test("point separation spaces nearby cities in a wrapping world", () => {

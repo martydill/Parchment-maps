@@ -31,35 +31,6 @@ export function createEconomyState(ports, goods) {
   return economy;
 }
 
-export function runProductionChains(states, recipes, efficiencies = {}) {
-  const reports = [];
-  for (const recipe of recipes) {
-    const efficiency = clamp(efficiencies[recipe.id] || 0, 0, 2);
-    if (efficiency <= 0) continue;
-    const desiredBatches = recipe.rate * efficiency;
-    let batches = desiredBatches;
-    for (const [key, units] of Object.entries(recipe.inputs)) {
-      const state = states[key];
-      batches = Math.min(batches, state ? state.stock / units : 0);
-    }
-    batches = Math.max(0, batches);
-    for (const [key, units] of Object.entries(recipe.inputs)) {
-      if (states[key])
-        states[key].stock = clamp(states[key].stock - units * batches, 0, 70);
-    }
-    for (const [key, units] of Object.entries(recipe.outputs)) {
-      if (states[key])
-        states[key].stock = clamp(states[key].stock + units * batches, 0, 70);
-    }
-    reports.push({
-      id: recipe.id,
-      batches,
-      utilization: desiredBatches ? batches / desiredBatches : 0,
-    });
-  }
-  return reports;
-}
-
 export function marketReferenceValue({
   state,
   good,

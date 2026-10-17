@@ -405,14 +405,6 @@ export function clearFleetRoute(game, shipId) {
   return { ok: true };
 }
 
-export function createRouteTemplate(name, ports) {
-  return {
-    id: `tpl-${slugify(name)}`,
-    name: String(name || "Custom route"),
-    ports: Array.isArray(ports) ? [...ports] : [],
-  };
-}
-
 export function suggestRouteTemplates(ctx) {
   const routes = Array.isArray(ctx?.routes) ? ctx.routes : [];
   const triangles = findTriangles(routes)
@@ -524,14 +516,6 @@ function compareLaneLabel(left, right) {
   return String(`${left.a}|${left.b}`).localeCompare(
     String(`${right.a}|${right.b}`),
   );
-}
-
-function slugify(value) {
-  const slug = String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "route";
 }
 
 // --- Movement, arrival trading, and render shapes ------------------------------
@@ -874,20 +858,4 @@ export function fleetRenderObject(ship, day = 0) {
     // spawn animation); the vessel object survives across frames.
     damageKey: ship,
   };
-}
-
-export function fleetRoutePaths(game) {
-  const state = ensureFleetState(game);
-  const seen = new Set();
-  const paths = [];
-  for (const ship of state.ships) {
-    if (!ship.route) continue;
-    for (const leg of ship.route.legs) {
-      const key = `${leg.a}|${leg.b}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      paths.push({ a: leg.a, b: leg.b, points: leg.points });
-    }
-  }
-  return paths;
 }

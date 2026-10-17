@@ -8,13 +8,11 @@ import {
   clearFleetRoute,
   commissionFleetShip,
   createFleetState,
-  createRouteTemplate,
   decommissionFleetShip,
   fleetMovementSpeed,
   fleetOutcomeSeed,
   fleetRenderObject,
   fleetRoll,
-  fleetRoutePaths,
   fleetShipStats,
   loadDepartureCargo,
   normalizeFleetShip,
@@ -530,15 +528,6 @@ test("suggestRouteTemplates derives triangles and shuttles from the lane graph",
   ]);
 });
 
-test("createRouteTemplate slugs names and copies ports", () => {
-  const template = createRouteTemplate("Spice Run!", ["A", "B"]);
-  assert.equal(template.id, "tpl-spice-run");
-  assert.equal(template.name, "Spice Run!");
-  assert.deepEqual(template.ports, ["A", "B"]);
-
-  assert.equal(createRouteTemplate("", ["A"]).id, "tpl-route");
-});
-
 test("assignRoute builds a closed multi-stop loop and starts the vessel sailing", () => {
   const game = makeGame();
   const { ship } = commissionFleetShip(game, "cutter");
@@ -581,7 +570,9 @@ test("assignRoute resolves template ids, arrays, and port objects", () => {
   assert.equal(assignRoute(game, ship.id, ["A", "C"], ctx).ok, true);
   assert.equal(assignRoute(game, ship.id, { ports: ["B", "C"] }, ctx).ok, true);
 
-  game.fleet.templates = [createRouteTemplate("Saved", ["A", "B"])];
+  game.fleet.templates = [
+    { id: "tpl-saved", name: "Saved", ports: ["A", "B"] },
+  ];
   assert.equal(assignRoute(game, ship.id, "tpl-saved", ctx).ok, true);
 });
 
@@ -919,23 +910,6 @@ test("fleetRenderObject exposes the shape drawMerchantShip expects", () => {
   assert.equal(render.idNum, 1);
   assert.equal(render.color, ship.color);
   assert.equal(render.name, ship.name);
-});
-
-test("fleetRoutePaths dedupes active route legs across the fleet", () => {
-  const game = makeGame();
-  assert.deepEqual(fleetRoutePaths(game), []);
-
-  const ctx = makeEconomyCtx();
-  const { ship } = commissionFleetShip(game, "cutter");
-  assignRoute(game, ship.id, ["A", "B", "C"], ctx);
-  assert.equal(fleetRoutePaths(game).length, 3);
-
-  const { ship: ship2 } = commissionFleetShip(game, "cutter");
-  assignRoute(game, ship2.id, ["A", "B", "C"], ctx);
-  assert.equal(fleetRoutePaths(game).length, 3); // same legs deduped
-
-  commissionFleetShip(game, "cutter"); // laid-up vessel contributes nothing
-  assert.equal(fleetRoutePaths(game).length, 3);
 });
 
 // --- Costs, risk, and per-day upkeep ------------------------------------------
