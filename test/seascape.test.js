@@ -12,6 +12,7 @@ import {
   MAX_LIGHTHOUSE_REACH,
   sampleSeaLife,
   sampleShoreAnimal,
+  shoreAnimalProfile,
   sampleWaterReflection,
 } from "../src/core/seascape.js";
 
@@ -166,6 +167,105 @@ test("sea life and shore animals move deterministically within their locations",
       assert.ok(Math.abs(shore.x) <= 15 && Math.abs(shore.y) <= 4);
       assert.ok([-1, 1].includes(shore.facing));
       assert.ok(Math.abs(shore.step) <= 1);
+    }
+  }
+});
+
+test("wildlife habitats include five species with solitary foxes and different paces", () => {
+  const species = new Set();
+  for (const biome of [
+    "temperate",
+    "alpine",
+    "tropical",
+    "arid",
+    "marsh",
+    "volcanic",
+  ]) {
+    for (let index = 0; index < 12; index++) {
+      const profile = shoreAnimalProfile(biome, index);
+      species.add(profile.species);
+      assert.deepEqual(shoreAnimalProfile(biome, index), profile);
+      assert.ok(profile.pack >= 1 && profile.pack <= 3);
+      assert.ok(profile.pace >= 0.75 && profile.pace <= 1.2);
+      if (profile.species === "fox") assert.equal(profile.pack, 1);
+    }
+  }
+  assert.deepEqual([...species].sort(), [
+    "boar",
+    "deer",
+    "fox",
+    "goat",
+    "horse",
+  ]);
+  assert.equal(shoreAnimalProfile("alpine", 0).species, "goat");
+  assert.equal(shoreAnimalProfile("marsh", 0).species, "boar");
+  assert.equal(shoreAnimalProfile("tropical", 0).species, "boar");
+  assert.equal(shoreAnimalProfile("arid", 0).species, "horse");
+  assert.ok(
+    shoreAnimalProfile("temperate", 3).pace <
+      shoreAnimalProfile("temperate", 1).pace,
+  );
+  assert.deepEqual(shoreAnimalProfile("unknown", 0), shoreAnimalProfile());
+  assert.deepEqual(shoreAnimalProfile(undefined, NaN), shoreAnimalProfile());
+  assert.deepEqual(
+    shoreAnimalProfile(undefined, Infinity),
+    shoreAnimalProfile(),
+  );
+  assert.deepEqual(
+    shoreAnimalProfile("alpine", -2.9),
+    shoreAnimalProfile("alpine", 2),
+  );
+});
+
+test("shore animals pause to graze with planted feet and ease into their return", () => {
+  const atPhase = (phase) => sampleShoreAnimal(phase / 0.85, 0);
+  const resting = atPhase(13);
+  assert.equal(resting.walk, 0);
+  assert.equal(resting.graze, 1);
+  assert.equal(resting.x, 15);
+  assert.deepEqual(resting.legs, atPhase(14).legs);
+  assert.equal(atPhase(5).facing, 1);
+  assert.equal(atPhase(21).facing, -1);
+  assert.equal(atPhase(29).graze, 1);
+  assert.equal(atPhase(29).x, -15);
+  const walking = atPhase(5);
+  assert.equal(walking.walk, 1);
+  assert.equal(walking.graze, 0);
+  assert.ok(new Set(walking.legs.map(({ swing }) => swing)).size === 4);
+  for (const boundary of [0, 10, 16, 26, 32]) {
+    const before = atPhase(boundary - 0.001);
+    const after = atPhase(boundary + 0.001);
+    assert.ok(Math.abs(after.x - before.x) < 0.001);
+    assert.ok(Math.abs(after.y - before.y) < 0.001);
+    assert.ok(before.walk < 0.001 && after.walk < 0.001);
+    assert.ok(before.graze < 0.001 && after.graze < 0.001);
+  }
+});
+
+test("shore poses are deterministic, finite and bounded across cycles and invalid inputs", () => {
+  assert.deepEqual(sampleShoreAnimal(), sampleShoreAnimal(0, 0));
+  assert.deepEqual(sampleShoreAnimal(NaN, Infinity), sampleShoreAnimal());
+  assert.deepEqual(sampleShoreAnimal(Infinity, NaN), sampleShoreAnimal());
+  assert.deepEqual(sampleShoreAnimal(12, -3.9), sampleShoreAnimal(12, 3));
+  assert.notDeepEqual(sampleShoreAnimal(4, 1), sampleShoreAnimal(4, 2));
+  for (let index = 0; index < 12; index++) {
+    for (let time = -80; time <= 80; time += 0.25) {
+      const pose = sampleShoreAnimal(time, index);
+      assert.deepEqual(pose, sampleShoreAnimal(time, index));
+      assert.ok(Math.abs(pose.x) <= 15 && Math.abs(pose.y) <= 3);
+      assert.ok(pose.walk >= 0 && pose.walk <= 1);
+      assert.ok(pose.graze >= 0 && pose.graze <= 1);
+      assert.ok(Math.abs(pose.bob) <= 0.22);
+      assert.ok(Math.abs(pose.tail) <= 0.18);
+      assert.ok(Math.abs(pose.breath) <= 0.12);
+      for (const value of Object.values(pose).filter(
+        (v) => typeof v === "number",
+      ))
+        assert.ok(Number.isFinite(value));
+      for (const leg of pose.legs) {
+        assert.ok(Math.abs(leg.swing) <= 2.4);
+        assert.ok(leg.lift >= 0 && leg.lift <= 1.6);
+      }
     }
   }
 });
