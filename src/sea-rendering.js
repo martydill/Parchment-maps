@@ -29,6 +29,7 @@ import {
   sampleCreatureAppearance,
   sampleSeaLife,
   sampleShoreAnimal,
+  shoreAnimalProfile,
   sampleWaterReflection,
 } from "./core/seascape.js";
 import { getShipModelProfile } from "./core/ship-models.js";
@@ -261,6 +262,10 @@ export function createSeaRendering({
                   x: mark.x - mark.nx * 38,
                   y: mark.y - mark.ny * 38 - depth,
                   index: index * 2 + animalIndex,
+                  ...shoreAnimalProfile(
+                    terrainBiome(name),
+                    index * 2 + animalIndex,
+                  ),
                 }
               : null;
           })
@@ -753,11 +758,13 @@ export function createSeaRendering({
       c.clip(land);
       for (const animal of animals) {
         if (!inView(animal.x + offset, animal.y, 90, view)) continue;
-        const pack =
-          animal.index % 3 === 0 ? 3 : animal.index % 3 === 1 ? 2 : 1;
-        for (let member = 0; member < pack; member++) {
-          const pose = sampleShoreAnimal(time, animal.index * 3 + member);
-          const size = 0.82 * (1 - member * 0.1);
+        for (let member = 0; member < animal.pack; member++) {
+          const pose = sampleShoreAnimal(
+            time * animal.pace,
+            animal.index * 3 + member,
+          );
+          const size =
+            (animal.species === "fox" ? 0.62 : 0.82) * (1 - member * 0.1);
           c.save();
           c.translate(
             animal.x + pose.x + member * 28,
@@ -766,8 +773,8 @@ export function createSeaRendering({
           c.scale(pose.facing * size, size);
           drawShoreAnimal ??= createShoreAnimalRendering();
           drawShoreAnimal(c, pose, {
-            horse: animal.index % 2 === 1,
-            antlers: animal.index % 2 === 0 && member === 0,
+            species: animal.species,
+            antlers: animal.species === "deer" && member === 0,
             variant: animal.index + member,
             detail: zoom >= 0.9,
           });

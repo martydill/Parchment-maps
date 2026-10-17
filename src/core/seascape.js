@@ -110,6 +110,28 @@ export function sampleSeaLife(time, index) {
   };
 }
 
+const SHORE_HABITATS = new Map(
+  Object.entries({
+    temperate: ["horse", "fox", "deer", "boar"],
+    alpine: ["goat", "deer", "fox"],
+    tropical: ["boar", "deer"],
+    arid: ["horse", "goat"],
+    marsh: ["boar", "deer"],
+    volcanic: ["goat", "fox"],
+  }),
+);
+
+export function shoreAnimalProfile(biome = "temperate", index = 0) {
+  const id = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;
+  const habitat = SHORE_HABITATS.get(biome) || SHORE_HABITATS.get("temperate");
+  const species = habitat[id % habitat.length];
+  return {
+    species,
+    pack: species === "fox" ? 1 : 1 + (id % 3),
+    pace: species === "fox" ? 1.2 : species === "boar" ? 0.75 : 1,
+  };
+}
+
 export function sampleShoreAnimal(time = 0, index = 0) {
   const t = Number.isFinite(time) ? time : 0;
   const id = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;

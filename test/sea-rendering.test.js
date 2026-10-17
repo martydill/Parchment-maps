@@ -3,6 +3,8 @@ import test, { after } from "node:test";
 import { createSeaRendering } from "../src/sea-rendering.js";
 import { createSeaSurfaceRendering } from "../src/sea-surface-rendering.js";
 import { regionalWaterInk } from "../src/core/regional-water.js";
+import { sampleShoreAnimal } from "../src/core/seascape.js";
+import { createShoreAnimalRendering } from "../src/shore-animal-rendering.js";
 
 function recordingContext() {
   const calls = [];
@@ -101,6 +103,55 @@ const options = {
   reducedMotion: false,
   lighting: { daylight: 1, storm: 0 },
 };
+
+test("all five wildlife silhouettes render finite geometry and preserve the drawing state", () => {
+  const previousPath = globalThis.Path2D;
+  globalThis.Path2D = class {
+    constructor(source) {
+      this.source = source;
+    }
+  };
+  try {
+    const draw = createShoreAnimalRendering();
+    const silhouettes = new Set();
+    for (const species of ["deer", "horse", "goat", "boar", "fox"]) {
+      for (const time of [5, 13 / 0.85]) {
+        const output = recordingContext();
+        output.context.globalAlpha = 0.42;
+        draw(output.context, sampleShoreAnimal(time, 0), {
+          species,
+          antlers: true,
+        });
+        assert.equal(output.context.globalAlpha, 0.42);
+        assert.equal(
+          output.calls.filter(([method]) => method === "save").length,
+          output.calls.filter(([method]) => method === "restore").length,
+        );
+        for (const [, ...args] of output.calls)
+          assert.ok(
+            args.filter((v) => typeof v === "number").every(Number.isFinite),
+          );
+        silhouettes.add(
+          output.calls
+            .filter(([method]) => method === "fill")
+            .map(([, path]) => path?.source || "")
+            .join("|"),
+        );
+        const distant = recordingContext();
+        draw(distant.context, sampleShoreAnimal(time, 0), {
+          species,
+          antlers: true,
+          detail: false,
+        });
+        assert.ok(distant.calls.length < output.calls.length);
+      }
+    }
+    assert.equal(silhouettes.size, 5);
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
 
 test("painted wildlife stays clipped to land, wraps, culls and freezes with reduced motion", () => {
   const previousPath = globalThis.Path2D;

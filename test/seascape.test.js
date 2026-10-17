@@ -12,6 +12,7 @@ import {
   MAX_LIGHTHOUSE_REACH,
   sampleSeaLife,
   sampleShoreAnimal,
+  shoreAnimalProfile,
   sampleWaterReflection,
 } from "../src/core/seascape.js";
 
@@ -168,6 +169,52 @@ test("sea life and shore animals move deterministically within their locations",
       assert.ok(Math.abs(shore.step) <= 1);
     }
   }
+});
+
+test("wildlife habitats include five species with solitary foxes and different paces", () => {
+  const species = new Set();
+  for (const biome of [
+    "temperate",
+    "alpine",
+    "tropical",
+    "arid",
+    "marsh",
+    "volcanic",
+  ]) {
+    for (let index = 0; index < 12; index++) {
+      const profile = shoreAnimalProfile(biome, index);
+      species.add(profile.species);
+      assert.deepEqual(shoreAnimalProfile(biome, index), profile);
+      assert.ok(profile.pack >= 1 && profile.pack <= 3);
+      assert.ok(profile.pace >= 0.75 && profile.pace <= 1.2);
+      if (profile.species === "fox") assert.equal(profile.pack, 1);
+    }
+  }
+  assert.deepEqual([...species].sort(), [
+    "boar",
+    "deer",
+    "fox",
+    "goat",
+    "horse",
+  ]);
+  assert.equal(shoreAnimalProfile("alpine", 0).species, "goat");
+  assert.equal(shoreAnimalProfile("marsh", 0).species, "boar");
+  assert.equal(shoreAnimalProfile("tropical", 0).species, "boar");
+  assert.equal(shoreAnimalProfile("arid", 0).species, "horse");
+  assert.ok(
+    shoreAnimalProfile("temperate", 3).pace <
+      shoreAnimalProfile("temperate", 1).pace,
+  );
+  assert.deepEqual(shoreAnimalProfile("unknown", 0), shoreAnimalProfile());
+  assert.deepEqual(shoreAnimalProfile(undefined, NaN), shoreAnimalProfile());
+  assert.deepEqual(
+    shoreAnimalProfile(undefined, Infinity),
+    shoreAnimalProfile(),
+  );
+  assert.deepEqual(
+    shoreAnimalProfile("alpine", -2.9),
+    shoreAnimalProfile("alpine", 2),
+  );
 });
 
 test("shore animals pause to graze with planted feet and ease into their return", () => {
