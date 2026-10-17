@@ -102,6 +102,92 @@ const options = {
   lighting: { daylight: 1, storm: 0 },
 };
 
+test("painted wildlife stays clipped to land, wraps, culls and freezes with reduced motion", () => {
+  const previousPath = globalThis.Path2D;
+  const shapes = [];
+  globalThis.Path2D = class {
+    constructor(source) {
+      this.source = source;
+      if (source) shapes.push(this);
+    }
+    rect() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+  };
+  try {
+    const poly = [
+      [250, 200],
+      [750, 200],
+      [750, 600],
+      [250, 600],
+    ];
+    const makeRenderer = (satellite = false) =>
+      createSeaRendering({
+        WORLD: { w: 1000, h: 800 },
+        lands: [
+          { poly, satellite: true },
+          { poly, satellite },
+        ],
+      });
+    const renderer = makeRenderer();
+    const render = (overrides = {}, instance = renderer) => {
+      const output = recordingContext();
+      instance.drawSurface(output.context, {
+        ...options,
+        vw: 900,
+        vh: 700,
+        time: 2000,
+        ...overrides,
+      });
+      return output;
+    };
+    const animalFills = ({ calls }) =>
+      calls.filter(
+        ([method, path]) =>
+          method === "fill" && typeof path?.source === "string",
+      );
+    const first = render();
+    assert.ok(animalFills(first).length > 0);
+    const geometryCount = shapes.length;
+    const frozen = render({ reducedMotion: true });
+    assert.deepEqual(
+      render({ reducedMotion: true, time: 9000 }).calls,
+      frozen.calls,
+    );
+    assert.notDeepEqual(render({ time: 7000 }).calls, first.calls);
+    assert.equal(
+      shapes.length,
+      geometryCount,
+      "animal paths are reused across frames",
+    );
+    assert.ok(
+      first.calls.some(
+        ([method, path, rule]) =>
+          method === "clip" &&
+          path instanceof globalThis.Path2D &&
+          rule === undefined,
+      ),
+    );
+    const wrapped = render({ camera: { x: 1500, y: 400, zoom: 1 } });
+    assert.equal(animalFills(wrapped).length, animalFills(first).length);
+    assert.ok(
+      wrapped.calls.some(
+        ([method, x, y]) => method === "translate" && x === 1000 && y === 0,
+      ),
+    );
+    assert.equal(
+      animalFills(render({ camera: { x: 500, y: 3000, zoom: 1 } })).length,
+      0,
+    );
+    assert.equal(animalFills(render({}, makeRenderer(true))).length, 0);
+    assert.equal(first.context.globalAlpha, 1);
+  } finally {
+    if (previousPath === undefined) delete globalThis.Path2D;
+    else globalThis.Path2D = previousPath;
+  }
+});
+
 test("northern water paints sparse silver while seasonal ink follows the saved day", () => {
   const renderer = createSeaRendering({
     WORLD: { w: 2000, h: 2000 },

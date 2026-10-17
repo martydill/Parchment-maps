@@ -110,13 +110,34 @@ export function sampleSeaLife(time, index) {
   };
 }
 
-export function sampleShoreAnimal(time, index) {
-  const phase = time * (0.18 + (index % 3) * 0.06) + index * 1.9;
+export function sampleShoreAnimal(time = 0, index = 0) {
+  const t = Number.isFinite(time) ? time : 0;
+  const id = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;
+  // Walk out, browse, then return. Ease to a stop before changing direction;
+  // the gait follows distance travelled, so resting animals keep planted feet.
+  const phase = (((t * (0.85 + (id % 3) * 0.06) + id * 5.7) % 32) + 32) % 32;
+  const returning = phase >= 16;
+  const progress = Math.min(1, (returning ? phase - 16 : phase) / 10);
+  const eased = progress * progress * (3 - 2 * progress);
+  const distance = 30 * eased;
+  const walk = 4 * progress * (1 - progress);
+  const grazing = Math.max(0, (returning ? phase - 26 : phase - 10) / 6);
+  const graze = Math.sin(grazing * Math.PI) ** 2;
+  const stride = (returning ? 30 + distance : distance) * 0.78 + id * 1.9;
   return {
-    x: Math.sin(phase) * 15,
-    y: Math.cos(phase * 0.7) * 4,
-    step: Math.sin(phase * 8),
-    facing: Math.cos(phase) >= 0 ? 1 : -1,
+    x: returning ? 15 - distance : distance - 15,
+    y: Math.sin((returning ? 1 - eased : eased) * Math.PI) * 3,
+    step: Math.sin(stride) * walk,
+    facing: returning ? -1 : 1,
+    walk,
+    graze,
+    bob: Math.cos(stride * 2) * walk * 0.22,
+    breath: Math.sin(t * 1.6 + id) * 0.12,
+    tail: Math.sin(t * 2.1 + id * 2.3) * 0.18,
+    legs: [0, Math.PI, Math.PI * 1.5, Math.PI * 0.5].map((offset) => ({
+      swing: Math.cos(stride + offset) * walk * 2.4,
+      lift: Math.max(0, Math.sin(stride + offset)) * walk * 1.6,
+    })),
   };
 }
 

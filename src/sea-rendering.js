@@ -42,6 +42,7 @@ import { createObstacleFoamRendering } from "./obstacle-foam-rendering.js";
 import { seasonAtDay } from "./core/seasons.js";
 import { wakeDisruption } from "./core/wake-crossings.js";
 import { createWakeCrossingRendering } from "./wake-crossing-rendering.js";
+import { createShoreAnimalRendering } from "./shore-animal-rendering.js";
 
 const wakeStrokeStyle = createAlphaPalette("250,244,211", 0, 0.48, 128);
 const wakeFillStyle = createAlphaPalette("255,249,221", 0, 0.48, 128);
@@ -176,6 +177,7 @@ export function createSeaRendering({
   let riverBridgeMasks = [];
   let cachedView = null;
   let cachedVisible = [];
+  let drawShoreAnimal;
   const coasts = lands.map(({ poly, satellite, name }, index) => {
     const depth = coastFaceDepth(index, satellite) * MAP_TILT_TAN;
     const xs = poly.map(([x]) => x);
@@ -743,7 +745,7 @@ export function createSeaRendering({
     }
   }
 
-  function drawShoreAnimals(c, visible, time, view) {
+  function drawShoreAnimals(c, visible, time, view, zoom) {
     for (const { animals, land, offset } of visible) {
       if (!animals.length) continue;
       c.save();
@@ -754,48 +756,21 @@ export function createSeaRendering({
         const pack =
           animal.index % 3 === 0 ? 3 : animal.index % 3 === 1 ? 2 : 1;
         for (let member = 0; member < pack; member++) {
-          const pose = sampleShoreAnimal(time, animal.index + member);
+          const pose = sampleShoreAnimal(time, animal.index * 3 + member);
+          const size = 0.82 * (1 - member * 0.1);
           c.save();
           c.translate(
-            animal.x + pose.x + member * 14,
-            animal.y + pose.y + member * 7,
+            animal.x + pose.x + member * 28,
+            animal.y + pose.y + member * 12,
           );
-          c.scale(pose.facing * (1 - member * 0.13), 1 - member * 0.13);
-          c.fillStyle = "rgba(75,66,42,.76)";
-          c.strokeStyle = "rgba(46,44,30,.86)";
-          c.lineWidth = 1.2;
-          c.beginPath();
-          c.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
-          c.fill();
-          c.stroke();
-          c.beginPath();
-          c.moveTo(7, -2);
-          c.lineTo(13, -7);
-          c.lineTo(17, -5);
-          c.lineTo(16, -1);
-          c.lineTo(9, 2);
-          c.fill();
-          c.stroke();
-          c.beginPath();
-          for (const leg of [-6, 5]) {
-            c.moveTo(leg, 3);
-            c.lineTo(leg + pose.step * 1.5, 10);
-          }
-          c.stroke();
-          if (animal.index % 2 === 0) {
-            c.beginPath();
-            c.moveTo(14, -7);
-            c.lineTo(13, -14);
-            c.lineTo(10, -17);
-            c.moveTo(13, -13);
-            c.lineTo(18, -17);
-            c.stroke();
-          } else {
-            c.beginPath();
-            c.moveTo(-9, -1);
-            c.lineTo(-17, -4);
-            c.stroke();
-          }
+          c.scale(pose.facing * size, size);
+          drawShoreAnimal ??= createShoreAnimalRendering();
+          drawShoreAnimal(c, pose, {
+            horse: animal.index % 2 === 1,
+            antlers: animal.index % 2 === 0 && member === 0,
+            variant: animal.index + member,
+            detail: zoom >= 0.9,
+          });
           c.restore();
         }
       }
@@ -1254,7 +1229,7 @@ export function createSeaRendering({
       detailView,
       clamp(arc?.birds ?? 1, 0, 1),
     );
-    drawShoreAnimals(c, visible, t, detailView);
+    drawShoreAnimals(c, visible, t, detailView, z);
   }
 
   function drawSurface(c, options) {
