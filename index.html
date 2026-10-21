@@ -1346,6 +1346,18 @@
                 <option value="high">High</option>
               </select>
             </div>
+            <label class="graphics-toggle" for="adaptiveResolution">
+              <input
+                id="adaptiveResolution"
+                type="checkbox"
+                aria-describedby="adaptiveResolutionHelp"
+              />
+              Adaptive resolution
+            </label>
+            <p id="adaptiveResolutionHelp" class="graphics-help">
+              Lower resolution when performance drops. Off keeps resolution
+              fixed; Auto quality can still adjust visual effects.
+            </p>
             <p id="graphicsStatus" role="status" aria-live="polite"></p>
           </fieldset>
           <button class="parchment" id="closeMenu">Close Menu</button>

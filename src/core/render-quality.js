@@ -1,7 +1,7 @@
 const PIXEL_BUDGET = 5_000_000;
 
-// Keep the map at least at CSS resolution. Retina HUD elements stay native DOM
-// text; the animated canvas has a bounded backing store on larger displays.
+// The animated map may render below CSS resolution on slower devices. HUD
+// text stays native DOM; the backing store also stays bounded on large displays.
 export function renderPixelRatio(
   width,
   height,
@@ -21,10 +21,7 @@ export function renderPixelRatio(
   const scale = Number.isFinite(quality)
     ? Math.max(0.5, Math.min(1, quality))
     : 1;
-  return Math.max(
-    1,
-    Math.min(device, Math.sqrt(PIXEL_BUDGET / (width * height))) * scale,
-  );
+  return Math.min(device, Math.sqrt(PIXEL_BUDGET / (width * height))) * scale;
 }
 
 // Sample real frame intervals, including GPU/compositor waits. A single save
@@ -47,14 +44,14 @@ export function createRenderQuality() {
       longestFrame = 0;
     },
     sample(frameMs) {
-      if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 250) {
+      if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 1000) {
         this.reset();
         return false;
       }
       elapsed += frameMs;
       frames++;
       longestFrame = Math.max(longestFrame, frameMs);
-      if (elapsed < 1000) return false;
+      if (elapsed < 1000 || frames < 2) return false;
       // Discard one isolated hitch, but retain a sustained low frame rate.
       const average = (elapsed - longestFrame) / (frames - 1);
       const previous = quality;

@@ -338,7 +338,12 @@ export function createSeaRendering({
     },
   );
   const seaSurfaceRendering = createSeaSurfaceRendering(
-    (c, options) => drawSurfaceDirect(c, { ...options, skipLighting: true }),
+    (c, options) =>
+      drawSurfaceDirect(c, {
+        ...options,
+        skipLighting: true,
+        clearLand: true,
+      }),
     WORLD.w,
   );
   const waveShadows = new Map();
@@ -931,12 +936,16 @@ export function createSeaRendering({
       cacheLightBands = false,
       skipLighting = false,
       deferLighting = false,
+      clearLand = false,
     },
   ) {
     const visible = visibleCoasts(camera, vw, vh);
     c.save();
     // Do not constrain longitude: the atlas wraps indefinitely.
-    clipWater(c, visible);
+    // A fresh transparent surface can erase land once after painting. Keeping
+    // inverse coastline clips active for every wave and shoreline mark makes
+    // software Canvas repeatedly rasterize the same large masks.
+    if (!clearLand) clipWater(c, visible);
     const t = reducedMotion ? 0 : time / 1000;
     const swell = clamp(arc?.swell || 0, 0, 1);
     const z = camera.zoom;
@@ -1227,6 +1236,22 @@ export function createSeaRendering({
       c.restore();
     }
     c.restore();
+    if (clearLand) {
+      c.save();
+      c.globalCompositeOperation = "destination-out";
+      c.globalAlpha = 1;
+      c.fillStyle = "#000";
+      for (const { land, depth, offset } of visible) {
+        c.save();
+        c.translate(offset, 0);
+        c.fill(land);
+        c.translate(0, depth);
+        c.fill(land);
+        c.restore();
+      }
+      c.restore();
+    }
+    // Rivers and wildlife also occupy land, so paint them after the cutout.
     drawRiverFlow(c, visible, t, z, detailView);
     drawCoastalBirds(
       c,

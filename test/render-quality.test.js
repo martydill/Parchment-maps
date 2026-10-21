@@ -13,7 +13,7 @@ function feed(controller, frameMs, count) {
   return changes;
 }
 
-test("render resolution respects device density, the pixel budget, and CSS readability", () => {
+test("render resolution respects device density, the pixel budget, and quality below CSS resolution", () => {
   assert.equal(renderPixelRatio(390, 844, 2), 2);
   assert.equal(renderPixelRatio(390, 844, 3), 2);
   assert.equal(renderPixelRatio(1920, 1080, 1), 1);
@@ -21,11 +21,17 @@ test("render resolution respects device density, the pixel budget, and CSS reada
   const retina = renderPixelRatio(2560, 1440, 2);
   assert.ok(retina > 1 && retina < 2);
   assert.ok(Math.abs(2560 * 1440 * retina ** 2 - 5_000_000) < 1e-7);
-  assert.equal(renderPixelRatio(3840, 2160, 2), 1);
+  assert.equal(
+    renderPixelRatio(3840, 2160, 2),
+    Math.sqrt(5_000_000 / (3840 * 2160)),
+  );
   assert.equal(renderPixelRatio(390, 844, 2, 0.5), 1);
   assert.equal(renderPixelRatio(390, 844, 2, 0.75), 1.5);
   assert.equal(renderPixelRatio(390, 844, 0.5), 1);
   assert.equal(renderPixelRatio(390, 844, 2, 0), 1);
+  assert.equal(renderPixelRatio(1920, 1080, 1, 0.75), 0.75);
+  assert.equal(renderPixelRatio(1920, 1080, 1, 0.5), 0.5);
+  assert.equal(renderPixelRatio(1920, 1080, 1, 0), 0.5);
   assert.equal(renderPixelRatio(390, 844, 2, 2), 2);
   assert.equal(renderPixelRatio(390, 844, NaN), 1);
   assert.equal(renderPixelRatio(390, 844, 2, NaN), 2);
@@ -74,12 +80,21 @@ test("moderate frame times and suspension interrupt recovery without changing qu
   feed(controller, 18, 56);
   feed(controller, 16, 315);
   assert.equal(controller.quality, 0.85);
-  for (const interval of [251, 10000, 0, -1, NaN, Infinity, undefined]) {
+  for (const interval of [1001, 10000, 0, -1, NaN, Infinity, undefined]) {
     assert.equal(controller.sample(interval), false);
     assert.equal(controller.quality, 0.85);
   }
   assert.equal(feed(controller, 16, 629), 0);
   assert.equal(controller.sample(16), true);
+});
+
+test("sustained software-rendering frames below four FPS still lower resolution", () => {
+  const controller = createRenderQuality();
+  assert.equal(feed(controller, 300, 3), 0);
+  assert.equal(controller.sample(300), true);
+  assert.equal(controller.quality, 0.85);
+  feed(controller, 1000, 8);
+  assert.equal(controller.quality, 0.5);
 });
 
 test("a reset clears unfinished samples without losing the selected quality", () => {

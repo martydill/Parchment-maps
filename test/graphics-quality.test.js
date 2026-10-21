@@ -6,6 +6,7 @@ import {
   GRAPHICS_PROFILES,
   GRAPHICS_SETTINGS,
   normalizeGraphicsSetting,
+  normalizeAdaptiveResolution,
   QUALITY_TIERS,
   resolveQualityTier,
 } from "../src/core/graphics-quality.js";
@@ -16,6 +17,23 @@ function feed(detector, frameMs, count, headroom = 1) {
     changes += Number(detector.sample(frameMs, headroom));
   return changes;
 }
+
+test("adaptive resolution defaults off and only explicit opt-in enables it", () => {
+  for (const value of [
+    undefined,
+    null,
+    false,
+    "false",
+    "",
+    "TRUE",
+    "auto",
+    1,
+    {},
+  ])
+    assert.equal(normalizeAdaptiveResolution(value), false);
+  assert.equal(normalizeAdaptiveResolution(true), true);
+  assert.equal(normalizeAdaptiveResolution("true"), true);
+});
 
 test("graphics settings normalize to a known value with auto as the fallback", () => {
   for (const setting of GRAPHICS_SETTINGS)
@@ -55,6 +73,8 @@ test("tiers scale effect scalars monotonically with high reproducing the classic
     particleScale: 1,
     maskScale: 0.5,
     grainAlpha: 0.28,
+    ambientEffects: true,
+    surfaceScale: 1,
     lightning: { intervalScale: 1, segments: 9, glow: true },
   });
   for (const field of [
@@ -63,6 +83,7 @@ test("tiers scale effect scalars monotonically with high reproducing the classic
     "particleScale",
     "maskScale",
     "grainAlpha",
+    "surfaceScale",
   ]) {
     assert.ok(GRAPHICS_PROFILES.low[field] < GRAPHICS_PROFILES.medium[field]);
     assert.ok(GRAPHICS_PROFILES.medium[field] < GRAPHICS_PROFILES.high[field]);
@@ -106,12 +127,30 @@ test("a single hitch or a suspended tab never moves the tier", () => {
   feed(detector, 16, 62);
   assert.equal(detector.sample(180), false);
   assert.equal(detector.tier, "high");
-  for (const interval of [251, 10000, 0, -1, NaN, Infinity, undefined]) {
+  for (const interval of [1001, 10000, 0, -1, NaN, Infinity, undefined]) {
     assert.equal(detector.sample(interval), false);
     assert.equal(detector.tier, "high");
   }
   // The window was discarded, so the following samples start fresh.
   assert.equal(feed(detector, 16, 40), 0);
+});
+
+test("low omits expensive ambient composites while higher tiers retain them", () => {
+  assert.equal(GRAPHICS_PROFILES.low.ambientEffects, false);
+  assert.equal(GRAPHICS_PROFILES.medium.ambientEffects, true);
+  assert.equal(GRAPHICS_PROFILES.high.ambientEffects, true);
+});
+
+test("auto quality can step down during sustained software-rendering stalls", () => {
+  const detector = createAutoQualityTier();
+  assert.equal(feed(detector, 300, 4), 1);
+  assert.equal(detector.tier, "medium");
+  assert.equal(feed(detector, 300, 16), 1);
+  assert.equal(detector.tier, "low");
+  const verySlow = createAutoQualityTier();
+  assert.equal(verySlow.sample(1000), false);
+  assert.equal(verySlow.sample(1000), true);
+  assert.equal(verySlow.tier, "medium");
 });
 
 test("a sustained healthy soak climbs back toward high and stops there", () => {

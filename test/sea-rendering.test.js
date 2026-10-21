@@ -5,6 +5,7 @@ import { createSeaSurfaceRendering } from "../src/sea-surface-rendering.js";
 import { regionalWaterInk } from "../src/core/regional-water.js";
 import { sampleShoreAnimal } from "../src/core/seascape.js";
 import { createShoreAnimalRendering } from "../src/shore-animal-rendering.js";
+import { MAP_TILT_COS } from "../src/core/projection.js";
 
 function recordingContext() {
   const calls = [];
@@ -339,6 +340,58 @@ test("buffered water repaints seasonal changes even when reduced motion freezes 
       day,
     });
   assert.deepEqual(days, [1, 73, 49]);
+});
+
+test("ocean buffer quality reduces pixels while preserving world coverage, opacity, and wrapped focus", () => {
+  const frames = [];
+  const renderer = createSeaSurfaceRendering(
+    (_c, frame) => frames.push(frame),
+    1000,
+  );
+  const target = recordingContext();
+  target.context.globalAlpha = 0.4;
+  const frame = {
+    ...options,
+    camera: { x: 1005, y: 400, zoom: 0.5 },
+    focus: { x: 5, y: 400, radius: 480 },
+    vw: 1800,
+    vh: 1200,
+    reducedMotion: true,
+  };
+  renderer.draw(target.context, { ...frame, surfaceScale: 0.5 });
+  const first = target.calls.find(([method]) => method === "drawImage");
+  const layer = first[1];
+  const lowPixels = layer.width * layer.height;
+  assert.equal(frames[0].camera.x, 1005, "focus uses the nearest world copy");
+  assert.equal(frames[0].vw, layer.width / 0.5);
+  assert.equal(frames[0].vh, layer.height / 0.5);
+  assert.equal(first[2] + first[4] / 2, 1005);
+  assert.equal(first[3] + first[5] / 2, 400);
+  assert.equal(first[4], frames[0].vw / frame.camera.zoom);
+  assert.equal(first[5], frames[0].vh / (frame.camera.zoom * MAP_TILT_COS));
+  assert.ok(
+    layer.calls.some(
+      ([method, ...args]) =>
+        method === "setTransform" &&
+        args[0] === 0.25 &&
+        args[3] === 0.25 * MAP_TILT_COS,
+    ),
+  );
+  assert.equal(target.context.globalAlpha, 0.4);
+  renderer.draw(target.context, { ...frame, surfaceScale: 0.5 });
+  assert.equal(frames.length, 1, "unchanged reduced-motion surface is reused");
+  renderer.draw(target.context, { ...frame, surfaceScale: 1 });
+  assert.equal(
+    frames.length,
+    2,
+    "quality changes refresh even when time is frozen",
+  );
+  assert.ok(layer.width * layer.height >= lowPixels * 3.9);
+  const last = target.calls.filter(([method]) => method === "drawImage").at(-1);
+  assert.ok(Math.abs(first[4] - last[4]) <= 2 / frame.camera.zoom);
+  assert.ok(
+    Math.abs(first[5] - last[5]) <= 2 / (frame.camera.zoom * MAP_TILT_COS),
+  );
 });
 
 test("regional coastal water remains still under reduced motion in every season", () => {
@@ -912,12 +965,24 @@ test("buffered glitter follows the viewer while world ripples reuse their anchor
     renderer.drawSurface(first.context, frame);
     const layers = first.calls.filter(([method]) => method === "drawImage");
     assert.equal(layers.length, 2);
-    for (const [, layer] of layers)
-      assert.ok(
-        layer.calls.some(
-          ([method, , rule]) => method === "clip" && rule === "evenodd",
-        ),
-      );
+    assert.ok(
+      layers[0][1].calls.some(
+        ([method, , rule]) => method === "clip" && rule === "evenodd",
+      ),
+    );
+    const surfaceCalls = layers[1][1].calls;
+    assert.ok(
+      surfaceCalls.some(
+        ([method, value]) =>
+          method === "globalCompositeOperation" && value === "destination-out",
+      ),
+    );
+    assert.ok(
+      !surfaceCalls.some(
+        ([method, , rule]) => method === "clip" && rule === "evenodd",
+      ),
+      "buffered waves erase land once instead of clipping every paint",
+    );
     assert.ok(
       !first.calls.some(
         ([method, , rule]) => method === "clip" && rule === "evenodd",

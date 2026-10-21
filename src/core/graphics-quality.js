@@ -16,6 +16,10 @@ export const GRAPHICS_PROFILES = {
     particleScale: 0.45,
     maskScale: 0.3,
     grainAlpha: 0,
+    // These transparent composites are especially costly with software Canvas.
+    // The baked chart, animated surface, vessels, fog, and weather remain live.
+    ambientEffects: false,
+    surfaceScale: 0.5,
     lightning: { intervalScale: 2.6, segments: 4, glow: false },
   },
   medium: {
@@ -25,6 +29,8 @@ export const GRAPHICS_PROFILES = {
     particleScale: 0.7,
     maskScale: 0.4,
     grainAlpha: 0.17,
+    ambientEffects: true,
+    surfaceScale: 0.75,
     lightning: { intervalScale: 1.7, segments: 6, glow: false },
   },
   high: {
@@ -34,6 +40,8 @@ export const GRAPHICS_PROFILES = {
     particleScale: 1,
     maskScale: 0.5,
     grainAlpha: 0.28,
+    ambientEffects: true,
+    surfaceScale: 1,
     lightning: { intervalScale: 1, segments: 9, glow: true },
   },
 };
@@ -42,6 +50,11 @@ export const GRAPHICS_PROFILES = {
 export function normalizeGraphicsSetting(value) {
   const key = typeof value === "string" ? value.trim().toLowerCase() : "";
   return GRAPHICS_SETTINGS.includes(key) ? key : "auto";
+}
+
+// Missing preferences (including older saves) leave adaptive resolution off.
+export function normalizeAdaptiveResolution(value) {
+  return value === true || value === "true";
 }
 
 // A fixed setting names its tier directly; "auto" defers to the detector.
@@ -129,14 +142,14 @@ export function createAutoQualityTier({
       healthyRun = 0;
     },
     sample(frameMs, headroom = 1) {
-      if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 250) {
+      if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 1000) {
         this.reset();
         return false;
       }
       elapsed += frameMs;
       frames++;
       longestFrame = Math.max(longestFrame, frameMs);
-      if (elapsed < 1000) return false;
+      if (elapsed < 1000 || frames < 2) return false;
       const average = (elapsed - longestFrame) / (frames - 1);
       elapsed = 0;
       frames = 0;

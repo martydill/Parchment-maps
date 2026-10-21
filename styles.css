@@ -1685,6 +1685,23 @@ button.parchment {
   min-height: 36px;
   font-size: 12px;
 }
+.graphics-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  margin-top: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.graphics-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #795a35;
+}
+.graphics-help,
 #graphicsStatus {
   margin: 8px 0 0;
   font-size: 11px;

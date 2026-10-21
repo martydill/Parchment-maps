@@ -37,6 +37,7 @@ import {
 import {
   createAutoQualityTier,
   graphicsQualityProfile,
+  normalizeAdaptiveResolution,
   normalizeGraphicsSetting,
 } from "./core/graphics-quality.js";
 import {
@@ -398,26 +399,34 @@ import { createCloudShadowRendering } from "./sunlight-rendering.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let DPR = 1;
-const renderQuality = createRenderQuality();
+let renderQuality = createRenderQuality();
 const fogCadence = createRenderCadence();
 // Graphics quality: a user setting (auto/low/medium/high) persisted next to
 // the map seed, with "auto" tracking a frame-time detector. The resolved
 // profile scales particles, screen-space masks, grain, and lightning.
 const GRAPHICS_KEY = "gilded-archipelago-graphics";
+const ADAPTIVE_RESOLUTION_KEY = "gilded-archipelago-adaptive-resolution";
 let graphicsSetting = normalizeGraphicsSetting(
   localStorage.getItem(GRAPHICS_KEY),
+);
+let adaptiveResolution = normalizeAdaptiveResolution(
+  localStorage.getItem(ADAPTIVE_RESOLUTION_KEY),
 );
 let detectedTier = "high";
 let graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
 const autoGraphicsTier = createAutoQualityTier();
-// The tier caps render resolution; the continuous frame-time controller may
-// dip below the cap under load but can never exceed it.
+// Opting in lets the frame-time controller lower resolution below the tier.
+// Otherwise Auto adjusts effects while keeping the full-resolution target.
 function resolutionQuality() {
-  return Math.min(renderQuality.quality, graphics.resolutionScale);
+  return adaptiveResolution
+    ? Math.min(renderQuality.quality, graphics.resolutionScale)
+    : graphicsQualityProfile(graphicsSetting).resolutionScale;
 }
 // Same shape for the sea renderers' continuous detail stride.
 function effectDetail() {
-  return Math.min(graphics.detail, renderQuality.quality);
+  return adaptiveResolution
+    ? Math.min(graphics.detail, renderQuality.quality)
+    : graphics.detail;
 }
 function applyGraphicsProfile() {
   graphics = graphicsQualityProfile(graphicsSetting, detectedTier);
@@ -5530,22 +5539,24 @@ function render() {
     time,
     reducedMotion: reducedMotion.matches,
   });
-  seaRendering.drawUnderwater(ctx, {
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    roughness: weather.roughness,
-    lighting,
-    reducedMotion: reducedMotion.matches,
-    detail: effectDetail(),
-  });
+  if (graphics.ambientEffects)
+    seaRendering.drawUnderwater(ctx, {
+      camera,
+      vw,
+      vh,
+      time: visualTime,
+      roughness: weather.roughness,
+      lighting,
+      reducedMotion: reducedMotion.matches,
+      detail: effectDetail(),
+    });
   seaRendering.drawSurface(ctx, {
     bufferSurface: !encounters.active,
+    surfaceScale: graphics.surfaceScale,
     deferLighting: true,
     cacheLightBands: true,
     detail: effectDetail(),
-    focus: { x: ship.x, y: ship.y, radius: 480 },
+    focus: { x: ship.x, y: ship.y, radius: 480 * effectDetail() },
     camera,
     vw,
     vh,
@@ -5563,18 +5574,20 @@ function render() {
   });
   drawAnimatedRoughSeas(ctx, visualTime, z, graphics.particleScale);
   drawNavigationalHazards(ctx, z);
-  seaRendering.drawCaustics(ctx, {
-    focus: { x: ship.x, y: ship.y, radius: 480 },
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    lighting,
-    shoals: cachedShoals,
-    reducedMotion: reducedMotion.matches,
-    detail: effectDetail(),
-  });
-  mountainShadows.draw(ctx, { camera, vw, vh, lighting });
+  if (graphics.ambientEffects)
+    seaRendering.drawCaustics(ctx, {
+      focus: { x: ship.x, y: ship.y, radius: 480 },
+      camera,
+      vw,
+      vh,
+      time: visualTime,
+      lighting,
+      shoals: cachedShoals,
+      reducedMotion: reducedMotion.matches,
+      detail: effectDetail(),
+    });
+  if (graphics.ambientEffects)
+    mountainShadows.draw(ctx, { camera, vw, vh, lighting });
   seaIce.draw(ctx, {
     camera,
     vw,
@@ -5712,16 +5725,17 @@ function render() {
   shipScreen.x = vw / 2 + (nearestWrappedX(ship.x, camera.x) - camera.x) * z;
   shipScreen.y = vh / 2 + (ship.y - camera.y) * z * MAP_TILT_COS;
   shipScreen.angle = ship.angle;
-  depthRendering.draw(ctx, {
-    time,
-    camera,
-    width: vw,
-    height: vh,
-    ship: shipScreen,
-    zoom: z,
-    lighting,
-    maskScale: graphics.maskScale,
-  });
+  if (graphics.ambientEffects)
+    depthRendering.draw(ctx, {
+      time,
+      camera,
+      width: vw,
+      height: vh,
+      ship: shipScreen,
+      zoom: z,
+      lighting,
+      maskScale: graphics.maskScale,
+    });
   renderFog(visualTime, lighting);
   drawSceneLightWash(ctx, lighting, vw, vh);
   activeLighthouses.length = 0;
@@ -5759,27 +5773,29 @@ function render() {
   // The ship and immediate docking cue remain readable above the fog layer.
   worldTransform();
   // Specular light sits above the night wash, within the current sight area.
-  ctx.save();
-  polygonPath(
-    ctx,
-    visibility.polygon,
-    1,
-    1,
-    nearestWrappedX(ship.x, camera.x) - ship.x,
-  );
-  ctx.clip();
-  seaRendering.drawLighting(ctx, {
-    camera,
-    vw,
-    vh,
-    time: visualTime,
-    lighting,
-    windAngle: game.windAngle,
-    roughness: weather.roughness,
-    detail: effectDetail(),
-    reducedMotion: reducedMotion.matches,
-  });
-  ctx.restore();
+  if (graphics.ambientEffects) {
+    ctx.save();
+    polygonPath(
+      ctx,
+      visibility.polygon,
+      1,
+      1,
+      nearestWrappedX(ship.x, camera.x) - ship.x,
+    );
+    ctx.clip();
+    seaRendering.drawLighting(ctx, {
+      camera,
+      vw,
+      vh,
+      time: visualTime,
+      lighting,
+      windAngle: game.windAngle,
+      roughness: weather.roughness,
+      detail: effectDetail(),
+      reducedMotion: reducedMotion.matches,
+    });
+    ctx.restore();
+  }
   if (
     encounters.active?.kind === "raider" &&
     (encounters.active.preview || game.seaRaid.raider)
@@ -6645,7 +6661,7 @@ function loop(now) {
   last = now;
   if (mapOpening?.active) mapOpening.render(now);
   else {
-    if (renderQuality.sample(frameMs)) {
+    if (adaptiveResolution && renderQuality.sample(frameMs)) {
       const ratio = renderPixelRatio(
         vw,
         vh,
@@ -6656,7 +6672,10 @@ function loop(now) {
     }
     if (
       graphicsSetting === "auto" &&
-      autoGraphicsTier.sample(frameMs, renderQuality.quality)
+      autoGraphicsTier.sample(
+        frameMs,
+        adaptiveResolution ? renderQuality.quality : 1,
+      )
     ) {
       detectedTier = autoGraphicsTier.tier;
       applyGraphicsProfile();
@@ -7947,15 +7966,23 @@ document.getElementById("loadGameButton").addEventListener("click", () => {
 
 const TIER_LABELS = { low: "Low", medium: "Medium", high: "High" };
 const graphicsQualitySelect = document.getElementById("graphicsQuality");
+const adaptiveResolutionToggle = document.getElementById("adaptiveResolution");
 const graphicsStatus = document.getElementById("graphicsStatus");
 function updateGraphicsStatus() {
   if (!graphicsQualitySelect || !graphicsStatus) return;
   updateElementProperty(graphicsQualitySelect, "value", graphicsSetting);
+  updateElementProperty(
+    adaptiveResolutionToggle,
+    "checked",
+    adaptiveResolution,
+  );
   const tier = TIER_LABELS[graphics.tier] || "High";
   const summary =
     graphicsSetting === "auto"
       ? `Auto — detected ${tier} from frame pacing.`
-      : `${tier} — particle counts, haze masks, grain, and storm flashes scale with this tier.`;
+      : graphics.ambientEffects
+        ? `${tier} — resolution, ocean detail, particles, haze, and storm flashes scale with this tier.`
+        : `${tier} — reduced resolution and ocean detail; decorative shadows, underwater detail, glitter, caustics, and depth blur are disabled.`;
   updateElementProperty(
     graphicsStatus,
     "textContent",
@@ -7966,6 +7993,13 @@ function updateGraphicsStatus() {
 }
 graphicsQualitySelect.addEventListener("change", () => {
   setGraphicsSetting(graphicsQualitySelect.value);
+});
+adaptiveResolutionToggle.addEventListener("change", () => {
+  adaptiveResolution = adaptiveResolutionToggle.checked;
+  localStorage.setItem(ADAPTIVE_RESOLUTION_KEY, String(adaptiveResolution));
+  renderQuality = createRenderQuality();
+  autoGraphicsTier.reset();
+  applyGraphicsProfile();
 });
 updateGraphicsStatus();
 

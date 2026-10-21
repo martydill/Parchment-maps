@@ -21,19 +21,22 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
         roughness,
         windAngle,
         detail = 1,
+        surfaceScale = 1,
       } = options;
       const time = options.reducedMotion ? 0 : options.time;
       const z = camera.zoom;
       // The distant chart already has static water ink. Bound live decoration
       // around the vessel so showing more of the world does not add more work.
       const radius = (options.focus?.radius ?? 480) + 520;
-      const width = Math.ceil(
+      const viewWidth = Math.ceil(
         Math.min(vw, options.focus ? radius * 2 * z : vw) + padding * 2,
       );
-      const height = Math.ceil(
+      const viewHeight = Math.ceil(
         Math.min(vh, options.focus ? radius * 2 * z * MAP_TILT_COS : vh) +
           padding * 2,
       );
+      const width = Math.ceil(viewWidth * surfaceScale);
+      const height = Math.ceil(viewHeight * surfaceScale);
       const center = options.focus
         ? {
             ...camera,
@@ -46,6 +49,7 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
       const key = [
         z,
         detail,
+        surfaceScale,
         seasonAtDay(options.day).key,
         c.globalAlpha,
         options.focus?.radius,
@@ -62,8 +66,8 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
         cadence.shouldRender(time, {
           x: center.x * z,
           y: center.y * z * MAP_TILT_COS,
-          width,
-          height,
+          width: viewWidth,
+          height: viewHeight,
           key,
         })
       ) {
@@ -78,18 +82,18 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
         context.globalAlpha = c.globalAlpha;
         context.globalCompositeOperation = "source-over";
         context.setTransform(
-          z,
+          z * surfaceScale,
           0,
           0,
-          z * MAP_TILT_COS,
-          width / 2 - center.x * z,
-          height / 2 - center.y * z * MAP_TILT_COS,
+          z * MAP_TILT_COS * surfaceScale,
+          width / 2 - center.x * z * surfaceScale,
+          height / 2 - center.y * z * MAP_TILT_COS * surfaceScale,
         );
         drawSurface(context, {
           ...options,
           camera: center,
-          vw: width,
-          vh: height,
+          vw: width / surfaceScale,
+          vh: height / surfaceScale,
         });
         const alpha = context.globalAlpha;
         context.globalAlpha = 1;
@@ -99,7 +103,8 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
           [width, true],
           [height, false],
         ]) {
-          if (extent >= (horizontal ? vw : vh) + padding * 2) continue;
+          if (extent >= ((horizontal ? vw : vh) + padding * 2) * surfaceScale)
+            continue;
           const fade = context.createLinearGradient(
             0,
             0,
@@ -107,8 +112,8 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
             horizontal ? 0 : extent,
           );
           fade.addColorStop(0, "rgba(0,0,0,0)");
-          fade.addColorStop(padding / extent, "#000");
-          fade.addColorStop(1 - padding / extent, "#000");
+          fade.addColorStop((padding * surfaceScale) / extent, "#000");
+          fade.addColorStop(1 - (padding * surfaceScale) / extent, "#000");
           fade.addColorStop(1, "rgba(0,0,0,0)");
           context.setTransform(1, 0, 0, 1, 0, 0);
           context.fillStyle = fade;
@@ -122,10 +127,10 @@ export function createSeaSurfaceRendering(drawSurface, worldWidth = 0) {
       c.globalAlpha = 1;
       c.drawImage(
         layer,
-        anchor.x - width / (2 * z),
-        anchor.y - height / (2 * z * MAP_TILT_COS),
-        width / z,
-        height / (z * MAP_TILT_COS),
+        anchor.x - width / (2 * z * surfaceScale),
+        anchor.y - height / (2 * z * MAP_TILT_COS * surfaceScale),
+        width / (z * surfaceScale),
+        height / (z * MAP_TILT_COS * surfaceScale),
       );
       c.restore();
     },
