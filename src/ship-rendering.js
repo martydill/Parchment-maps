@@ -34,14 +34,12 @@ import {
 } from "./core/bioluminescence.js";
 import { createAlphaPalette } from "./style-palette.js";
 import { createRadialStamp } from "./radial-stamp.js";
+import { drawBowWater } from "./bow-water-rendering.js";
 
 export { getShipModelProfile as shipDrawProfile } from "./core/ship-models.js";
 
-const bowWaterStyle = createAlphaPalette("35,88,86", 0, 0.16, 128);
-const bowFoamStyle = createAlphaPalette("255,247,213", 0, 0.24, 128);
 const sternFoamStyle = createAlphaPalette("255,248,213", 0, 0.4, 128);
 const sternCrestStyle = createAlphaPalette("255,249,218", 0, 0.2, 128);
-const bowSprayStyle = createAlphaPalette("255,245,216", 0, 0.65, 128);
 const reflectionInkStyle = createAlphaPalette("45,57,45", 0, 0.34, 128);
 const splinterPitchStyle = createAlphaPalette("46,30,17", 0.14, 0.72, 64);
 const splinterWoodStyle = createAlphaPalette("171,124,66", 0.14, 0.76, 64);
@@ -883,6 +881,7 @@ function drawHullWater(
   bioluminescence,
   windX,
   windY,
+  seed,
 ) {
   const strength = motion.wake;
   if (strength < 0.02) return;
@@ -892,75 +891,7 @@ function drawHullWater(
   c.rotate(heading);
   c.lineCap = "round";
 
-  // The bow pushes a shallow, dark wedge outward before foam gathers on its lip.
-  for (const side of [-1, 1]) {
-    c.fillStyle = bowWaterStyle(strength * 0.16);
-    c.beginPath();
-    c.moveTo(side * beam * 0.3, -length * 0.5);
-    c.quadraticCurveTo(
-      side * (beam + 4 * strength),
-      -length * 0.46,
-      side * (beam + 8 * strength),
-      -length * 0.16,
-    );
-    c.quadraticCurveTo(
-      side * beam * 0.95,
-      -length * 0.28,
-      side * beam * 0.48,
-      -length * 0.43,
-    );
-    c.closePath();
-    c.fill();
-    for (let fleck = 0; fleck < 7; fleck++) {
-      const spread = (fleck + Math.sin(fleck * 2.4) * 0.25) / 7;
-      const x = side * (beam * (0.38 + spread * 0.62) + strength * spread * 4);
-      const y = -length * (0.49 - spread * 0.36);
-      c.fillStyle = bowFoamStyle(strength * (0.12 + (1 - spread) * 0.12));
-      c.beginPath();
-      c.ellipse(
-        x,
-        y,
-        0.5 + spread * 0.4,
-        0.35 + spread * 0.2,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
-    }
-    c.strokeStyle = bowSprayStyle(strength * 0.55);
-    c.lineWidth = (0.8 + strength * 0.5) / z;
-    c.beginPath();
-    c.moveTo(side * beam * 0.24, -length * 0.52);
-    c.bezierCurveTo(
-      side * beam * 0.85,
-      -length * 0.54,
-      side * (beam + 5 * strength),
-      -length * 0.4,
-      side * (beam + 7 * strength),
-      -length * 0.24,
-    );
-    c.stroke();
-    for (let drop = 0; drop < 5; drop++) {
-      const spread = drop / 5;
-      const lift = Math.abs(motion.heave) * 0.8 + motion.spray * strength * 2;
-      const drift = motion.spray * (0.5 + spread) * 2.5;
-      c.fillStyle = bowSprayStyle(
-        strength * (0.48 - spread * 0.3) * (0.8 + motion.spray * 0.2),
-      );
-      c.beginPath();
-      c.ellipse(
-        side * (beam * 0.7 + spread * strength * 10) + windX * drift,
-        -length * (0.48 - spread * 0.2) - lift * (1 - spread) + windY * drift,
-        (0.65 + strength * 0.5) * (1 - spread * 0.5),
-        0.45 + strength * 0.4,
-        heading * 0.12,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
-    }
-  }
+  drawBowWater(c, profile, motion, windX, windY, seed);
 
   // Uneven foam flecks mark the disturbed water behind the stern.
   for (let fleck = 0; fleck < 11; fleck++) {
@@ -1251,7 +1182,17 @@ function drawShipModel(
   motion = shipTransform(heading, motion);
   c.save();
   c.translate(x, y);
-  drawHullWater(c, profile, motion, heading, z, bioluminescence, windX, windY);
+  drawHullWater(
+    c,
+    profile,
+    motion,
+    heading,
+    z,
+    bioluminescence,
+    windX,
+    windY,
+    seed,
+  );
   // Soft contact shadow stays on the water as the hull rises and falls.
   const shadow = lighting.shadow ?? sceneLighting().shadow;
   c.save();
