@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=34" />
+    <link rel="stylesheet" href="./styles.css?v=36" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -929,25 +929,43 @@
       </div>
     </div>
 
-    <div id="explorationPanel">
+    <div
+      id="explorationPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="explorationName"
+    >
       <div class="menu-paper">
         <span class="hud-paper-edge" aria-hidden="true"></span>
         <div class="scroll exploration-scroll">
-          <div class="town-kicker">Shore expedition</div>
-          <h2 id="explorationName">Uncharted Coast</h2>
-          <p id="explorationObjective"></p>
-          <div class="detail-card">
-            <h3>Captain’s assessment</h3>
-            <p id="explorationHazards" class="small"></p>
-            <p id="explorationStatus" class="small"></p>
+          <header class="expedition-header">
+            <div class="expedition-heading">
+              <div class="town-kicker">Shore expedition</div>
+              <h2 id="explorationName">Uncharted Coast</h2>
+            </div>
+            <div class="expedition-assessment">
+              <p id="explorationStatus" role="status"></p>
+              <div id="explorationHazards" aria-label="Local hazards"></div>
+            </div>
+          </header>
+          <p class="expedition-choice-label" id="explorationChoiceLabel">
+            Choose your approach
+          </p>
+          <div
+            id="explorationApproaches"
+            class="expedition-options"
+            role="group"
+            aria-labelledby="explorationChoiceLabel"
+          ></div>
+          <div class="expedition-departure">
+            <button class="parchment" id="closeExploration">
+              <span aria-hidden="true">←</span> Return to Ship
+            </button>
+            <span id="explorationSupplies"></span>
+            <button class="parchment" id="launchExploration">
+              Launch Expedition <span aria-hidden="true">→</span>
+            </button>
           </div>
-          <div class="detail-card">
-            <h3>Choose your commitment</h3>
-            <div id="explorationApproaches" class="expedition-options"></div>
-          </div>
-          <button class="parchment" id="closeExploration">
-            Return to Ship
-          </button>
         </div>
       </div>
     </div>
@@ -1720,6 +1738,6 @@
       </div>
     </div>
 
-    <script type="module" src="./src/app.js?v=70"></script>
+    <script type="module" src="./src/app.js?v=72"></script>
   </body>
 </html>

@@ -390,7 +390,8 @@ import {
   renderPortSystems,
   renderShipPanel,
   updateHud,
-} from "./ui/panels.js?v=21";
+} from "./ui/panels.js?v=23";
+import { closeExpeditionPanel } from "./ui/expedition-panel.js?v=2";
 import { activateSectionTabs } from "./ui/tabs.js";
 import { configurePortPanels, renderShipyard } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
@@ -7806,25 +7807,13 @@ function undertakeExpedition(site, approach) {
       : `EXPEDITION FAILED · landing area charted`,
     4.5,
   );
-  document.getElementById("explorationPanel").style.display = "none";
+  closeExpeditionPanel();
   updateHud();
   saveGameState();
 }
 
 ui.dock.addEventListener("click", openPort);
 ui.explore.addEventListener("click", openExploration);
-document
-  .getElementById("closeExploration")
-  .addEventListener(
-    "click",
-    () => (document.getElementById("explorationPanel").style.display = "none"),
-  );
-document
-  .getElementById("explorationPanel")
-  .addEventListener("click", (event) => {
-    if (event.target === document.getElementById("explorationPanel"))
-      document.getElementById("explorationPanel").style.display = "none";
-  });
 document
   .getElementById("closeTown")
   .addEventListener("click", closeTownDetails);
