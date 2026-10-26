@@ -363,7 +363,7 @@ import {
   drawWeatherEffects,
   portAccentColor,
   wrappedCircleIntersectsViewport,
-} from "./rendering.js?v=9";
+} from "./rendering.js?v=10";
 import {
   advanceTimeOfDay,
   nightSightLimit,
@@ -3624,11 +3624,6 @@ function isWorldCircleInViewport(x, y, radius, z = camera.zoom) {
 
 const roughSeaCrestStyle = createAlphaPalette("249,232,184", 0.1, 0.3);
 const roughSeaShadowStyle = createAlphaPalette("57,61,47", 0.12, 0.23);
-const shoalBandStyles = Array.from(
-  { length: 3 },
-  (_, strength) => `rgba(247, 231, 177, ${0.24 + strength * 0.07})`,
-);
-
 const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
   const shelf = new Path2D();
   for (let point = 0; point <= 32; point++) {
@@ -3642,39 +3637,7 @@ const cachedShoals = worldShoals.map(([sx, sy, rx, ry, name]) => {
   }
   shelf.closePath();
 
-  const bands = [];
-  for (let band = -2; band <= 2; band++) {
-    const p = new Path2D();
-    p.moveTo(-rx, band * ry * 0.34);
-    p.bezierCurveTo(
-      -rx * 0.35,
-      band * ry * 0.44 - 11,
-      rx * 0.28,
-      band * ry * 0.23 + 9,
-      rx,
-      band * ry * 0.38,
-    );
-    bands.push({
-      path: p,
-      style: shoalBandStyles[2 - Math.abs(band)],
-      baseWidth: 3 - Math.abs(band) * 0.35,
-    });
-  }
-
-  const pebblePrimary = new Path2D();
-  const pebbleSecondary = new Path2D();
-  for (let pebble = 0; pebble < 28; pebble++) {
-    const px = Math.sin(pebble * 31.7 + sx) * rx * 0.76;
-    const py = Math.cos(pebble * 17.3 + sy) * ry * 0.68;
-    const size = pebble % 7 === 0 ? 5 : 1.5 + (pebble % 3);
-    const target = pebble % 7 === 0 ? pebblePrimary : pebbleSecondary;
-    target.moveTo(px, py - size);
-    target.lineTo(px + size * 0.8, py + size * 0.6);
-    target.lineTo(px - size, py + size * 0.6);
-    target.closePath();
-  }
-
-  return { sx, sy, rx, ry, name, shelf, bands, pebblePrimary, pebbleSecondary };
+  return { sx, sy, rx, ry, name, shelf };
 });
 
 function drawAnimatedRoughSeas(c, time, z, particleScale = 1) {
@@ -5306,34 +5269,6 @@ function drawNavigationalHazards(c, z) {
     c.stroke();
   }
   c.setLineDash([]);
-  for (const shoal of cachedShoals) {
-    if (!isWorldCircleInViewport(shoal.sx, shoal.sy, shoal.rx, z)) continue;
-    const x = nearestWrappedX(shoal.sx, camera.x);
-    c.save();
-    c.translate(x, shoal.sy);
-    c.fillStyle = "rgba(204, 177, 115, .39)";
-    c.fill(shoal.shelf);
-    c.strokeStyle = "rgba(88, 79, 51, .76)";
-    c.lineWidth = 1.5 / z;
-    c.stroke(shoal.shelf);
-    c.clip(shoal.shelf);
-    for (const { path, style, baseWidth } of shoal.bands) {
-      c.strokeStyle = style;
-      c.lineWidth = baseWidth / z;
-      c.stroke(path);
-    }
-    c.fillStyle = "rgba(73, 70, 52, .73)";
-    c.fill(shoal.pebblePrimary);
-    c.fillStyle = "rgba(92, 85, 59, .38)";
-    c.fill(shoal.pebbleSecondary);
-    c.restore();
-    if (pointCurrentlyVisible(shoal.sx, shoal.sy)) {
-      c.fillStyle = "rgba(64, 39, 20, .9)";
-      c.font = `bold ${11 / z}px Georgia`;
-      c.textAlign = "center";
-      c.fillText(shoal.name || "Shallows", x, shoal.sy - shoal.ry - 8 / z);
-    }
-  }
   c.restore();
 }
 
