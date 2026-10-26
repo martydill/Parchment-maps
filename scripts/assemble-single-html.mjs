@@ -24,7 +24,7 @@ if (!stylesheetTag.test(html) || !moduleTag.test(html)) {
   throw new Error("Could not find the expected stylesheet and module tags");
 }
 
-// Embed the cinematic/HUD materials and vessel paintings in the downloadable game.
+// Embed the menu materials and paintings in the downloadable game.
 let embeddedJavascript = javascript;
 let embeddedCss = css;
 for (const path of [
@@ -36,9 +36,16 @@ for (const path of [
   "assets/vessels/barque.png",
   "assets/vessels/brig.png",
   "assets/vessels/dhow.png",
+  "assets/expeditions/scout.webp",
+  "assets/expeditions/expedition.webp",
+  "assets/expeditions/deep.webp",
 ]) {
   const data = await readFile(path);
-  const mime = path.endsWith(".png") ? "image/png" : "image/jpeg";
+  const mime = path.endsWith(".webp")
+    ? "image/webp"
+    : path.endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
   const dataUrl = `data:${mime};base64,${data.toString("base64")}`;
   embeddedJavascript = embeddedJavascript.replaceAll(`./${path}`, dataUrl);
   embeddedCss = embeddedCss.replaceAll(`./${path}`, dataUrl);
