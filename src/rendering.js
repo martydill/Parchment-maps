@@ -27,6 +27,7 @@ import {
   waxDrops,
 } from "./core/chart-decor.js";
 import { createRadialStamp } from "./radial-stamp.js";
+import { drawParchmentShoal } from "./shoal-rendering.js";
 import { GRAPHICS_PROFILES } from "./core/graphics-quality.js";
 import { weatherAppearance } from "./core/weather.js";
 import { planTerrainIllustration, terrainBiome } from "./core/terrain.js";
@@ -1218,53 +1219,17 @@ export function createMapRendering({
     c.restore();
   }
   function drawShoal(c, x, y, rx, ry, label) {
-    const rnd = seeded(Math.round(x * 7 + y * 13));
-    c.save();
-    c.translate(x, y);
-    // Sand washes and broken contours resemble an engraved reef shelf.
-    for (let ring = 0; ring < 3; ring++) {
-      c.beginPath();
-      for (let point = 0; point <= 48; point++) {
-        const angle = (point / 48) * Math.PI * 2;
-        const contour =
-          0.94 -
-          ring * 0.16 +
-          Math.sin(angle * 5 + x) * 0.07 +
-          Math.cos(angle * 9 + y) * 0.045;
-        const px = Math.cos(angle) * rx * contour;
-        const py = Math.sin(angle) * ry * contour;
-        if (point === 0) c.moveTo(px, py);
-        else c.lineTo(px, py);
-      }
-      c.closePath();
-      c.fillStyle = `rgba(194,164,102,${ring === 0 ? 0.15 : 0.06})`;
-      c.fill();
-      c.strokeStyle = `rgba(80,65,39,${0.35 - ring * 0.06})`;
-      c.lineWidth = ring === 0 ? 1.5 : 0.9;
-      c.stroke();
-    }
-    c.fillStyle = "rgba(68,52,28,.3)";
-    for (let i = 0; i < 120; i++) {
-      const a = rnd() * Math.PI * 2,
-        r = Math.sqrt(rnd()) * 0.75;
-      const px = Math.cos(a) * rx * r;
-      const py = Math.sin(a) * ry * r;
-      if (i % 13 === 0) {
-        c.beginPath();
-        c.moveTo(px, py - 5);
-        c.lineTo(px + 5, py + 3);
-        c.lineTo(px - 6, py + 3);
-        c.closePath();
-        c.fill();
-      } else c.fillRect(px, py, 1.2, 1.2);
-    }
-    c.restore();
-    if (label) {
+    // Paint seam copies with the same plate so wrapped charts join cleanly.
+    for (const offset of [-WORLD.w, 0, WORLD.w]) {
       c.save();
-      c.fillStyle = "rgba(45,33,20,.7)";
-      c.font = "italic 20px Georgia";
-      c.textAlign = "center";
-      c.fillText(label, x, y - ry - 13);
+      c.translate(offset, 0);
+      drawParchmentShoal(c, x, y, rx, ry);
+      if (label) {
+        c.fillStyle = "rgba(45,33,20,.7)";
+        c.font = "italic 20px Georgia";
+        c.textAlign = "center";
+        c.fillText(label, x, y - ry - 13);
+      }
       c.restore();
     }
   }
