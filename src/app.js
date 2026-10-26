@@ -562,6 +562,10 @@ let messageTimer = 0;
 let edgeRecoveryActive = false;
 let edgeMessageCooldown = 0;
 let pendingCombat = null;
+let combatFocus = null;
+let combatInertElements = [];
+let combatTooltipOption = null;
+let combatTooltipPinned = false;
 let pendingEncounterCombat = null;
 const encounters = createEncounterState();
 const encounterOverlay = document.getElementById("encounterIntro");
@@ -6067,7 +6071,7 @@ function startEncounterIntro(encounter) {
   return true;
 }
 
-function finishEncounterIntro() {
+function finishEncounterIntro(active = encounters.active) {
   encounters.active = null;
   stopEncounterDrums();
   encounterOverlay.hidden = true;
@@ -6077,9 +6081,11 @@ function finishEncounterIntro() {
   for (const { panel, display } of debugPreviewPanels)
     panel.style.display = display;
   debugPreviewPanels = [];
-  camera.x = ship.x;
-  camera.y = ship.y;
-  camera.zoom = clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+  if (active?.kind !== "raider" || !pendingEncounterCombat) {
+    camera.x = ship.x;
+    camera.y = ship.y;
+    camera.zoom = clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+  }
   keys.clear();
   if (pendingEncounterCombat) {
     const { encounter, stats } = pendingEncounterCombat;
@@ -6095,7 +6101,7 @@ function finishEncounterIntro() {
 
 document
   .getElementById("skipEncounter")
-  .addEventListener("click", finishEncounterIntro);
+  .addEventListener("click", () => finishEncounterIntro());
 encounterOverlay.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -6681,12 +6687,14 @@ function loop(now) {
       applyGraphicsProfile();
     }
     const hadEncounter = !encounterOverlay.hidden;
+    const activeEncounter = encounters.active;
     const frame = advanceEncounter(
       encounters,
       Math.max(0, frameMs / 1000),
       reducedMotion.matches,
     );
-    if (hadEncounter && !encounters.active) finishEncounterIntro();
+    if (hadEncounter && !encounters.active)
+      finishEncounterIntro(activeEncounter);
     update(dt * frame.timeScale);
     if (encounters.active) {
       if (
@@ -6700,6 +6708,7 @@ function loop(now) {
       const presentation = encounterFrame(
         encounters.active.elapsed,
         reducedMotion.matches,
+        encounters.active.kind,
       );
       if (!reducedMotion.matches)
         Object.assign(
@@ -7248,16 +7257,129 @@ function openCombatEncounter(encounter, stats) {
     "Armed corsair",
     "Heavy boarding ship",
   ];
+  const playerClass = SHIP_CLASSES[game.shipUpgrades.activeClass];
   document.getElementById("combatDescription").textContent =
-    `${profile.label}: ${profile.description} ${strengthLabels[encounter.attackStrength]} has caught your ship at sea. Your earlier course brought it within boarding range.`;
-  document.getElementById("combatPlayer").textContent =
-    `${Math.round(stats.maxSpeed)} speed · ${stats.defense.toFixed(1)} defense · ${Math.round(game.operations.morale)} morale`;
-  document.getElementById("combatEnemy").textContent =
-    `${strengthLabels[encounter.attackStrength]} · strength ${encounter.attackStrength}/3 · ${profile.label}`;
-  document.getElementById("combatPanel").style.display = "grid";
+    profile.description;
+  document.getElementById("combatPlayerName").textContent =
+    playerClass.vesselName;
+  document.getElementById("combatPlayerClass").textContent = playerClass.name;
+  document.getElementById("combatEnemyName").textContent = profile.label;
+  document.getElementById("combatEnemyClass").textContent =
+    strengthLabels[encounter.attackStrength];
+  renderCombatStats("combatPlayer", [
+    [
+      "Speed",
+      `${shipSpeedKnots(stats.maxSpeed, stats.waterlineLengthFt).toFixed(1)} kn`,
+    ],
+    ["Defense", stats.defense.toFixed(1)],
+    ["Morale", `${Math.round(game.operations.morale)}%`],
+  ]);
+  renderCombatStats("combatEnemy", [
+    ["Strength", `${encounter.attackStrength} / 3`],
+    ["Range", "Boarding"],
+  ]);
+  document
+    .getElementById("combatPlayerShip")
+    .setAttribute(
+      "aria-label",
+      `${playerClass.vesselName}, ${playerClass.name}`,
+    );
+  document
+    .getElementById("combatEnemyShip")
+    .setAttribute(
+      "aria-label",
+      `${profile.label}, ${strengthLabels[encounter.attackStrength]}`,
+    );
+  const panel = document.getElementById("combatPanel");
+  combatFocus = encounterFocus || document.activeElement;
+  combatInertElements = [...document.body.children].filter(
+    (element) => element !== panel && !element.inert,
+  );
+  for (const element of combatInertElements) element.inert = true;
+  keys.clear();
+  hideCombatTooltip();
+  panel.style.display = "grid";
+  document.body.classList.add("combat-active");
+  panel.querySelector(".combat-dialog").scrollTop = 0;
   renderCombatActions();
+  renderCombatShips();
   document.querySelector("[data-combat-action]").focus({ preventScroll: true });
 }
+
+function renderCombatStats(id, stats) {
+  document.getElementById(id).replaceChildren(
+    ...stats.map(([label, value]) => {
+      const item = document.createElement("div");
+      const term = document.createElement("dt");
+      const description = document.createElement("dd");
+      term.textContent = label;
+      description.textContent = value;
+      item.append(term, description);
+      return item;
+    }),
+  );
+}
+
+function renderCombatShips() {
+  if (!pendingCombat) return;
+  // Reuse the map's vessel renderers, including the player's current damage.
+  // Stable, daylight portraits keep both silhouettes readable at any sea time.
+  for (const side of ["Player", "Enemy"]) {
+    const portrait = document.getElementById(`combat${side}Ship`);
+    const { width, height } = portrait.getBoundingClientRect();
+    if (!width || !height) continue;
+    const pixelRatio = Math.min(devicePixelRatio || 1, 2);
+    portrait.width = Math.round(width * pixelRatio);
+    portrait.height = Math.round(height * pixelRatio);
+    const context = portrait.getContext("2d");
+    const scale = Math.min(width / 130, height / 110);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.translate(width / 2, height * 0.6);
+    context.scale(scale, scale * MAP_TILT_COS);
+    const environment = {
+      time: 0,
+      reducedMotion: true,
+      windAngle: -Math.PI / 2,
+      windStrength: game.windStrength,
+      lighting: sceneLighting(0.43),
+    };
+    if (side === "Player") {
+      drawShip(
+        context,
+        0,
+        0,
+        -1.05,
+        environment.windAngle,
+        game.windStrength,
+        game.shipUpgrades.activeClass,
+        scale,
+        { ...environment, damage: shipDamageState(), sailKey: portrait },
+      );
+    } else {
+      const raider = game.seaRaid.raider;
+      context.scale(1.82, 1.82);
+      drawMerchantShip(
+        context,
+        {
+          ...raider,
+          x: 0,
+          y: 0,
+          angle: 2.1,
+          speed: 0,
+          vesselClass:
+            pendingCombat.encounter.attackStrength > 1 ? "brig" : "cutter",
+        },
+        scale * 1.82,
+        0,
+        { ...environment, sailKey: portrait },
+      );
+    }
+  }
+}
+
+new ResizeObserver(renderCombatShips).observe(
+  document.getElementById("combatPlayerShip"),
+);
 
 function previewCombatAction(action) {
   return resolveCombatAction({
@@ -7307,25 +7429,46 @@ function describeCombatConsequence(action, result) {
 }
 
 function renderCombatActions() {
-  const labels = {
-    flee: "Run under full sail",
-    parley: "Heave to and parley",
-    fight: "Clear the decks",
-    surrender: "Strike colors",
-  };
+  const parley = previewCombatAction("parley");
+  document.getElementById("combatHint-parley").textContent = parley.coinsLost
+    ? `Pay ${parley.coinsLost} crowns`
+    : "Risk ship damage";
   document.querySelectorAll("[data-combat-action]").forEach((button) => {
     const action = button.dataset.combatAction;
-    const labelText = document.createElement("span");
-    labelText.className = "combat-action-label";
-    labelText.textContent = labels[action] ?? button.textContent.trim();
-    const consequence = document.createElement("span");
-    consequence.className = "combat-consequence";
-    consequence.textContent = describeCombatConsequence(
-      action,
-      previewCombatAction(action),
-    );
-    button.replaceChildren(labelText, consequence);
+    const result = previewCombatAction(action);
+    const tooltip = document.getElementById(`combatTooltip-${action}`);
+    tooltip.querySelector(".combat-tooltip-description").textContent =
+      result.description;
+    tooltip.querySelector(".combat-tooltip-consequence").textContent =
+      describeCombatConsequence(action, result);
   });
+}
+
+function hideCombatTooltip() {
+  if (combatTooltipOption) {
+    combatTooltipOption.querySelector("[role='tooltip']").hidden = true;
+    combatTooltipOption
+      .querySelector(".combat-info")
+      .setAttribute("aria-expanded", "false");
+  }
+  combatTooltipOption = null;
+  combatTooltipPinned = false;
+}
+
+function showCombatTooltip(option, pinned = false) {
+  if (!pendingCombat) return;
+  if (combatTooltipOption !== option) hideCombatTooltip();
+  combatTooltipOption = option;
+  combatTooltipPinned = pinned || combatTooltipPinned;
+  const tooltip = option.querySelector("[role='tooltip']");
+  tooltip.hidden = false;
+  option.querySelector(".combat-info").setAttribute("aria-expanded", "true");
+  const bounds = option.getBoundingClientRect();
+  const tip = tooltip.getBoundingClientRect();
+  tooltip.style.left = `${clamp(bounds.left + (bounds.width - tip.width) / 2, 12, innerWidth - tip.width - 12)}px`;
+  const above = bounds.top - tip.height - 10;
+  const top = above >= 12 ? above : bounds.bottom + 10;
+  tooltip.style.top = `${clamp(top, 12, innerHeight - tip.height - 12)}px`;
 }
 
 function chooseCombatAction(action) {
@@ -7374,12 +7517,27 @@ function chooseCombatAction(action) {
     `${result.description}${cargoText}${result.prizeValue ? ` Prize salvage yielded ${result.prizeValue} crowns.` : ""}`,
   );
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
+  hideCombatTooltip();
   pendingCombat = null;
   game.seaRaid.raider = null;
   document.getElementById("combatPanel").style.display = "none";
+  document.body.classList.remove("combat-active");
+  camera.x = ship.x;
+  camera.y = ship.y;
+  camera.zoom = clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM);
+  for (const element of combatInertElements) element.inert = false;
+  combatInertElements = [];
   renderPortSystems();
   updateHud();
   saveGameState();
+  if (
+    combatFocus?.isConnected &&
+    combatFocus !== document.body &&
+    combatFocus.getClientRects().length
+  )
+    combatFocus.focus({ preventScroll: true });
+  else document.getElementById("mapButton").focus({ preventScroll: true });
+  combatFocus = null;
 }
 
 function activeRumorLeads() {
@@ -7764,8 +7922,70 @@ document.getElementById("reportPanel").addEventListener("click", (event) => {
     closeIntelReport();
 });
 document.getElementById("combatPanel").addEventListener("click", (event) => {
+  const info = event.target.closest(".combat-info");
+  if (info) {
+    const option = info.closest(".combat-option");
+    if (combatTooltipOption === option && combatTooltipPinned)
+      hideCombatTooltip();
+    else showCombatTooltip(option, event.pointerType === "touch");
+    return;
+  }
   const button = event.target.closest("[data-combat-action]");
   if (button) chooseCombatAction(button.dataset.combatAction);
+});
+for (const type of ["focusin", "pointerover"]) {
+  document.getElementById("combatPanel").addEventListener(type, (event) => {
+    if (event.pointerType === "touch") return;
+    const info = event.target.closest(".combat-info");
+    if (info && (type === "focusin" || !info.contains(event.relatedTarget)))
+      showCombatTooltip(info.closest(".combat-option"));
+  });
+}
+for (const type of ["focusout", "pointerout"]) {
+  document.getElementById("combatPanel").addEventListener(type, (event) => {
+    const trigger = event.target.closest(".combat-info, .combat-tooltip");
+    const option = trigger?.closest(".combat-option");
+    if (
+      !option ||
+      option !== combatTooltipOption ||
+      option.querySelector(".combat-info").contains(event.relatedTarget) ||
+      option.querySelector(".combat-tooltip").contains(event.relatedTarget)
+    )
+      return;
+    if (
+      type === "pointerout" &&
+      (combatTooltipPinned ||
+        option.querySelector(".combat-info").matches(":focus-visible"))
+    )
+      return;
+    hideCombatTooltip();
+  });
+}
+document.addEventListener("pointerdown", (event) => {
+  if (combatTooltipOption && !combatTooltipOption.contains(event.target))
+    hideCombatTooltip();
+});
+document
+  .querySelector(".combat-dialog")
+  .addEventListener("scroll", hideCombatTooltip);
+addEventListener("resize", hideCombatTooltip);
+document.getElementById("combatPanel").addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && combatTooltipOption) {
+    event.preventDefault();
+    event.stopPropagation();
+    hideCombatTooltip();
+  }
+  if (event.key !== "Tab") return;
+  const controls = [...event.currentTarget.querySelectorAll("button")];
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 document.getElementById("reportLedger").addEventListener("click", () => {
   document.getElementById("reportPanel").style.display = "none";
@@ -8214,7 +8434,8 @@ document.getElementById("resetDebug").addEventListener("click", () => {
   refreshDebugScene();
 });
 
-function previewEncounter(kind) {
+function runDebugEncounter(kind, startCombat = false) {
+  if (encounters.active || pendingEncounterCombat || pendingCombat) return;
   // Search from the ship's unwrapped longitude and keep the subject on open
   // water with a clear line of sight, including beside a harbor or map seam.
   let target = { x: ship.x, y: ship.y };
@@ -8244,7 +8465,7 @@ function previewEncounter(kind) {
           attackStrength: strength,
           angle: Math.atan2(ship.y - target.y, ship.x - target.x),
           seed: 333,
-          vesselClass: ["", "cutter", "brig", "carrack"][strength],
+          vesselClass: strength > 1 ? "brig" : "cutter",
         }
       : {
           ...creatureEncounter(2, [target.x, target.y], {
@@ -8253,11 +8474,31 @@ function previewEncounter(kind) {
           scale: 1.4,
         };
   closeDebugMenu();
-  startEncounterIntro({ ...subject, id: `debug:${kind}`, preview: true });
+  // Stage the camera safely even while paused or docked; combat still uses
+  // the normal resolution and save flow after the cinematic finishes.
+  if (!startEncounterIntro({ ...subject, id: `debug:${kind}`, preview: true }))
+    return;
+  if (startCombat && kind === "raider") {
+    const stats = operationalShipStats();
+    stats.defense += routePlanEffects(game.operations.routePlan).defenseBonus;
+    game.seaRaid.raider = { ...subject, ...target, mode: "chase" };
+    pendingEncounterCombat = {
+      encounter: {
+        encountered: true,
+        attackStrength: strength,
+        seed: subject.seed,
+      },
+      stats,
+    };
+  }
 }
 debugMenu.addEventListener("click", (event) => {
   const button = event.target.closest("[data-debug-encounter]");
-  if (button) previewEncounter(button.dataset.debugEncounter);
+  if (button)
+    runDebugEncounter(
+      button.dataset.debugEncounter,
+      button.dataset.debugCombat === "true",
+    );
 });
 
 function renderChart() {

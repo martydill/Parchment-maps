@@ -38,13 +38,19 @@ export function beginEncounter(state, encounter, camera) {
   return true;
 }
 
-export function encounterFrame(elapsed, reducedMotion = false) {
+export function encounterFrame(
+  elapsed,
+  reducedMotion = false,
+  kind = "monster",
+) {
   const t = Math.max(0, elapsed);
   const duration = reducedMotion ? 0.9 : ENCOUNTER_DURATION;
   const complete = t >= duration;
   const entrance = reducedMotion ? 1 : smooth(t / 0.25);
   const exit = smooth((t - (duration - 0.55)) / 0.55);
-  const focus = reducedMotion ? 0 : smooth(t / 0.65) * (1 - exit);
+  const focus = reducedMotion
+    ? 0
+    : smooth(t / 0.65) * (kind === "raider" ? 1 : 1 - exit);
   return {
     complete,
     bars: complete ? 0 : reducedMotion ? 1 : entrance * (1 - exit),
@@ -64,19 +70,25 @@ export function advanceEncounter(state, dt, reducedMotion = false) {
   state.cooldown = Math.max(0, state.cooldown - step);
   if (!state.active) return encounterFrame(ENCOUNTER_DURATION);
   state.active.elapsed += step;
-  const frame = encounterFrame(state.active.elapsed, reducedMotion);
+  const frame = encounterFrame(
+    state.active.elapsed,
+    reducedMotion,
+    state.active.kind,
+  );
   if (frame.complete) state.active = null;
   return frame;
 }
 
 export function encounterCamera(active, frame, home, worldWidth) {
-  const returning = active.elapsed > ENCOUNTER_DURATION - 0.55;
+  const returning =
+    active.kind !== "raider" && active.elapsed > ENCOUNTER_DURATION - 0.55;
   const origin = returning ? home : active.origin;
   const targetX = nearestWrapped(active.x, origin.x, worldWidth);
   return {
     x: origin.x + (targetX - origin.x) * frame.focus,
     y: origin.y + (active.y - origin.y) * frame.focus,
-    zoom: home.zoom * frame.zoom,
+    zoom:
+      (active.kind === "raider" ? active.origin.zoom : home.zoom) * frame.zoom,
   };
 }
 

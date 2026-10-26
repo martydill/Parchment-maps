@@ -166,7 +166,7 @@
             </button>
           </div>
           <fieldset>
-            <legend>Encounter cinematics</legend>
+            <legend>Encounters</legend>
             <label for="debugRaiderStrength">Raider vessel</label>
             <select id="debugRaiderStrength">
               <option value="1">Light raider</option>
@@ -174,13 +174,24 @@
               <option value="3">Heavy boarding ship</option>
             </select>
             <div class="debug-encounters">
+              <button
+                type="button"
+                data-debug-encounter="raider"
+                data-debug-combat="true"
+                aria-describedby="debugCombatNote"
+              >
+                Start raider encounter
+              </button>
               <button type="button" data-debug-encounter="raider">
-                Raider intro
+                Raider cinematic
               </button>
               <button type="button" data-debug-encounter="monster">
-                Sea monster
+                Monster cinematic
               </button>
             </div>
+            <p id="debugCombatNote" class="debug-note">
+              Combat uses your current ship and crew. Outcomes affect your save.
+            </p>
           </fieldset>
           <fieldset>
             <legend>Player ship</legend>
@@ -1440,30 +1451,204 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="combatTitle"
+      aria-describedby="combatDescription"
     >
-      <div class="menu-paper">
+      <div class="menu-paper combat-paper">
         <span class="hud-paper-edge" aria-hidden="true"></span>
-        <div class="scroll combat-scroll">
-          <div class="town-kicker">Hostile sail intercepted</div>
-          <h2 id="combatTitle">Raiders close from windward</h2>
-          <p id="combatDescription"></p>
-          <div class="combat-balance">
-            <div><b>Your vessel</b><span id="combatPlayer"></span></div>
-            <div><b>Hostile force</b><span id="combatEnemy"></span></div>
+        <div class="combat-dialog">
+          <header class="combat-heading">
+            <div class="combat-kicker">Hostile sail intercepted</div>
+            <h2 id="combatTitle">Prepare for contact</h2>
+            <p id="combatDescription"></p>
+          </header>
+          <div class="combat-matchup">
+            <article class="combat-vessel combat-vessel-player">
+              <div class="combat-vessel-side">Your vessel</div>
+              <canvas
+                id="combatPlayerShip"
+                role="img"
+                aria-label="Your ship"
+              ></canvas>
+              <div class="combat-vessel-info">
+                <h3 id="combatPlayerName"></h3>
+                <p id="combatPlayerClass"></p>
+                <dl class="combat-stats" id="combatPlayer"></dl>
+              </div>
+            </article>
+            <span class="combat-versus" aria-hidden="true">VS</span>
+            <article class="combat-vessel combat-vessel-enemy">
+              <div class="combat-vessel-side">Hostile vessel</div>
+              <canvas
+                id="combatEnemyShip"
+                role="img"
+                aria-label="Enemy ship"
+              ></canvas>
+              <div class="combat-vessel-info">
+                <h3 id="combatEnemyName"></h3>
+                <p id="combatEnemyClass"></p>
+                <dl class="combat-stats" id="combatEnemy"></dl>
+              </div>
+            </article>
           </div>
-          <div class="combat-actions">
-            <button class="parchment" data-combat-action="flee">
-              Run under full sail
-            </button>
-            <button class="parchment" data-combat-action="parley">
-              Heave to and parley
-            </button>
-            <button class="parchment danger" data-combat-action="fight">
-              Clear the decks
-            </button>
-            <button class="parchment" data-combat-action="surrender">
-              Strike colors
-            </button>
+          <div class="combat-command">
+            <div class="combat-command-heading">
+              <h3>Your orders, Captain?</h3>
+              <span>Voyage paused</span>
+            </div>
+            <div
+              class="combat-actions"
+              role="group"
+              aria-label="Encounter response"
+            >
+              <div class="combat-option">
+                <button
+                  type="button"
+                  class="combat-action"
+                  data-combat-action="flee"
+                  aria-describedby="combatHint-flee combatTooltip-flee"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4 16h16l-3 4H7l-3-4ZM12 3v11H5L12 3Zm3 3 5 8h-5M3 23h18"
+                    />
+                  </svg>
+                  <span class="combat-action-label">Flee</span>
+                  <span class="combat-action-hint" id="combatHint-flee"
+                    >Break pursuit</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="combat-info"
+                  aria-label="Flee outcome details"
+                  aria-describedby="combatTooltip-flee"
+                  aria-expanded="false"
+                  aria-controls="combatTooltip-flee"
+                >
+                  <span aria-hidden="true">i</span>
+                </button>
+                <span
+                  id="combatTooltip-flee"
+                  class="combat-tooltip"
+                  role="tooltip"
+                  hidden
+                >
+                  <strong>Flee</strong>
+                  <span class="combat-tooltip-description"></span>
+                  <span class="combat-tooltip-consequence"></span>
+                </span>
+              </div>
+              <div class="combat-option">
+                <button
+                  type="button"
+                  class="combat-action combat-action-fight"
+                  data-combat-action="fight"
+                  aria-describedby="combatHint-fight combatTooltip-fight"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="m4 3 4 1 10 13-2 2L4 7 4 3Zm16 0-4 1-4 5m-3 4-3 4 2 2 3-4M3 16l5 5m8 0 5-5M3 22l3-3m12 0 3 3"
+                    />
+                  </svg>
+                  <span class="combat-action-label">Fight</span>
+                  <span class="combat-action-hint" id="combatHint-fight"
+                    >Repel the raiders</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="combat-info"
+                  aria-label="Fight outcome details"
+                  aria-describedby="combatTooltip-fight"
+                  aria-expanded="false"
+                  aria-controls="combatTooltip-fight"
+                >
+                  <span aria-hidden="true">i</span>
+                </button>
+                <span
+                  id="combatTooltip-fight"
+                  class="combat-tooltip"
+                  role="tooltip"
+                  hidden
+                >
+                  <strong>Fight</strong>
+                  <span class="combat-tooltip-description"></span>
+                  <span class="combat-tooltip-consequence"></span>
+                </span>
+              </div>
+              <div class="combat-option">
+                <button
+                  type="button"
+                  class="combat-action"
+                  data-combat-action="parley"
+                  aria-describedby="combatHint-parley combatTooltip-parley"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 3v19M5 4c5-5 9 5 15 0v10c-6 5-10-5-15 0" />
+                  </svg>
+                  <span class="combat-action-label">Parley</span>
+                  <span class="combat-action-hint" id="combatHint-parley"
+                    >Offer payment</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="combat-info"
+                  aria-label="Parley outcome details"
+                  aria-describedby="combatTooltip-parley"
+                  aria-expanded="false"
+                  aria-controls="combatTooltip-parley"
+                >
+                  <span aria-hidden="true">i</span>
+                </button>
+                <span
+                  id="combatTooltip-parley"
+                  class="combat-tooltip"
+                  role="tooltip"
+                  hidden
+                >
+                  <strong>Parley</strong>
+                  <span class="combat-tooltip-description"></span>
+                  <span class="combat-tooltip-consequence"></span>
+                </span>
+              </div>
+              <div class="combat-option">
+                <button
+                  type="button"
+                  class="combat-action"
+                  data-combat-action="surrender"
+                  aria-describedby="combatHint-surrender combatTooltip-surrender"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 3v19M6 5h14l-3 4 3 4H6M3 22h6" />
+                  </svg>
+                  <span class="combat-action-label">Surrender</span>
+                  <span class="combat-action-hint" id="combatHint-surrender"
+                    >Lower your colors</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="combat-info"
+                  aria-label="Surrender outcome details"
+                  aria-describedby="combatTooltip-surrender"
+                  aria-expanded="false"
+                  aria-controls="combatTooltip-surrender"
+                >
+                  <span aria-hidden="true">i</span>
+                </button>
+                <span
+                  id="combatTooltip-surrender"
+                  class="combat-tooltip"
+                  role="tooltip"
+                  hidden
+                >
+                  <strong>Surrender</strong>
+                  <span class="combat-tooltip-description"></span>
+                  <span class="combat-tooltip-consequence"></span>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

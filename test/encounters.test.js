@@ -115,7 +115,7 @@ test("debug previews bypass sighting cooldowns and repeat without consuming real
 
 test("camera focuses on the nearest wrapped threat and returns to the moving ship", () => {
   const state = createEncounterState();
-  beginEncounter(state, raider, camera);
+  beginEncounter(state, monster, camera);
   const held = encounterFrame(1);
   assert.deepEqual(encounterCamera(state.active, held, camera, 1000), {
     x: 1010,
@@ -140,6 +140,45 @@ test("camera focuses on the nearest wrapped threat and returns to the moving shi
   assert.equal(encounterCamera(west, held, camera, 1000).x, -5);
 });
 
+test("raider camera zoom only increases and holds the wrapped threat through completion", () => {
+  const state = createEncounterState();
+  beginEncounter(state, raider, camera);
+  const home = { x: 1005, y: 210, zoom: 0.8 };
+  let previousZoom = camera.zoom;
+  for (const elapsed of [
+    0,
+    0.2,
+    0.5,
+    0.65,
+    1,
+    2.1,
+    2.4,
+    ENCOUNTER_DURATION,
+    10,
+  ]) {
+    state.active.elapsed = elapsed;
+    const frame = encounterFrame(elapsed, false, "raider");
+    const view = encounterCamera(state.active, frame, home, 1000);
+    assert.ok(view.zoom >= previousZoom);
+    previousZoom = view.zoom;
+    if (elapsed >= 0.65) {
+      assert.equal(frame.focus, 1);
+      assert.deepEqual(view, { x: 1010, y: 240, zoom: 1.9 });
+    }
+  }
+  const west = { ...state.active, x: 995, origin: { ...camera, x: 10 } };
+  assert.equal(
+    encounterCamera(west, encounterFrame(2.6, false, "raider"), home, 1000).x,
+    -5,
+  );
+  const ending = advanceEncounter(state, ENCOUNTER_DURATION);
+  assert.equal(ending.complete, true);
+  assert.equal(ending.zoom, 1.9);
+  assert.equal(ending.bars, 0);
+  assert.equal(ending.banner, 0);
+  assert.equal(state.active, null);
+});
+
 test("reduced motion keeps the title briefly with no zoom or slow motion", () => {
   const frame = encounterFrame(0.3, true);
   assert.equal(frame.focus, 0);
@@ -152,6 +191,12 @@ test("reduced motion keeps the title briefly with no zoom or slow motion", () =>
   beginEncounter(state, raider, camera);
   advanceEncounter(state, 0.9, true);
   assert.equal(state.active, null);
+  for (const elapsed of [0, 0.5, 0.9, 2.6]) {
+    const reduced = encounterFrame(elapsed, true, "raider");
+    assert.equal(reduced.focus, 0);
+    assert.equal(reduced.zoom, 1);
+    assert.equal(reduced.timeScale, 1);
+  }
 });
 
 test("bad deltas cannot reverse time and dropped frames finish the intro", () => {
