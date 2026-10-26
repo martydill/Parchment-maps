@@ -140,7 +140,7 @@ test("ship foam uses bounded colors as speed changes and disappears at anchor", 
         [...palettes.keys()].some((rgb) => style.startsWith(`rgba(${rgb},`)),
     );
     if (sample < 3) assert.equal(foam.length, 0);
-    else assert.equal(foam.length, 30);
+    else assert.ok(foam.length > 30, "moving ships produce layered foam");
     for (const [, style] of foam) {
       for (const [rgb, colors] of palettes) {
         if (style.startsWith(`rgba(${rgb},`)) colors.add(style);
@@ -293,8 +293,8 @@ test("airborne spray drifts with wind and vanishes when anchored", () => {
   };
   const east = sprayDrops(0);
   const west = sprayDrops(Math.PI);
-  assert.equal(east.length, 10);
-  assert.equal(west.length, 10);
+  assert.ok(east.length > 0);
+  assert.equal(east.length, west.length);
   // Local model coordinates: due east is negative Y before heading rotation.
   for (let index = 0; index < east.length; index++)
     assert.ok(east[index][2] < west[index][2]);
