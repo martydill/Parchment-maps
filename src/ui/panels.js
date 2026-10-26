@@ -3,6 +3,7 @@ import { goodsIllustration } from "./port-art.js?v=4";
 import { paginateMarket } from "./port-workspace.js?v=5";
 import { planMarketOrder } from "../core/market-order.js";
 import { updateElementProperty } from "./dom.js";
+import { openExpeditionPanel } from "./expedition-panel.js?v=2";
 import {
   renderCargoPlan,
   renderCustomsOffice,
@@ -1908,50 +1909,13 @@ export function renderDiscoveryPanel(id) {
 
 export function openExploration() {
   syncPanelContext();
-
-  if (!nearExplorationSite) return;
-  ship.anchored = true;
-  ship.speed = 0;
-  const site = nearExplorationSite;
-  document.getElementById("explorationName").textContent = site.name;
-  document.getElementById("explorationObjective").textContent = site.objective;
-  document.getElementById("explorationHazards").textContent =
-    "Hazards: " + site.hazards;
-  const progress = game.exploration.sites[site.id];
-  document.getElementById("explorationStatus").textContent = progress
-    ? `${progress.status} · ${progress.visits} previous expedition${progress.visits === 1 ? "" : "s"}`
-    : "This coast has not been surveyed. A successful expedition reveals this landmass on your chart.";
-  const options = document.getElementById("explorationApproaches");
-  options.innerHTML = "";
-  if (progress) {
-    const unavailable = document.createElement("p");
-    unavailable.className = "small";
-    unavailable.textContent =
-      "This shore expedition has already sailed and cannot be repeated.";
-    options.append(unavailable);
-    document.getElementById("explorationPanel").style.display = "grid";
-    return;
-  }
-  for (const [approach, plan] of Object.entries(EXPLORATION_APPROACHES)) {
-    const button = document.createElement("button");
-    button.className = "parchment expedition-option";
-    const provisionShortage = Math.max(
-      0,
-      plan.provisions - game.operations.provisions,
-    );
-    button.disabled = provisionShortage > 0;
-    if (button.disabled) {
-      button.setAttribute(
-        "aria-label",
-        `${plan.label} unavailable; need ${provisionShortage} more provisions`,
-      );
-      button.title = `Need ${provisionShortage} more provisions`;
-    }
-    button.innerHTML =
-      `<b>${plan.label}</b><span>${plan.days} day${plan.days === 1 ? "" : "s"}</span>` +
-      `<span class="small">${plan.provisions} provisions${provisionShortage ? ` · need ${provisionShortage} more` : ""} · ${Math.round(plan.rewardScale * 100)}% reward potential</span>`;
-    button.addEventListener("click", () => undertakeExpedition(site, approach));
-    options.append(button);
-  }
-  document.getElementById("explorationPanel").style.display = "grid";
+  openExpeditionPanel({
+    document,
+    site: nearExplorationSite,
+    game,
+    ship,
+    approaches: EXPLORATION_APPROACHES,
+    onLaunch: undertakeExpedition,
+    returnFocus: ui.explore,
+  });
 }
