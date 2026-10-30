@@ -159,32 +159,140 @@ test("the player vessel uses the same detailed renderer and wind-driven sails", 
   assert.ok(context.calls.some(([method]) => method === "stroke"));
 });
 
-test("night accents follow each rig's sail edges and disappear in daylight", () => {
+test("warm sail edges follow surviving cloth and respond to daylight and storms", () => {
   for (const vesselClass of SHIP_MODEL_IDS) {
     const draw = (lighting) => {
       const context = canvasContext();
-      drawShip(context, 50, 60, 0.4, 1.2, 0.8, vesselClass, 1, {
+      drawShip(context, 50, 60, -1.2, -1.8, 0.22, vesselClass, 1, {
         lighting,
         reducedMotion: true,
         damage: { tear: 0.6, heel: 0.12, settle: 1 },
       });
       return context.calls;
     };
-    const accentCount = (calls) =>
-      calls.filter(
-        ([property, style]) =>
-          property === "strokeStyle" && style.startsWith("rgba(255,218,144,"),
-      ).length;
-    const night = draw(sceneLighting(0));
-    assert.ok(accentCount(night) > 0, vesselClass);
-    assert.equal(accentCount(draw(sceneLighting(0.5))), 0, vesselClass);
+    const edgeOpacities = (calls) =>
+      calls.flatMap(([property, value], index) =>
+        property === "strokeStyle" && value === "#ffdda6"
+          ? [calls[index + 1][1]]
+          : [],
+      );
+    const day = draw(sceneLighting(0.5));
+    const edges = edgeOpacities(day);
+    assert.ok(edges.length > 0, vesselClass);
     assert.ok(
-      night
+      Math.max(...edges) > Math.max(...edgeOpacities(draw(sceneLighting(0)))),
+      vesselClass,
+    );
+    assert.ok(
+      Math.max(...edges) >
+        Math.max(...edgeOpacities(draw(sceneLighting(0.5, 1)))),
+      vesselClass,
+    );
+    // Each warm edge is inside its surviving triangle's clip. Damage holes
+    // cannot receive a continuous rim drawn over the entire original sail.
+    for (const [index, [property, value]] of day.entries()) {
+      if (property !== "strokeStyle" || value !== "#ffdda6") continue;
+      const save = day
+        .slice(0, index)
+        .findLastIndex(([method]) => method === "save");
+      assert.ok(day.slice(save, index).some(([method]) => method === "clip"));
+    }
+    assert.ok(
+      day
         .flat()
         .filter((value) => typeof value === "number")
         .every(Number.isFinite),
     );
   }
+});
+
+// Inspect only the contact pass, leaving wakes, reflections and hull fills out.
+function contactContours(calls) {
+  const contours = [];
+  for (const [index, [property, style]] of calls.entries()) {
+    if (
+      property !== "fillStyle" ||
+      ![
+        "rgba(21,47,43,0.045)",
+        "rgba(21,47,43,0.09)",
+        "rgba(14,32,29,0.3)",
+      ].includes(style)
+    )
+      continue;
+    const end = calls.findIndex(
+      ([method], next) => next > index && method === "fill",
+    );
+    contours.push(
+      calls
+        .slice(index, end)
+        .filter(([method]) => method === "moveTo" || method === "lineTo")
+        .map(([, x, y]) => [x, y]),
+    );
+  }
+  return contours;
+}
+
+test("contact shadows hug the keel through headings, low sun, and night", () => {
+  for (const vesselClass of SHIP_MODEL_IDS) {
+    const profile = getShipModelProfile(vesselClass);
+    for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      let noonCore;
+      for (const time of [0.5, 0.26, 0.74, 0]) {
+        const context = canvasContext();
+        drawMerchantShip(context, { x: 0, y: 0, angle, vesselClass }, 1, 0, {
+          reducedMotion: true,
+          anchored: true,
+          lighting: sceneLighting(time),
+        });
+        const contours = contactContours(context.calls);
+        assert.equal(contours.length, 3);
+        const core = contours.at(-1);
+        assert.ok(core.length > 8, "the shadow follows the tapered hull");
+        const center = core.reduce(
+          ([x, y], point) => [
+            x + point[0] / core.length,
+            y + point[1] / core.length,
+          ],
+          [0, 0],
+        );
+        assert.ok(Math.hypot(...center) < profile.length * 0.005);
+        assert.ok(
+          core.every((point) => Math.hypot(...point) <= profile.length * 0.51),
+        );
+        if (noonCore)
+          assert.deepEqual(
+            core,
+            noonCore,
+            "low sun cannot detach the contact shadow",
+          );
+        else noonCore = core;
+      }
+    }
+  }
+});
+
+test("standing rigging shares the wrapped vessel origin and simplifies at chart zoom", () => {
+  const render = (zoom, x) => {
+    const context = canvasContext();
+    drawMerchantShip(
+      context,
+      { x: 10, y: 20, angle: 0.6, vesselClass: "brig" },
+      zoom,
+      x,
+      { reducedMotion: true },
+    );
+    return context.calls;
+  };
+  const strokes = (calls) =>
+    calls.filter(
+      ([method, value]) => method === "globalAlpha" && value === 0.68,
+    ).length;
+  const close = render(1, 10);
+  assert.ok(strokes(close) > strokes(render(0.4, 10)));
+  assert.deepEqual(
+    close.filter(([method]) => method !== "translate"),
+    render(1, 2410).filter(([method]) => method !== "translate"),
+  );
 });
 
 test("cloth is lightly translucent with stitched seams and opaque timber", () => {

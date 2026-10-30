@@ -179,15 +179,25 @@ test("ship faces change with sunset, night, and storm lighting", () => {
   assert.notDeepEqual(storm, day);
 });
 
-test("vessel shadows switch sides with the sun, lengthen near sunset, and soften in storms", () => {
+test("vessel contact penumbras follow the sun with bounded offsets and soften in storms", () => {
   const shadowAt = (lighting) => {
     const shadows = [];
+    let points = [];
     const context = new Proxy(
       {
         globalAlpha: 1,
-        ellipse(...geometry) {
-          if (this.fillStyle === "rgba(18,39,35,0.22)")
-            shadows.push({ geometry, alpha: this.globalAlpha });
+        beginPath() {
+          points = [];
+        },
+        moveTo(x, y) {
+          points.push([x, y]);
+        },
+        lineTo(x, y) {
+          points.push([x, y]);
+        },
+        fill() {
+          if (this.fillStyle === "rgba(21,47,43,0.045)")
+            shadows.push({ points, alpha: this.globalAlpha });
         },
       },
       { get: (target, key) => target[key] ?? (() => {}) },
@@ -200,14 +210,28 @@ test("vessel shadows switch sides with the sun, lengthen near sunset, and soften
       { lighting, reducedMotion: true },
     );
     assert.equal(shadows.length, 1);
-    return shadows[0];
+    const shadow = shadows[0];
+    return {
+      ...shadow,
+      center: shadow.points.reduce(
+        ([x, y], point) => [
+          x + point[0] / shadow.points.length,
+          y + point[1] / shadow.points.length,
+        ],
+        [0, 0],
+      ),
+    };
   };
   const morning = shadowAt(sceneLighting(0.25));
   const noon = shadowAt(sceneLighting(0.5));
   const sunset = shadowAt(sceneLighting(0.73));
-  assert.ok(morning.geometry[0] < 0 && sunset.geometry[0] > 0);
-  assert.ok(morning.geometry[3] > noon.geometry[3]);
-  assert.ok(sunset.geometry[3] > noon.geometry[3]);
+  assert.ok(morning.center[0] < noon.center[0]);
+  assert.ok(sunset.center[0] > noon.center[0]);
+  for (const shadow of [morning, noon, sunset])
+    assert.ok(
+      Math.hypot(...shadow.center) < 1,
+      "the penumbra stays near the keel even at low sun",
+    );
   assert.ok(shadowAt(sceneLighting(0.5, 0.5)).alpha < noon.alpha);
   assert.ok(shadowAt(sceneLighting(0)).alpha < noon.alpha);
 });

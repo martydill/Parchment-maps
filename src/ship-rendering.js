@@ -12,11 +12,7 @@ import {
   sailShadowSegment,
 } from "./core/sail-cloth.js";
 import { MAP_TILT_COS, MAP_TILT_SIN, MAP_TILT_TAN } from "./core/projection.js";
-import {
-  lightingHierarchy,
-  litPigment,
-  sceneLighting,
-} from "./core/lighting.js";
+import { litPigment, sceneLighting } from "./core/lighting.js";
 import {
   SAIL_TEAR_GRID,
   damageNoise,
@@ -46,9 +42,9 @@ const splinterWoodStyle = createAlphaPalette("171,124,66", 0.14, 0.76, 64);
 const eddyGlowStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.3, 48);
 const eddySpeckStyle = createAlphaPalette(BIOLUMINESCENT_RGB, 0, 0.85, 96);
 const CONTACT_SHADOWS = [
-  [1.45, "rgba(21,47,43,0.045)"],
-  [1.2, "rgba(21,47,43,0.085)"],
-  [1, "rgba(18,39,35,0.22)"],
+  [1.3, "rgba(21,47,43,0.045)"],
+  [1.12, "rgba(21,47,43,0.09)"],
+  [1, "rgba(14,32,29,0.3)"],
 ];
 
 // Presentation-only per-vessel state: smoke trails and the one-shot patch
@@ -191,7 +187,11 @@ function buildHullFaces(profile, seed = 0) {
 
   // Three timber strakes follow the hull's taper. Pigment varies by board,
   // never by frame, and fine grain stays on each depth-sorted surface.
-  const timber = ["#75492b", "#805332", "#704329", "#875735", "#79502e"];
+  const timber = [
+    ["#95623a", "#a37144", "#8d5934", "#a87546", "#99663b"],
+    ["#704329", "#7c4d2e", "#694027", "#815131", "#75462b"],
+    ["#422d22", "#4a3225", "#3c2b22", "#503627", "#453025"],
+  ];
   const mix = (a, b, amount) =>
     a.map((value, axis) => value + (b[axis] - value) * amount);
   const strakes = faces.flatMap((face, index) => {
@@ -210,10 +210,10 @@ function buildHullFaces(profile, seed = 0) {
       ];
       return {
         vertices: index % 2 ? vertices.toReversed() : vertices,
-        fill: timber[
+        fill: timber[row][
           Math.floor(
-            damageNoise(seed * 19 + index * 7 + row * 31) * timber.length,
-          ) % timber.length
+            damageNoise(seed * 19 + index * 7 + row * 31) * timber[row].length,
+          ) % timber[row].length
         ],
         outline: "rgba(48,31,19,.26)",
         grain: [mix(topA, bottomA, top + 0.16), mix(topB, bottomB, top + 0.16)],
@@ -266,6 +266,37 @@ function buildHullFaces(profile, seed = 0) {
   }
 
   return faces;
+}
+
+function drawHullContact(c, profile, motion, lighting) {
+  const shadow = lighting.shadow;
+  // Contact occlusion stays under the keel, including at sunset. Only the
+  // soft outer penumbra spreads with heave; it never becomes a detached oval.
+  const separation = clamp(motion.heave, 0, 2);
+  c.save();
+  c.globalAlpha = 0.65 + shadow.strength * 0.35;
+  for (const [spread, style] of CONTACT_SHADOWS) {
+    const softness = spread + (spread - 1) * separation * 0.15;
+    const offset = Math.min(1.8, shadow.length) * (spread - 1);
+    c.fillStyle = style;
+    c.beginPath();
+    for (const side of [-1, 1]) {
+      const stations = side < 0 ? HULL_STATIONS : HULL_STATIONS.toReversed();
+      for (const [index, [along, width]] of stations.entries()) {
+        const x = side * profile.beam * width * softness;
+        const y = along * profile.length * softness;
+        const px =
+          x * motion.cosHeading - y * motion.sinHeading + shadow.x * offset;
+        const py =
+          x * motion.sinHeading + y * motion.cosHeading + shadow.y * offset;
+        if (side < 0 && index === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
+      }
+    }
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
 }
 
 function hullFaces(profile, seed = 0) {
@@ -390,6 +421,18 @@ function worldFace(face, heading, order, motion, lighting, spars) {
   const vertices = face.vertices.map((vertex) =>
     rotatePoint(vertex, heading, motion),
   );
+  if (face.line)
+    return {
+      ...face,
+      fill: litPigment(face.fill, [0, 0, 1], lighting),
+      projected: vertices.map(({ x, y, z }) => [x, y - z * MAP_TILT_TAN]),
+      depth:
+        vertices.reduce(
+          (sum, point) => sum + point.y * MAP_TILT_SIN + point.z * MAP_TILT_COS,
+          0,
+        ) / vertices.length,
+      order,
+    };
   const first = vertices[0];
   const second = vertices[1];
   // Deck station edges curve along the keel. Cross an actual plank width to
@@ -458,6 +501,12 @@ function worldFace(face, heading, order, motion, lighting, spars) {
     stitches: face.stitches?.map((line) =>
       line.map((point) => projectedPoint(point, heading, motion)),
     ),
+    hem: face.hem?.map((point) => projectedPoint(point, heading, motion)),
+    edgeLight:
+      lighting.daylight *
+        (1 - lighting.storm * 0.85) *
+        (0.1 + transmission * 0.7) +
+      lighting.night * (1 - lighting.storm * 0.25) * 0.12,
     opacity,
     shadows,
     shadowAlpha:
@@ -472,6 +521,18 @@ function worldFace(face, heading, order, motion, lighting, spars) {
 function paintFaces(c, faces, z) {
   faces.sort((a, b) => a.depth - b.depth || a.order - b.order);
   for (const face of faces) {
+    if (face.line) {
+      c.save();
+      c.beginPath();
+      c.moveTo(...face.projected[0]);
+      c.lineTo(...face.projected[1]);
+      c.strokeStyle = face.fill;
+      c.lineWidth = face.width / z;
+      c.globalAlpha = face.opacity;
+      c.stroke();
+      c.restore();
+      continue;
+    }
     c.save();
     c.beginPath();
     face.projected.forEach(([x, y], index) => {
@@ -485,11 +546,24 @@ function paintFaces(c, faces, z) {
     c.globalAlpha = 1;
     if (face.outline) {
       c.strokeStyle = face.outline;
-      c.lineWidth = 0.85 / z;
+      c.lineWidth = (face.deck || face.grain ? 0.3 : 0.5) / z;
       c.lineJoin = "round";
       c.stroke();
     }
-    if (face.shadows?.length || face.grain || face.stitches?.length) c.clip();
+    if (face.shadows?.length || face.grain || face.stitches?.length || face.hem)
+      c.clip();
+    if (face.hem) {
+      // Clip the warm, translucent selvedge to the cloth. It follows the
+      // bowed silhouette and cannot glow across a torn cell or the hull.
+      c.beginPath();
+      c.moveTo(...face.hem[0]);
+      c.lineTo(...face.hem[1]);
+      c.strokeStyle = "#ffdda6";
+      c.globalAlpha = face.edgeLight * 0.4;
+      c.lineWidth = 1.2 + 0.6 / z;
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     if (face.shadows?.length) {
       c.lineCap = "round";
       c.beginPath();
@@ -553,18 +627,9 @@ function sailFaces(
   const faces = [];
   const fringes = [];
   const seams = [];
-  const rims = [];
   const baseY = mast.y;
   const sails = Math.max(1, mast.sails);
   const addCloth = (vertices, panel = 0) => {
-    // Only one cloth edge catches the warm practical light. The rest of the
-    // sail keeps its cool ambient shading and dark rigging.
-    const edges = vertices.map((a, index) => [
-      a,
-      vertices[(index + 1) % vertices.length],
-    ]);
-    edges.sort((a, b) => b[0][2] + b[1][2] - (a[0][2] + a[1][2]));
-    rims.push(edges[0]);
     const center = vertices.reduce(
       (sum, vertex) =>
         sum.map((value, index) => value + vertex[index] / vertices.length),
@@ -601,8 +666,14 @@ function sailFaces(
         ]);
         faces.push({
           vertices: material.map((point) => point.slice(1)),
-          fill: index % 2 ? "#e6d5b0" : "#eadbb8",
+          fill: "#eadbb8",
           cloth: true,
+          hem:
+            cell.points.filter(([, v]) => v === 0).length === 2
+              ? cell.points
+                  .filter(([, v]) => v === 0)
+                  .map(([u]) => corner(u / size, 0))
+              : null,
           stitches: sailStitchLines(material).map((line) =>
             line.map((point) => point.slice(1)),
           ),
@@ -632,7 +703,7 @@ function sailFaces(
     const forward = [-yard * 0.28, baseY - 4, mast.height * 0.9];
     const aft = [yard * 0.9, baseY + 11, lower];
     addCloth([peak, forward, aft], mastIndex);
-    return { faces, fringes, seams, rims };
+    return { faces, fringes, seams };
   }
 
   if (profile.rig === "gaff" || (profile.rig === "barque" && mastIndex === 2)) {
@@ -642,7 +713,7 @@ function sailFaces(
     const clew = [mast.yard * 0.72, baseY + 12, low];
     const tack = [-mast.yard * 0.22, baseY + 7, low];
     addCloth([top, peak, clew, tack], mastIndex);
-    return { faces, fringes, seams, rims };
+    return { faces, fringes, seams };
   }
 
   for (let tier = 0; tier < sails; tier++) {
@@ -657,7 +728,74 @@ function sailFaces(
     ];
     addCloth(vertices, tier + mastIndex);
   }
-  return { faces, fringes, seams, rims };
+  return { faces, fringes, seams };
+}
+
+// Spars follow the same attachments as the cloth, for both the visible timber
+// and the shadows it casts. Lateen and gaff rigs have no square cross-yards.
+function mastSpars(mast, profile, index) {
+  const low = deckHeight(profile, mast.y / profile.length) + 1;
+  if (profile.rig === "lateen")
+    return [
+      [
+        [-mast.yard * 0.28, mast.y - 4, mast.height * 0.9],
+        [mast.yard * 0.9, mast.y + 11, low],
+      ],
+    ];
+  if (profile.rig === "gaff" || (profile.rig === "barque" && index === 2))
+    return [
+      [
+        [0, mast.y - 1, mast.height],
+        [mast.yard * 0.9, mast.y + 5, mast.height * 0.8],
+      ],
+      [
+        [-mast.yard * 0.22, mast.y + 7, low],
+        [mast.yard * 0.72, mast.y + 12, low],
+      ],
+    ];
+  return Array.from({ length: mast.sails }, (_, tier) => {
+    const yard = mast.yard * (1 - tier * 0.08);
+    const height = mast.height * (0.83 - tier * 0.22);
+    return [
+      [-yard * 0.55, mast.y, height],
+      [yard * 0.55, mast.y, height],
+    ];
+  });
+}
+
+function standingRigging(profile, z) {
+  const lines = [];
+  const add = (a, b) =>
+    lines.push({
+      vertices: [a, b],
+      line: true,
+      fill: "#514333",
+      width: 0.35,
+      opacity: 0.68,
+    });
+  for (const [index, mast] of profile.masts.entries()) {
+    const head = [0, mast.y, mast.height * 0.94];
+    // Shrouds fan from the masthead to the rail. At chart zoom keep just the
+    // outer stays so the canvas silhouette remains readable.
+    for (const side of [-1, 1])
+      for (const along of z < 0.55 ? [0.08] : [-0.06, 0.08]) {
+        const y = mast.y + profile.length * along;
+        add(head, [
+          side * hullWidth(profile, y / profile.length) * 0.9,
+          y,
+          deckHeight(profile, y / profile.length) + 0.3,
+        ]);
+      }
+    if (index === 0)
+      add(head, [0, -profile.length * 0.5, deckHeight(profile, -0.5) + 0.3]);
+    else {
+      const previous = profile.masts[index - 1];
+      add(head, [0, previous.y, previous.height * 0.94]);
+    }
+    if (index === profile.masts.length - 1)
+      add(head, [0, profile.length * 0.46, deckHeight(profile, 0.46) + 0.3]);
+  }
+  return lines;
 }
 
 // Deck hands scramble as the storm arc builds: tiny ink figures hurry between
@@ -1193,27 +1331,7 @@ function drawShipModel(
     windY,
     seed,
   );
-  // Soft contact shadow stays on the water as the hull rises and falls.
-  const shadow = lighting.shadow ?? sceneLighting().shadow;
-  c.save();
-  c.globalAlpha =
-    (Number.isFinite(c.globalAlpha) ? c.globalAlpha : 1) *
-    (0.35 + shadow.strength * 0.65);
-  for (const [spread, style] of CONTACT_SHADOWS) {
-    c.fillStyle = style;
-    c.beginPath();
-    c.ellipse(
-      shadow.x * shadow.length * 5,
-      shadow.y * shadow.length * 8,
-      profile.beam * spread,
-      profile.length * (0.43 + shadow.length * 0.035) * spread,
-      heading,
-      0,
-      Math.PI * 2,
-    );
-    c.fill();
-  }
-  c.restore();
+  drawHullContact(c, profile, motion, lighting);
   if (damage?.splinters > 0)
     drawSplinterFlecks(c, profile, heading, z, motion, damage, time, seed);
 
@@ -1256,21 +1374,14 @@ function drawShipModel(
       z < 0.55 ? 2 : 3,
     ),
   );
-  const spars = profile.masts.flatMap((mast) => {
+  const spars = profile.masts.flatMap((mast, index) => {
     const lines = [
       [
         [0, mast.y, profile.deckHeight],
         [0, mast.y, mast.height],
       ],
     ];
-    for (let tier = 0; tier < mast.sails; tier++) {
-      const yard = mast.yard * (1 - tier * 0.08);
-      const height = mast.height * (0.72 - tier * 0.21);
-      lines.push([
-        [-yard * 0.55, mast.y, height],
-        [yard * 0.55, mast.y, height],
-      ]);
-    }
+    lines.push(...mastSpars(mast, profile, index));
     return lines.map((line) =>
       line.map((point) => {
         const world = rotatePoint(point, heading, motion);
@@ -1278,49 +1389,24 @@ function drawShipModel(
       }),
     );
   });
-  const faces = [...hull, ...structures, ...sails.flatMap((sail) => sail.faces)]
+  const faces = [
+    ...hull,
+    ...structures,
+    ...sails.flatMap((sail) => sail.faces),
+    ...standingRigging(profile, z),
+  ]
     .map((face, order) =>
       worldFace(face, heading, order, motion, lighting, spars),
     )
     .filter(Boolean);
   paintFaces(c, faces, z);
 
-  const { amber } = lightingHierarchy(1, lighting);
-  if (amber > 0.01) {
-    c.save();
-    for (const sail of sails) {
-      for (const [a, b] of sail.rims) {
-        drawLine3d(
-          c,
-          a,
-          b,
-          heading,
-          `rgba(255,178,78,${amber * 0.32})`,
-          2.2,
-          z,
-          motion,
-        );
-        drawLine3d(
-          c,
-          a,
-          b,
-          heading,
-          `rgba(255,218,144,${amber * 0.8})`,
-          0.75,
-          z,
-          motion,
-        );
-      }
-    }
-    c.restore();
-  }
-
   // Moving hems hold the silhouette together; ragged threads border the real
   // gaps in damaged cloth without filling those holes back in.
   {
     for (const sail of sails) {
       for (const [a, b] of sail.seams)
-        drawLine3d(c, a, b, heading, "rgba(70,49,29,.75)", 0.65, z, motion);
+        drawLine3d(c, a, b, heading, "rgba(70,49,29,.75)", 0.3, z, motion);
       for (const [a, b] of sail.fringes)
         drawLine3d(
           c,
@@ -1417,25 +1503,10 @@ function drawShipModel(
 
   // Standing rigging and bowsprit give the model a readable three dimensional
   // silhouette. Cloth and its seams share a curved, wind-driven surface.
-  const mastHeads = [];
-  for (const mast of profile.masts) {
+  for (const [index, mast] of profile.masts.entries()) {
     const base = deckHeight(profile, mast.y / profile.length) + 0.6;
     const top = [0, mast.y, mast.height];
-    mastHeads.push(top);
-    for (const side of [-1, 1]) {
-      drawLine3d(
-        c,
-        [0, mast.y, base],
-        [side * mast.yard * 0.6, mast.y, mast.height * 0.45],
-        heading,
-        "#5b432a",
-        0.55,
-        z,
-        motion,
-        0.78,
-      );
-    }
-    drawLine3d(c, [0, mast.y, base], top, heading, "#352519", 1.55, z, motion);
+    drawLine3d(c, [0, mast.y, base], top, heading, "#352519", 0.9, z, motion);
     drawLine3d(
       c,
       [-0.75, mast.y, base + 1.3],
@@ -1457,85 +1528,20 @@ function drawShipModel(
       z,
       motion,
     );
-    const tierCount = mast.sails;
-    for (let tier = 0; tier < tierCount; tier++) {
-      const yardZ = mast.height * (0.72 - tier * 0.21);
-      const yard = mast.yard * (1 - tier * 0.08);
+    for (const [a, b] of mastSpars(mast, profile, index)) {
+      drawLine3d(c, a, b, heading, "#493321", 0.75, z, motion);
       drawLine3d(
         c,
-        [-yard * 0.55, mast.y, yardZ],
-        [yard * 0.55, mast.y, yardZ],
+        a.map((v, axis) => v + (axis === 2 ? 0.25 : 0)),
+        b.map((v, axis) => v + (axis === 2 ? 0.25 : 0)),
         heading,
-        "#493321",
-        1.1,
+        litPigment("#bd9a62", [0, 0, 1], lighting),
+        0.3,
         z,
         motion,
+        0.8,
       );
-      drawLine3d(
-        c,
-        [-yard * 0.55, mast.y, yardZ + 0.45],
-        [yard * 0.55, mast.y, yardZ + 0.45],
-        heading,
-        "#bd9a62",
-        0.45,
-        z,
-        motion,
-        0.85,
-      );
-      if (
-        profile.rig === "square" ||
-        (profile.rig === "barque" && mast !== profile.masts.at(-1))
-      ) {
-        const seamZ = mast.height * (0.67 - tier * 0.21);
-        drawLine3d(
-          c,
-          [-yard * 0.34 + windX * 0.4, mast.y + windY * 0.4, seamZ],
-          [yard * 0.34 + windX * 0.4, mast.y + windY * 0.4, seamZ],
-          heading,
-          color,
-          0.75,
-          z,
-          motion,
-          0.62,
-        );
-      }
     }
-  }
-  if (mastHeads.length > 1) {
-    drawLine3d(
-      c,
-      [-1, -profile.length * 0.47, profile.deckHeight + 1],
-      mastHeads[0],
-      heading,
-      "#5b432a",
-      0.6,
-      z,
-      motion,
-      0.8,
-    );
-    for (let index = 0; index < mastHeads.length - 1; index++)
-      drawLine3d(
-        c,
-        mastHeads[index],
-        mastHeads[index + 1],
-        heading,
-        "#5b432a",
-        0.55,
-        z,
-        motion,
-        0.76,
-      );
-    drawLine3d(
-      c,
-      mastHeads.at(-1),
-      [1, profile.length * 0.46, deckHeight(profile, 0.46) + 1],
-      heading,
-      "#5b432a",
-      0.55,
-      z,
-      motion,
-      0.72,
-    );
   }
 
   // A tiny two-tone pennant is the only bright color on the timber model.

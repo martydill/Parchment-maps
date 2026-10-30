@@ -74,9 +74,9 @@ export function sampleSailPoint(
     ? 0
     : Math.sin(phase + 0.8) * foot * pressure * 0.12;
   return [
-    point[0] + x * (bow * 1.35 + foot * 0.2) - y * ripple,
-    point[1] + y * (bow * 1.35 + foot * 0.2) + x * ripple + flutter,
-    point[2] - foot * (0.22 + pressure * 0.1) + flutter * 0.65,
+    point[0] + x * (bow * 1.35 + foot * 0.35) - y * ripple,
+    point[1] + y * (bow * 1.35 + foot * 0.35) + x * ripple + flutter,
+    point[2] - foot * (0.45 + pressure * 0.45) + flutter * 0.65,
   ];
 }
 

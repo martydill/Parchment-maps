@@ -146,6 +146,20 @@ test("neighboring cloth fans share every moving boundary point", () => {
   }
 });
 
+test("loose hems form a readable wind-filled curve while corners stay tied", () => {
+  const options = { x: 0, y: 2, freeEdge: true, reducedMotion: true };
+  const heights = [0, 0.25, 0.5, 0.75, 1].map(
+    (u) => sampleSailPoint(a, b, center, u, 0, options)[2],
+  );
+  close(heights[0], a[2]);
+  close(heights[4], b[2]);
+  close(heights[1], heights[3]);
+  assert.ok(heights[2] < heights[1]);
+  assert.ok(a[2] - heights[2] > 1, "the curved foot reads at sailing scale");
+  const slack = sampleSailPoint(a, b, center, 0.5, 0, { ...options, y: 0.25 });
+  assert.ok(slack[2] > heights[2], "stronger wind rounds the loose foot");
+});
+
 test("reduced motion freezes folds while keeping a rounded sail under pressure", () => {
   const options = { x: 1, y: -1, reducedMotion: true, freeEdge: true };
   for (const [u, v] of [
