@@ -3,6 +3,8 @@ import test from "node:test";
 import { pointInPolygon } from "../src/core/geometry.js";
 import {
   planShoreline,
+  shorelineEdge,
+  shorelineOutline,
   planPigmentGrains,
   sampleShoreBreak,
   shorelineCliffFaces,
@@ -27,6 +29,60 @@ const cove = [
   [100, 300],
   [0, 300],
 ];
+
+test("painted erosion anchors every edge, varies by material, and leaves navigation untouched", () => {
+  assert.deepEqual(shorelineOutline([]), []);
+  for (const poly of [square, [...square].reverse(), cove]) {
+    for (const biome of ["temperate", "volcanic", "marsh", "tropical"]) {
+      const segments = planShoreline(poly, 811, biome);
+      const original = structuredClone(segments);
+      const outline = shorelineOutline(segments);
+      assert.deepEqual(outline, shorelineOutline(segments));
+      assert.equal(outline.length, segments.length * 4);
+      segments.forEach((segment, index) => {
+        const edge = shorelineEdge(segment);
+        assert.deepEqual(edge[0], [segment.a.x, segment.a.y]);
+        assert.deepEqual(edge.at(-1), [segment.b.x, segment.b.y]);
+        assert.deepEqual(
+          edge.at(-1),
+          shorelineEdge(segments[(index + 1) % segments.length])[0],
+        );
+        for (const [x, y] of edge) {
+          assert.ok(Number.isFinite(x) && Number.isFinite(y));
+          const inset =
+            -(x - segment.a.x) * segment.nx - (y - segment.a.y) * segment.ny;
+          assert.ok(
+            inset >= -1e-9 &&
+              inset <= Math.min(3.8, segment.length * 0.2) + 1e-9,
+          );
+        }
+      });
+      assert.deepEqual(segments, original);
+      const wrapped = shorelineOutline(
+        planShoreline(
+          poly.map(([x, y]) => [x + 4800, y]),
+          811,
+          biome,
+        ),
+      );
+      wrapped.forEach(([x, y], index) => {
+        assert.ok(Math.abs(x - outline[index][0] - 4800) < 1e-9);
+        assert.ok(Math.abs(y - outline[index][1]) < 1e-9);
+      });
+    }
+  }
+  const segment = { ...planShoreline(square, 3)[0], kind: "rock", grain: 0.9 };
+  const rock = shorelineEdge(segment),
+    sand = shorelineEdge({ ...segment, kind: "sand" });
+  assert.ok(Math.abs(rock[2][1]) > Math.abs(sand[2][1]));
+  const tiny = {
+    ...segment,
+    a: { x: 0, y: 0 },
+    b: { x: 0.05, y: 0 },
+    length: 0.05,
+  };
+  assert.ok(shorelineEdge(tiny).every(([, y]) => Math.abs(y) <= 0.01));
+});
 
 test("visual tides recede slowly, repeat smoothly, and do not mutate shoreline geometry", () => {
   const period = VISUAL_TIDE_PERIOD;

@@ -71,7 +71,7 @@ export function planShoreline(poly, seed, biome = "temperate") {
     else if (biome === "alpine") kind = variation < -0.8 ? "sand" : "rock";
     else if (biome === "arid" || biome === "tropical")
       kind = variation < -0.72 && turn < 0 ? "rock" : "sand";
-    else kind = variation > -0.15 && turn > -length * 7 ? "sand" : "rock";
+    else kind = variation > 0.56 && turn > -length * 7 ? "sand" : "rock";
     const samples = Math.max(1, Math.ceil(length / 18));
     for (let sample = 0; sample < samples; sample++) {
       const t = sample / samples,
@@ -99,6 +99,36 @@ export function planShoreline(poly, seed, biome = "temperate") {
     distance += length;
   }
   return segments;
+}
+
+// Fine erosion belongs to the painted chart, never the navigation polygon.
+// Endpoints stay anchored; cuts are bounded by the local edge length so small
+// islets and narrow coves retain their shape. The local frame survives wrapping.
+export function shorelineEdge(segment) {
+  const s = segment;
+  const stone = s.kind === "rock" || s.kind === "basalt";
+  const erosion =
+    Math.min(3.8, s.length * 0.2) *
+    (0.3 + s.grain * 0.7) *
+    (stone ? 1 : s.kind === "marsh" ? 0.65 : 0.22);
+  const points = [[s.a.x, s.a.y]];
+  for (let step = 1; step < 4; step++) {
+    const t = step / 4;
+    const cut =
+      erosion *
+      Math.sin(Math.PI * t) *
+      (stone ? 0.55 + 0.45 * Math.sin(step * 2.7 + s.grain * 9) ** 2 : 1);
+    points.push([
+      s.a.x + (s.b.x - s.a.x) * t - s.nx * cut,
+      s.a.y + (s.b.y - s.a.y) * t - s.ny * cut,
+    ]);
+  }
+  points.push([s.b.x, s.b.y]);
+  return points;
+}
+
+export function shorelineOutline(segments) {
+  return segments.flatMap((segment) => shorelineEdge(segment).slice(0, -1));
 }
 
 // Rejection sampling confines sediment to the actual crown or mountain face.

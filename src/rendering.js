@@ -38,7 +38,7 @@ import {
 } from "./terrain-rendering.js?v=5";
 import { drawRiverMouths, drawRiverSediment } from "./river-rendering.js";
 import { createTerrainDetailRendering } from "./sculpted-terrain-rendering.js";
-import { planShoreline } from "./core/shoreline.js";
+import { planShoreline, shorelineOutline } from "./core/shoreline.js";
 import {
   drawCoastalWater,
   drawCoastalFaces,
@@ -975,6 +975,7 @@ export function createMapRendering({
   const shorePlans = lands.map((land, index) =>
     planShoreline(land.poly, 811 + index * 59, terrainBiome(land.name)),
   );
+  const coastOutlines = shorePlans.map(shorelineOutline);
   const terrainIslands = [];
   let seasonDay = game.day;
   let seasonKey = seasonAtDay(seasonDay).key;
@@ -1908,7 +1909,7 @@ export function createMapRendering({
       terrainPlans.set(li, terrain);
       if (!terrainIslands[li])
         terrainIslands[li] = {
-          poly: l.poly,
+          poly: coastOutlines[li],
           terrain,
           depth: coastFaceDepth(li, l.satellite) * MAP_TILT_TAN,
           shoreline: shorePlans[li],
@@ -1921,7 +1922,7 @@ export function createMapRendering({
       for (const offset of polygonWorldOffsets(land.poly, 100)) {
         m.save();
         m.translate(offset, 0);
-        drawCoastalWater(m, land.poly, shorePlans[li], coastDepth);
+        drawCoastalWater(m, coastOutlines[li], shorePlans[li], coastDepth);
         m.restore();
       }
     });
@@ -1938,15 +1939,16 @@ export function createMapRendering({
       }
     });
 
-    // islands with layered coast contours and internal parchment texture
+    // Eroded shore silhouettes, material relief, and internal parchment texture
     lands.forEach((l, li) => {
       const coastDepth = terrainIslands[li].depth;
       const shoreline = shorePlans[li];
+      const outline = coastOutlines[li];
       // Each coast has a vertical face projected from the raised top edge to
       // the sea plane. Back faces are hidden by the land surface drawn next.
       drawWrappedPolyPath(
         m,
-        l.poly,
+        outline,
         (poly) => {
           m.save();
           m.translate(0, coastDepth);
@@ -1956,7 +1958,7 @@ export function createMapRendering({
           m.restore();
 
           // Use the same material plan as the shoreline and surf.
-          const offset = poly[0][0] - l.poly[0][0];
+          const offset = poly[0][0] - outline[0][0];
           m.save();
           m.translate(offset, 0);
           drawCoastalFaces(m, shoreline, coastDepth);
@@ -1964,7 +1966,7 @@ export function createMapRendering({
         },
         40,
       );
-      drawWrappedPolyPath(m, l.poly, (poly) => {
+      drawWrappedPolyPath(m, outline, (poly) => {
         polyPath(m, poly);
         const top = Math.min(...poly.map(([, y]) => y));
         const bottom = Math.max(...poly.map(([, y]) => y));
@@ -1998,13 +2000,13 @@ export function createMapRendering({
       for (const offset of polygonWorldOffsets(l.poly)) {
         m.save();
         m.translate(offset, 0);
-        drawCoastalLand(m, l.poly, shoreline);
+        drawCoastalLand(m, outline, shoreline);
         m.restore();
       }
 
       const terrain = terrainPlans.get(li);
       m.save();
-      wrappedClipPath(m, l.poly);
+      wrappedClipPath(m, outline);
       m.clip();
       for (const offset of polygonWorldOffsets(l.poly)) {
         m.save();
@@ -2191,7 +2193,10 @@ export function createMapRendering({
   buildMapLayer();
   const mountainShadows = createMountainShadowRendering({
     world: WORLD,
-    lands,
+    lands: lands.map((land, index) => ({
+      ...land,
+      poly: coastOutlines[index],
+    })),
     terrainPlans,
     ports,
     shorePlans,
