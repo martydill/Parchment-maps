@@ -1,5 +1,6 @@
 import {
   planShoreline,
+  shorelineOutline,
   planTidalShoreline,
   sampleVisualTide,
 } from "./core/shoreline.js";
@@ -179,7 +180,13 @@ export function createSeaRendering({
   let cachedView = null;
   let cachedVisible = [];
   let drawShoreAnimal;
-  const coasts = lands.map(({ poly, satellite, name }, index) => {
+  const coasts = lands.map(({ poly: authoredPoly, satellite, name }, index) => {
+    const shoreline = planShoreline(
+      authoredPoly,
+      811 + index * 59,
+      terrainBiome(name),
+    );
+    const poly = shorelineOutline(shoreline);
     const depth = coastFaceDepth(index, satellite) * MAP_TILT_TAN;
     const xs = poly.map(([x]) => x);
     const ys = poly.map(([, y]) => y);
@@ -202,7 +209,6 @@ export function createSeaRendering({
     const land = new Path2D();
     poly.forEach(([x, y], i) => (i ? land.lineTo(x, y) : land.moveTo(x, y)));
     land.closePath();
-    const shoreline = planShoreline(poly, 811 + index * 59, terrainBiome(name));
     // Caustic masks still need the submerged edge; marsh channels stay dark.
     const surf = new Path2D();
     for (const segment of shoreline) {

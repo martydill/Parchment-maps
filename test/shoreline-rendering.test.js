@@ -192,7 +192,7 @@ test("beach foam stays thin, stone throws broken spray, and marshes draw no surf
   assert.deepEqual(quiet.calls, []);
 });
 
-test("material coastlines and close-up relief use filled terrain without perimeter hatching", () => {
+test("material coastlines keep washes and use sparse engraving instead of continuous contour bands", () => {
   for (const biome of ["tropical", "alpine", "volcanic", "marsh"]) {
     const shoreline = planShoreline(poly, 811, biome);
     const target = recordingContext();
@@ -202,14 +202,46 @@ test("material coastlines and close-up relief use filled terrain without perimet
     const faces = shorelineCliffFaces(shoreline, 12);
     drawCliffDetails(target.context, faces, false);
     drawCliffDetails(target.context, faces, true);
-    assert.equal(
-      target.calls.filter(([method]) => method === "stroke").length,
-      0,
+    const strokes = target.calls.filter(
+      ([method]) => method === "stroke",
+    ).length;
+    if (biome === "marsh") assert.equal(strokes, 0);
+    else assert.ok(strokes > 0);
+    assert.ok(
+      target.calls
+        .filter(([method]) => method === "lineWidth")
+        .every(([, width]) => width <= 0.7),
     );
     assert.ok(target.calls.some(([method]) => method === "fill"));
     assert.ok(
       target.calls.some(([method]) => method === "createRadialGradient"),
     );
     assert.equal(target.context.globalAlpha, 0.4);
+  }
+});
+
+test("only stone gets engraved relief; sand stays stippled and marsh pigment stays soft", () => {
+  const segment = { ...planShoreline(poly, 811)[0], ny: 1, nx: 0, grain: 0.9 };
+  for (const kind of ["sand", "rock", "basalt", "marsh"]) {
+    const face = recordingContext();
+    drawCoastalFaces(face.context, [{ ...segment, kind }], 12);
+    const stone = kind === "rock" || kind === "basalt";
+    assert.equal(
+      face.calls.some(([key]) => key === "stroke"),
+      stone,
+    );
+    assert.ok(face.calls.some(([key]) => key === "clip"));
+    assert.equal(face.states.length, 0);
+    const land = recordingContext();
+    drawCoastalLand(land.context, poly, [{ ...segment, kind }]);
+    const dots = land.calls.filter(([key]) => key === "ellipse");
+    assert.equal(dots.length, kind === "sand" ? 9 : 0);
+    assert.equal(land.context.globalAlpha, 0.4);
+    assert.equal(land.states.length, 0);
+  }
+  for (const depth of [0, -1]) {
+    const target = recordingContext();
+    drawCoastalFaces(target.context, [segment], depth);
+    assert.deepEqual(target.calls, []);
   }
 });

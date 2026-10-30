@@ -6,6 +6,7 @@ import { regionalWaterInk } from "../src/core/regional-water.js";
 import { sampleShoreAnimal } from "../src/core/seascape.js";
 import { createShoreAnimalRendering } from "../src/shore-animal-rendering.js";
 import { MAP_TILT_COS } from "../src/core/projection.js";
+import { planShoreline, shorelineOutline } from "../src/core/shoreline.js";
 
 function recordingContext() {
   const calls = [];
@@ -1103,9 +1104,23 @@ test("river paths are baked once, culled offscreen, and reused across wrapped vi
         maskClip,
         "flow is masked below bridge decks in both world copies",
       );
-      assert.equal(
-        maskClip[1].commands.filter(([command]) => command === "lineTo").length,
-        3,
+      const paintedCoast = shorelineOutline(
+        planShoreline(
+          [
+            [950, 300],
+            [1050, 300],
+            [1050, 700],
+            [950, 700],
+          ],
+          811,
+        ),
+      );
+      assert.deepEqual(
+        maskClip[1].commands.filter(
+          ([command]) => command === "moveTo" || command === "lineTo",
+        ),
+        paintedCoast.map(([px, py], i) => [i ? "lineTo" : "moveTo", px, py]),
+        "moving water follows the same eroded silhouette as the painted chart",
       );
       bridgeMasks.push(maskClip[1]);
     }
