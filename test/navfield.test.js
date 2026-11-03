@@ -3,11 +3,13 @@ import test from "node:test";
 
 import {
   buildSeaField,
+  findCoursePath,
   findSeaPath,
   routeLaneAroundLand,
   segmentClear,
   smoothSeaPath,
 } from "../src/core/navfield.js";
+import { pointInWrappedPolygon } from "../src/core/geometry.js";
 import { unwrapPath } from "../src/core/routes.js";
 import { lands } from "../src/world-data.js";
 
@@ -54,6 +56,118 @@ function everySegmentClear(field, points) {
   }
   return true;
 }
+
+test("player courses preserve exact open-water endpoints and detour around islands", () => {
+  const field = fieldFrom([rectangle(480, 300, 520, 500)]);
+  const origin = { x: 300, y: 400 };
+  const destination = { x: 700, y: 400 };
+  const path = findCoursePath(field, origin, destination);
+  assert.ok(path.length > 2);
+  assert.deepEqual(path[0], [origin.x, origin.y]);
+  assert.deepEqual(path.at(-1), [destination.x, destination.y]);
+  assert.equal(everySegmentClear(field, path), true);
+  assert.deepEqual(findCoursePath(field, origin, { x: 400, y: 400 }), [
+    [300, 400],
+    [400, 400],
+  ]);
+});
+
+test("conservative course fields avoid thin headlands between grid scanlines", () => {
+  const poly = [
+    [450, 401],
+    [550, 401],
+    [550, 402],
+    [450, 402],
+  ];
+  const field = buildSeaField([{ poly }], {
+    width: WIDTH,
+    height: HEIGHT,
+    conservative: true,
+  });
+  const path = findCoursePath(
+    field,
+    { x: 300, y: 401.5 },
+    { x: 700, y: 401.5 },
+  );
+  assert.ok(path.length > 2);
+  assert.equal(everySegmentClear(field, path), true);
+  for (let i = 1; i < path.length; i += 1) {
+    const a = path[i - 1];
+    const b = path[i];
+    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]));
+    for (let j = 0; j <= steps; j += 1) {
+      assert.equal(
+        pointInWrappedPolygon(
+          a[0] + ((b[0] - a[0]) * j) / steps,
+          a[1] + ((b[1] - a[1]) * j) / steps,
+          poly,
+          WIDTH,
+        ),
+        false,
+      );
+    }
+  }
+});
+
+test("conservative coast cells respect diagonals, map edges, and the world seam", () => {
+  const field = buildSeaField(
+    [
+      {
+        poly: [
+          [980, -20],
+          [1020, 40],
+          [980, 40],
+        ],
+      },
+      {
+        poly: [
+          [100, 780],
+          [140, 820],
+          [100, 820],
+        ],
+      },
+      {
+        poly: [
+          [480, 100],
+          [520, 140],
+          [520, 100],
+        ],
+      },
+    ],
+    { width: WIDTH, height: HEIGHT, conservative: true },
+  );
+  assert.equal(isBlocked(field, 5, 35), true);
+  assert.equal(isBlocked(field, 985, 5), true);
+  assert.equal(isBlocked(field, 110, 795), true);
+  assert.equal(isBlocked(field, 505, 125), true);
+  assert.equal(isBlocked(field, 400, 400), false);
+});
+
+test("player courses end in open water for coastal markers and never fall back across land", () => {
+  const field = fieldFrom([rectangle(480, 300, 520, 500)]);
+  const path = findCoursePath(field, { x: 500, y: 400 }, { x: 700, y: 400 });
+  assert.ok(path.length >= 2);
+  assert.equal(everySegmentClear(field, path), true);
+  assert.deepEqual(
+    findCoursePath(field, { x: 700, y: 400 }, { x: 500, y: 400 }).at(-1),
+    path[0],
+  );
+  const sealed = fieldFrom([
+    rectangle(400, 300, 600, 340),
+    rectangle(400, 460, 600, 500),
+    rectangle(400, 300, 440, 500),
+    rectangle(560, 300, 600, 500),
+  ]);
+  assert.deepEqual(
+    findCoursePath(sealed, { x: 100, y: 400 }, { x: 500, y: 400 }),
+    [],
+  );
+  const solid = fieldFrom([rectangle(0, 0, WIDTH, HEIGHT)]);
+  assert.deepEqual(
+    findCoursePath(solid, { x: 100, y: 400 }, { x: 500, y: 400 }),
+    [],
+  );
+});
 
 test("buildSeaField marks a polygon's interior and leaves open water open", () => {
   const field = fieldFrom([rectangle(300, 200, 700, 600)]);

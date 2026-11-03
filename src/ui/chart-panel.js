@@ -2,12 +2,13 @@ import { chartedCityIndicators } from "../core/chart.js";
 import { layoutMapLabels } from "../core/label-layout.js";
 import { drawShip } from "../rendering.js?v=5";
 import { drawExplorationSite } from "../exploration-rendering.js";
+import { drawCourseLine } from "../course-rendering.js";
 
 export function renderChartPanel({
   activeRumorLeads,
   buildVisibilityPolygon,
   chartedCities,
-  courseBearing,
+  planCourse,
   currentObjective,
   currentPort,
   drawShipOptions,
@@ -91,12 +92,11 @@ export function renderChartPanel({
   });
   drawRumorLeads(c, sx, sy, activeRumorLeads(), world);
   drawPlottedCourse(c, sx, sy, {
-    courseBearing,
+    planCourse,
     game,
     getPortByName,
     ship,
     world,
-    wrapX,
   });
   drawExplorationSites(c, sx, sy, {
     explorationSites,
@@ -230,28 +230,30 @@ function drawRumorLeads(c, sx, sy, leads, world) {
   }
 }
 
-function drawPlottedCourse(
+export function drawPlottedCourse(
   c,
   sx,
   sy,
-  { courseBearing, game, getPortByName, ship, world, wrapX },
+  { planCourse, game, getPortByName, ship, world },
 ) {
   const courseDestination = getPortByName(game.navigation.destination);
   if (!courseDestination) return;
-  const bearing = courseBearing(ship, courseDestination, world.w);
-  c.strokeStyle = "#66c8b5";
-  c.lineWidth = 3;
-  c.setLineDash([9, 6]);
-  for (const offset of [-world.w, 0, world.w]) {
-    c.beginPath();
-    c.moveTo((wrapX(ship.x) + offset) * sx, ship.y * sy);
-    c.lineTo((bearing.destinationX + offset) * sx, courseDestination.y * sy);
-    c.stroke();
-  }
-  c.setLineDash([]);
+  const points = planCourse(ship, courseDestination);
+  // Canonicalize the route as a whole so an unbounded ship x cannot move it
+  // off the overview after sailing around the horizontally wrapping world.
+  const base = Math.floor(ship.x / world.w) * world.w;
+  drawCourseLine(c, points, {
+    sx,
+    sy,
+    offsets: [-base - world.w, -base, -base + world.w],
+  });
+  c.save();
+  c.strokeStyle = "rgba(100, 159, 148, .58)";
+  c.lineWidth = 1.5;
   c.beginPath();
   c.arc(courseDestination.x * sx, courseDestination.y * sy, 23, 0, Math.PI * 2);
   c.stroke();
+  c.restore();
 }
 
 function drawExplorationSites(
