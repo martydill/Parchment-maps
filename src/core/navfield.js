@@ -1,4 +1,4 @@
-// Land-avoiding navigation for NPC sea lanes.
+// Land-avoiding navigation for sea lanes and player course markers.
 //
 // Rival merchants and the player's fleet follow fixed polylines ("sea lanes").
 // Several of those lanes cut straight across islands. This module bakes a
@@ -28,9 +28,12 @@ const DIRECTIONS = [
 // Rasterize every land polygon into a blocked-cell grid. The grid wraps in x,
 // so polygons that straddle the world seam are filled at x-offsets -W, 0, +W
 // (bbox-culled), matching pointInWrappedPolygon. No dilation: navigating on raw
-// land means channels can never close, so an already-working lane never
-// regresses, and a path's centre line never enters land.
-export function buildSeaField(lands, { width, height, cellSize = 10 }) {
+// land keeps existing sea lanes navigable. Conservative mode also blocks every
+// coast edge cell, keeping player course markers clear of thin headlands.
+export function buildSeaField(
+  lands,
+  { width, height, cellSize = 10, conservative = false },
+) {
   const cols = Math.max(1, Math.ceil(width / cellSize));
   const rows = Math.max(1, Math.ceil(height / cellSize));
   const grid = new Uint8Array(cols * rows);
@@ -48,9 +51,35 @@ export function buildSeaField(lands, { width, height, cellSize = 10 }) {
     for (const offset of offsets) {
       if (maxX + offset < 0 || minX + offset >= width) continue;
       rasterizePolygon(field, poly, offset);
+      if (conservative) rasterizeCoastline(field, poly, offset);
     }
   }
   return field;
+}
+
+// Block every cell touched by a coastline, including thin headlands that lie
+// between scanlines. Player course markers use this stricter field so even a
+// simplified leg cannot clip a small protrusion of the actual land polygon.
+function rasterizeCoastline(field, poly, offset) {
+  const { cols, rows, cellSize, grid } = field;
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const dy = b[1] - a[1];
+    const r0 = Math.max(0, Math.floor((Math.min(a[1], b[1]) - EPS) / cellSize));
+    const r1 = Math.min(rows - 1, Math.floor(Math.max(a[1], b[1]) / cellSize));
+    for (let r = r0; r <= r1; r += 1) {
+      const t0 = dy ? Math.max(0, Math.min(1, (r * cellSize - a[1]) / dy)) : 0;
+      const t1 = dy
+        ? Math.max(0, Math.min(1, ((r + 1) * cellSize - a[1]) / dy))
+        : 1;
+      const x0 = a[0] + (b[0] - a[0]) * t0 + offset;
+      const x1 = a[0] + (b[0] - a[0]) * t1 + offset;
+      const c0 = Math.max(0, Math.floor((Math.min(x0, x1) - EPS) / cellSize));
+      const c1 = Math.min(cols - 1, Math.floor(Math.max(x0, x1) / cellSize));
+      for (let c = c0; c <= c1; c += 1) grid[r * cols + c] = 1;
+    }
+  }
 }
 
 function rasterizePolygon(field, poly, offset) {
@@ -383,6 +412,21 @@ function nearestOpenCellWorld(field, x, y, ring) {
 function snapWaypoint(field, point, ring) {
   if (cellOpenAt(field, point[0], point[1], 0)) return [point[0], point[1]];
   return nearestOpenCellWorld(field, point[0], point[1], ring);
+}
+
+// A player course must never fall back to a land-crossing line. Coastal
+// endpoints may sit in a blocked grid cell, so end the line in nearby water.
+export function findCoursePath(field, origin, destination) {
+  const start = snapWaypoint(field, [origin.x, origin.y], 6);
+  const goal = snapWaypoint(field, [destination.x, destination.y], 6);
+  if (!start || !goal) return [];
+  if (segmentClear(field, ...start, ...goal)) return [start, goal];
+  const path = findSeaPath(field, ...start, ...goal, {
+    maxNodes: field.grid.length,
+    snapRing: 0,
+  });
+  if (!path) return [];
+  return smoothSeaPath(field, [start, ...path, goal]);
 }
 
 // Bake a land-avoiding version of a lane's waypoints. Waypoints on land are

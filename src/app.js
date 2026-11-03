@@ -253,9 +253,11 @@ import {
   clearCourse,
   compassDirection,
   courseBearing,
+  createCoursePlanner,
   normalizeNavigationState,
   plotCourse,
 } from "./core/navigation.js";
+import { drawCourseLine } from "./course-rendering.js";
 import {
   adjustSpecialistLoyalty,
   advanceOfficerAmbitions,
@@ -1476,6 +1478,13 @@ for (const route of merchantRoutePaths) {
 // any lane segment that crosses land around it. Rivals, the player's fleet (which
 // reuses these same lanes), and the minimap overlay all consume the result.
 const seaField = buildSeaField(lands, { width: WORLD.w, height: WORLD.h });
+const planCourse = createCoursePlanner(
+  buildSeaField(lands, {
+    width: WORLD.w,
+    height: WORLD.h,
+    conservative: true,
+  }),
+);
 for (const route of merchantRoutePaths) {
   route.points = routeLaneAroundLand(seaField, route.points);
 }
@@ -4980,21 +4989,12 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
   }
   const courseDestination = getPortByName(game.navigation.destination);
   if (courseDestination) {
-    const bearing = courseBearing(ship, courseDestination, WORLD.w);
-    c.strokeStyle = "rgba(25,52,52,.75)";
-    c.lineWidth = 5 / z;
-    c.beginPath();
-    c.moveTo(ship.x, ship.y);
-    c.lineTo(bearing.destinationX, courseDestination.y);
-    c.stroke();
-    c.strokeStyle = "rgba(102, 200, 181, .9)";
-    c.lineWidth = 3 / z;
-    c.setLineDash([12 / z, 8 / z]);
-    c.beginPath();
-    c.moveTo(ship.x, ship.y);
-    c.lineTo(bearing.destinationX, courseDestination.y);
-    c.stroke();
-    c.setLineDash([]);
+    const points = planCourse(ship, courseDestination);
+    const offset = nearestWrappedX(ship.x, camera.x) - ship.x;
+    drawCourseLine(c, points, {
+      zoom: z,
+      offsets: [offset - WORLD.w, offset, offset + WORLD.w],
+    });
   }
   // Batch text rendering setup - set common properties once
   c.textAlign = "center";
@@ -8430,7 +8430,7 @@ function renderChart() {
     activeRumorLeads,
     buildVisibilityPolygon,
     chartedCities,
-    courseBearing,
+    planCourse,
     currentObjective,
     currentPort,
     drawShipOptions: {
