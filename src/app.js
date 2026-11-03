@@ -1,3 +1,5 @@
+import { automationOptions } from "./core/automation.js";
+import { createGameAutomation } from "./automation.js";
 import { harborFoamObstacles } from "./core/obstacle-foam.js";
 import { createCartographicRendering } from "./cartographic-rendering.js";
 import { labelZoomOpacity } from "./core/cartography.js";
@@ -391,6 +393,7 @@ import {
   renderLedger,
   renderPortSystems,
   renderShipPanel,
+  tradeAtPort,
   updateHud,
 } from "./ui/panels.js?v=23";
 import { closeExpeditionPanel } from "./ui/expedition-panel.js?v=2";
@@ -399,6 +402,9 @@ import { configurePortPanels, renderShipyard } from "./ui/port-panels.js?v=11";
 import { createMapOpening } from "./map-opening.js";
 import { createCloudShadowRendering } from "./sunlight-rendering.js";
 
+const automationConfig = automationOptions(window.location.search);
+let automation = null;
+let automationTime = 0;
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let DPR = 1;
@@ -439,15 +445,18 @@ function applyGraphicsProfile() {
 }
 function setGraphicsSetting(next) {
   graphicsSetting = normalizeGraphicsSetting(next);
-  localStorage.setItem(GRAPHICS_KEY, graphicsSetting);
+  if (!automationConfig) localStorage.setItem(GRAPHICS_KEY, graphicsSetting);
   autoGraphicsTier.reset();
   applyGraphicsProfile();
 }
 let mapOpening = null;
 const MAP_SEED_KEY = "gilded-archipelago-map-seed";
-const storedMapSeed = localStorage.getItem(MAP_SEED_KEY);
-const mapSeed = storedMapSeed || createDistinctMapSeed("");
-localStorage.setItem(MAP_SEED_KEY, mapSeed);
+const storedMapSeed = automationConfig
+  ? null
+  : localStorage.getItem(MAP_SEED_KEY);
+const mapSeed =
+  automationConfig?.seed || storedMapSeed || createDistinctMapSeed("");
+if (!automationConfig) localStorage.setItem(MAP_SEED_KEY, mapSeed);
 const mapTransform = createMapTransform(mapSeed);
 const WORLD = { w: mapTransform.width, h: mapTransform.height };
 
@@ -3348,6 +3357,7 @@ function revealExplorationSurvey(site, surveyed) {
 function saveGameState() {
   if (!gameStarted || suppressSaving) return;
   updateQuestProgress(game);
+  if (automationConfig) return;
   try {
     const data = createSaveData({
       game,
@@ -3377,6 +3387,7 @@ function restoreExploredMap(dataUrl) {
 }
 
 function loadGameState() {
+  if (automationConfig) return false;
   let saved;
   try {
     saved = parseSave(localStorage.getItem(SAVE_KEY));
@@ -5132,7 +5143,6 @@ function drawDynamicTradeWorld(c, z, time, lighting) {
       ),
     });
     if (pointCurrentlyVisible(merchant.x, merchant.y)) {
-      recordMerchantSighting(merchant);
       if (merchant === labeledMerchant || selectedMerchant === merchant) {
         c.fillStyle = "rgba(47,29,15,.9)";
         c.font = `700 ${11 / z}px Georgia`;
@@ -5425,7 +5435,7 @@ function render() {
     else minimapCtx.drawImage(mapLayer, 0, 0, minimap.width, minimap.height);
   }
   const z = camera.zoom;
-  const time = performance.now();
+  const time = automationConfig ? automationTime * 1000 : performance.now();
   const labelElapsed =
     typographyFrameTime === null
       ? 0
@@ -6455,7 +6465,8 @@ function update(dt) {
     // Wind and weather change continuously with distance and time
     game.windAngle += 0.01 * dt + 0.8 * (d / 620);
     const windPhase =
-      (game.day * 620 + game.voyageDistance) / 250 + performance.now() / 15000;
+      (game.day * 620 + game.voyageDistance) / 250 +
+      (automationConfig ? automationTime * 1000 : performance.now()) / 15000;
     game.windStrength = 0.08 + (Math.sin(windPhase) + 1) * 0.07;
 
     const weather = currentWeather();
@@ -6586,6 +6597,60 @@ function update(dt) {
 const fpsCounter = document.getElementById("fpsCounter");
 let fpsSampleStart = 0;
 let fpsFrameCount = 0;
+function advanceGameFrame(dt, encounterDt, now) {
+  const hadEncounter = !encounterOverlay.hidden;
+  const activeEncounter = encounters.active;
+  const frame = advanceEncounter(
+    encounters,
+    encounterDt,
+    reducedMotion.matches,
+  );
+  if (hadEncounter && !encounters.active) finishEncounterIntro(activeEncounter);
+  update(dt * frame.timeScale);
+  if (encounters.active) {
+    if (
+      encounters.active.kind === "raider" &&
+      !encounters.active.preview &&
+      game.seaRaid.raider
+    ) {
+      encounters.active.x = game.seaRaid.raider.x;
+      encounters.active.y = game.seaRaid.raider.y;
+    }
+    const presentation = encounterFrame(
+      encounters.active.elapsed,
+      reducedMotion.matches,
+      encounters.active.kind,
+    );
+    if (!reducedMotion.matches)
+      Object.assign(
+        camera,
+        encounterCamera(
+          encounters.active,
+          presentation,
+          {
+            x: ship.x,
+            y: ship.y,
+            zoom: clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM),
+          },
+          WORLD.w,
+        ),
+      );
+    encounterOverlay.style.setProperty("--encounter-bars", presentation.bars);
+    encounterOverlay.style.setProperty(
+      "--encounter-banner",
+      presentation.banner,
+    );
+  } else if (gameStarted && !currentPort && !selectedTown && !selectedMerchant)
+    checkCreatureEncounters(now);
+  // Observations belong to simulation time, independent of rendering cadence.
+  for (const merchant of merchantShips) {
+    if (
+      pointCurrentlyVisible(merchant.x, merchant.y) &&
+      isWorldCircleInViewport(merchant.x, merchant.y, 60, camera.zoom)
+    )
+      recordMerchantSighting(merchant);
+  }
+}
 function loop(now) {
   if (!fpsSampleStart || now - fpsSampleStart > 2000) {
     fpsSampleStart = now;
@@ -6601,6 +6666,17 @@ function loop(now) {
   const frameMs = now - last;
   const dt = Math.min(0.05, frameMs / 1000);
   last = now;
+  if (automation) {
+    try {
+      automation.frame(frameMs / 1000);
+    } catch (error) {
+      console.error("Automation stopped:", error);
+    }
+    render();
+    animatePortPanels(automationTime * 1000);
+    requestAnimationFrame(loop);
+    return;
+  }
   if (mapOpening?.active) mapOpening.render(now);
   else {
     if (adaptiveResolution && renderQuality.sample(frameMs)) {
@@ -6622,56 +6698,7 @@ function loop(now) {
       detectedTier = autoGraphicsTier.tier;
       applyGraphicsProfile();
     }
-    const hadEncounter = !encounterOverlay.hidden;
-    const activeEncounter = encounters.active;
-    const frame = advanceEncounter(
-      encounters,
-      Math.max(0, frameMs / 1000),
-      reducedMotion.matches,
-    );
-    if (hadEncounter && !encounters.active)
-      finishEncounterIntro(activeEncounter);
-    update(dt * frame.timeScale);
-    if (encounters.active) {
-      if (
-        encounters.active.kind === "raider" &&
-        !encounters.active.preview &&
-        game.seaRaid.raider
-      ) {
-        encounters.active.x = game.seaRaid.raider.x;
-        encounters.active.y = game.seaRaid.raider.y;
-      }
-      const presentation = encounterFrame(
-        encounters.active.elapsed,
-        reducedMotion.matches,
-        encounters.active.kind,
-      );
-      if (!reducedMotion.matches)
-        Object.assign(
-          camera,
-          encounterCamera(
-            encounters.active,
-            presentation,
-            {
-              x: ship.x,
-              y: ship.y,
-              zoom: clamp(viewportZoom * userZoom, MIN_ZOOM, MAX_ZOOM),
-            },
-            WORLD.w,
-          ),
-        );
-      encounterOverlay.style.setProperty("--encounter-bars", presentation.bars);
-      encounterOverlay.style.setProperty(
-        "--encounter-banner",
-        presentation.banner,
-      );
-    } else if (
-      gameStarted &&
-      !currentPort &&
-      !selectedTown &&
-      !selectedMerchant
-    )
-      checkCreatureEncounters(now);
+    advanceGameFrame(dt, Math.max(0, frameMs / 1000), now);
     render();
     animatePortPanels(now);
   }
@@ -7947,7 +7974,7 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
   updateHud();
   saveGameState();
 });
-document.getElementById("closePort").addEventListener("click", () => {
+function departPort() {
   const leaving = currentPort;
   document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
@@ -7963,7 +7990,8 @@ document.getElementById("closePort").addEventListener("click", () => {
     "At anchor. Drag the wheel toward open water when you are ready to cast off.",
     3,
   );
-});
+}
+document.getElementById("closePort").addEventListener("click", departPort);
 
 for (const panelId of ["portPanel", "townPanel", "reportPanel"]) {
   const panel = document.getElementById(panelId);
@@ -8140,7 +8168,8 @@ graphicsQualitySelect.addEventListener("change", () => {
 });
 adaptiveResolutionToggle.addEventListener("change", () => {
   adaptiveResolution = adaptiveResolutionToggle.checked;
-  localStorage.setItem(ADAPTIVE_RESOLUTION_KEY, String(adaptiveResolution));
+  if (!automationConfig)
+    localStorage.setItem(ADAPTIVE_RESOLUTION_KEY, String(adaptiveResolution));
   renderQuality = createRenderQuality();
   autoGraphicsTier.reset();
   applyGraphicsProfile();
@@ -8205,6 +8234,7 @@ function readDebugSettings() {
   };
 }
 function saveDebugSettings() {
+  if (automationConfig) return;
   try {
     localStorage.setItem(
       DEBUG_SETTINGS_KEY,
@@ -8231,7 +8261,9 @@ function applyDebugSettings() {
 }
 let storedDebugSettings = null;
 try {
-  storedDebugSettings = localStorage.getItem(DEBUG_SETTINGS_KEY);
+  storedDebugSettings = automationConfig
+    ? null
+    : localStorage.getItem(DEBUG_SETTINGS_KEY);
 } catch {
   // Fall back to defaults when preference storage cannot be read.
 }
@@ -8534,7 +8566,81 @@ addEventListener("resize", () => {
   mapOpening.resize();
 });
 
-window.setInterval(saveGameState, 5000);
+if (automationConfig) {
+  mapOpening.finish();
+  encounterSoundEnabled = false;
+  for (const id of ["newGameButton", "saveGameButton", "loadGameButton"]) {
+    document.getElementById(id).disabled = true;
+  }
+  automation = createGameAutomation(automationConfig, {
+    game,
+    ship,
+    ports,
+    world: WORLD,
+    seaField,
+    currentPort: () => currentPort,
+    nearPort: () => nearPort,
+    inCombat: () => Boolean(pendingCombat),
+    inEncounter: () => Boolean(encounters.active),
+    dock: openPort,
+    depart: departPort,
+    trade: tradeAtPort,
+    accept: acceptContract,
+    combat: chooseCombatAction,
+    offers: (port) =>
+      game.activeContracts.length >= 3
+        ? []
+        : ensureContractOffers(port).filter(
+            (offer) =>
+              offer.destination &&
+              !contractConflict(
+                offer,
+                game.activeContracts,
+                game.factionCharter,
+              ) &&
+              cargoCount() + offer.cargoUnits <= game.holdMax,
+          ),
+    pricing: pricingOptions,
+    legalStatus: legalStatusAt,
+    sellPrice: sellPriceFor,
+    marketGoods: (port) =>
+      availableMarketGoods(
+        game.regionalEconomy[port.name],
+        productionChains,
+        Object.keys(goods),
+      ),
+    cargoCount,
+    distance: (a, b) => wrappedDistance(a.x, a.y, b.x, b.y),
+    course: (name) =>
+      plotCourse(
+        game.navigation,
+        name,
+        ports.map((port) => port.name),
+      ),
+    steer(angle, power) {
+      keys.clear();
+      input.x = Math.cos(angle);
+      input.y = Math.sin(angle);
+      input.power = power;
+    },
+    advance(dt, seconds) {
+      automationTime = seconds + dt;
+      advanceGameFrame(dt, dt, automationTime * 1000);
+    },
+    refresh() {
+      applyShipUpgrades();
+      renderPortSystems();
+      updateHud();
+    },
+    render() {
+      render();
+      animatePortPanels(automationTime * 1000);
+    },
+  });
+  window.parchmentAutomation = automation;
+}
+
+if (!automationConfig) window.setInterval(saveGameState, 5000);
 window.addEventListener("pagehide", saveGameState);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") saveGameState();

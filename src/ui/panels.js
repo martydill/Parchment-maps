@@ -908,12 +908,27 @@ function updateOrderPreview() {
 }
 
 function executeMarketOrder() {
-  syncPanelContext();
   const { key, direction, quantity } = marketSelection;
+  const result = tradeAtPort(key, direction, quantity);
+  if (!result.ok) updateOrderPreview();
+  return result;
+}
+
+// Shared by the market confirmation button and the opt-in automation API.
+export function tradeAtPort(key, direction, quantity) {
+  syncPanelContext();
+  if (!currentPort || !goods[key])
+    return { ok: false, reason: "Dock at a market and choose a known good." };
+  const listed = availableMarketGoods(
+    game.regionalEconomy[currentPort.name],
+    productionChains,
+    Object.keys(goods),
+  );
+  if (!listed.has(key) && !game.cargo[key])
+    return { ok: false, reason: "This good is not listed at this exchange." };
   const plan = marketOrder(key, direction, quantity);
   if (!plan.ok) {
-    updateOrderPreview();
-    return;
+    return plan;
   }
   if (direction === "buy") {
     plan.prices.forEach((cost) => {
@@ -992,6 +1007,7 @@ function executeMarketOrder() {
   updateHud();
   saveGameState();
   document.getElementById("orderQuantity").focus();
+  return plan;
 }
 
 export function renderLedger() {

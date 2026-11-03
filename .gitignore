@@ -1,3 +1,4 @@
 dist/
 .package-tmp/
 node_modules/
+.context/
