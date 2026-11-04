@@ -53,6 +53,8 @@ export async function runAutomation({
   seconds = 180,
   mode = "step",
   speed = 1,
+  knowledge = "known",
+  rest = "on",
   record = false,
   headed = false,
   output = resolve(root, ".context/automation"),
@@ -67,6 +69,8 @@ export async function runAutomation({
     throw new RangeError("speed must be from 0.25 to 32");
   if (!seed || seed.length > 128)
     throw new RangeError("seed must contain 1 to 128 characters");
+  if (!["known", "all"].includes(knowledge) || !["on", "off"].includes(rest))
+    throw new RangeError("Use knowledge known|all and rest on|off");
   await mkdir(output, { recursive: true });
   let server;
   let browser;
@@ -77,6 +81,8 @@ export async function runAutomation({
     seed,
     mode,
     speed,
+    knowledge,
+    rest,
     requestedSeconds: seconds,
     samples: [],
     errors: [],
@@ -110,6 +116,8 @@ export async function runAutomation({
     target.searchParams.set("automation", mode);
     target.searchParams.set("seed", seed);
     target.searchParams.set("speed", speed);
+    target.searchParams.set("knowledge", knowledge);
+    target.searchParams.set("rest", rest);
     await page.goto(target.href, { waitUntil: "load" });
     await page.waitForFunction(
       () => window.parchmentAutomation?.version === 1,
@@ -207,6 +215,8 @@ if (
       seconds: { type: "string" },
       mode: { type: "string" },
       speed: { type: "string" },
+      knowledge: { type: "string" },
+      rest: { type: "string" },
       output: { type: "string" },
       url: { type: "string" },
       record: { type: "boolean" },
@@ -217,7 +227,7 @@ if (
   });
   if (values.help) {
     console.log(
-      "npm run automate -- [--seed NAME] [--seconds 180] [--mode step|demo] [--speed 1] [--record] [--headed] [--output DIR] [--url URL] [--assert]\nOutputs report.json, final.png, and optional video. Times are simulation seconds.",
+      "npm run automate -- [--seed NAME] [--seconds 180] [--mode step|demo] [--speed 1] [--knowledge known|all] [--rest on|off] [--record] [--headed] [--output DIR] [--url URL] [--assert]\nOutputs report.json, final.png, and optional video. Times are simulation seconds.",
     );
   } else {
     try {

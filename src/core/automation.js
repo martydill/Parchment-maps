@@ -1,5 +1,6 @@
 import { normalizeAngle, wrappedDelta } from "./math.js";
 import { findSeaPath, segmentClear, smoothSeaPath } from "./navfield.js";
+import { crewReadiness, previewShoreLeave } from "./crew-readiness.js";
 
 export const AUTOMATION_DT = 1 / 30;
 export const AUTOMATION_VERSION = 1;
@@ -16,7 +17,32 @@ export function automationOptions(search) {
   const seed = params.get("seed") || "parchment-automation";
   if (seed.length > 128)
     throw new RangeError("seed must be at most 128 characters");
-  return { mode, seed, speed };
+  const knowledge = params.get("knowledge") || "known";
+  if (!["known", "all"].includes(knowledge))
+    throw new RangeError("knowledge must be known or all");
+  const rest = params.get("rest") || "on";
+  if (!["on", "off"].includes(rest))
+    throw new RangeError("rest must be on or off");
+  return { mode, seed, speed, knowledge, rest };
+}
+
+export function shouldAutomationRest(
+  operations,
+  coins,
+  day,
+  contracts,
+  arrivalDays,
+) {
+  if (!crewReadiness(operations).needsRest) return false;
+  const preview = previewShoreLeave(operations, coins, day, contracts);
+  if (!preview.ok || coins - preview.cost < 40) return false;
+  return contracts.every(
+    (contract) =>
+      day +
+        1 +
+        (contract.destination ? arrivalDays[contract.destination] : 0) <=
+      contract.deadline,
+  );
 }
 
 // The simulation advances only here in automation mode. Animation frames and

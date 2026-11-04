@@ -1,6 +1,7 @@
 import { illustrationMarkup, menuGlyph, heraldry } from "./port-art.js?v=4";
 // Presentation state belongs to the port visit, never to the persisted voyage.
 const collections = new Map();
+const collectionSelections = new WeakMap();
 const activities = new Map();
 const readers = new Set();
 const readingObserver = new ResizeObserver(() => refreshReaders());
@@ -20,6 +21,22 @@ const button = (label, action) => {
   node.onclick = action;
   return node;
 };
+
+export function selectCollectionEntry(root, name) {
+  return collectionSelections.get(root)?.(name) || false;
+}
+
+function revealCollectionDetail(detail) {
+  if (!matchMedia("(max-width: 800px), (max-height: 559px)").matches) return;
+  const body = detail.closest(".port-body");
+  const actions = detail.querySelector(".workspace-actions");
+  const target =
+    body && detail.offsetHeight > body.clientHeight && actions?.children.length
+      ? actions
+      : detail;
+  detail.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "nearest" });
+}
 
 export function activatePortActivity(section, name) {
   if (!section) return;
@@ -202,7 +219,10 @@ function cardDetail(root, card, name, art) {
         vessel: "Shipwright’s catalogue",
         crew: "Crew complement",
         goods: "Cargo manifest",
-        guild: "Sealed commission",
+        guild:
+          card.dataset.contractKind === "survey"
+            ? "Survey commission"
+            : "Sealed commission",
         rumors: "Whisper network",
         workshops: "Local industry",
       }[art.kind] || "Captain’s register",
@@ -316,6 +336,7 @@ export function pagedCollection(
   pager.setAttribute("aria-label", "Collection pages");
   const detail = element("section", "collection-detail");
   detail.setAttribute("aria-label", "Selected entry details");
+  detail.tabIndex = -1;
   const count = element("span", "", `${records.length} entries`);
   const controls = element("div");
   const previous = button("←", () => changePage(-1));
@@ -342,6 +363,7 @@ export function pagedCollection(
         list
           .querySelector('[aria-pressed="true"]')
           ?.focus({ preventScroll: true });
+        revealCollectionDetail(detail);
       });
       row.className = "collection-row";
       row.setAttribute("aria-pressed", String(state.selected === record.id));
@@ -396,6 +418,16 @@ export function pagedCollection(
     show();
     (delta > 0 ? next : previous).focus({ preventScroll: true });
   }
+  collectionSelections.set(root, (name) => {
+    const index = records.findIndex((record) => record.name === name);
+    if (index < 0) return false;
+    state.page = Math.floor(index / pageSize);
+    state.selected = records[index].id;
+    show();
+    detail.focus({ preventScroll: true });
+    revealCollectionDetail(detail);
+    return true;
+  });
   show();
 }
 
@@ -603,6 +635,14 @@ export function refreshPortWorkspaces({
       passageActions[2].onclick,
     );
     leave.className = "parchment";
+    leave.disabled = passageActions[2].disabled;
+    card.append(
+      element(
+        "p",
+        "small",
+        readiness.querySelector("#shoreLeavePreview").textContent,
+      ),
+    );
     card.append(leave);
   });
   pagedCollection(byId("crewWorkspace"), crew, {
@@ -618,13 +658,14 @@ export function refreshPortWorkspaces({
   );
   const reading = element("div", "workspace-reading");
   readingPages(reading, [
+    readiness.querySelector("#shoreLeavePreview").textContent,
     status,
     ...[...readiness.querySelectorAll(".standing-row")].map(
       (node) => node.textContent,
     ),
   ]);
   const actions = element("div", "workspace-actions");
-  actions.append(...passageActions.slice(0, 2));
+  actions.append(...passageActions);
   detail.append(reading, actions);
   passage.replaceChildren(plans, detail);
 

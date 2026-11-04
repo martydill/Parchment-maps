@@ -3956,7 +3956,6 @@ button.parchment {
   }
   .market-order {
     position: static;
-    grid-row: 1;
   }
 
   .atlas-overview-grid {
@@ -4485,7 +4484,7 @@ body.port-open {
 }
 #portPanel .port-atlas {
   display: grid;
-  grid-template-rows: minmax(74px, auto) 44px minmax(0, 1fr) 58px;
+  grid-template-rows: minmax(74px, auto) 44px auto minmax(0, 1fr) auto;
   width: 100%;
   height: 100dvh;
   max-height: 100dvh;
@@ -5457,6 +5456,15 @@ body.port-open {
   .workspace-catalog,
   .exchange-catalog {
     height: 390px;
+  }
+  /* Let short lists end at their last entry instead of reserving six rows. */
+  #contractBoard .workspace-catalog {
+    height: auto;
+  }
+  #contractBoard .collection-rows {
+    flex: none;
+    grid-template-rows: none;
+    grid-auto-rows: minmax(64px, auto);
   }
   .collection-detail,
   .city-inspector,
@@ -6480,5 +6488,155 @@ body.port-open {
   }
   .chart-paper {
     padding: 10px;
+  }
+}
+
+/* Keep crew decisions and arrival accounts within the existing instruments. */
+#crewReadiness {
+  pointer-events: auto;
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 4px 0;
+  border: 0;
+  border-top: 1px solid #9b684b70;
+  background: transparent;
+  color: #813f27;
+  text-align: left;
+  font: 11px/1.35 var(--font-ui);
+  cursor: pointer;
+}
+#crewReadiness[hidden] {
+  display: none;
+}
+#portPanel .port-header {
+  grid-row: 1;
+}
+#portPanel .port-tabs {
+  grid-row: 2;
+}
+#portPanel .harbor-brief {
+  grid-row: 3;
+}
+#portPanel .port-body {
+  grid-row: 4;
+}
+#portPanel .departure-bar {
+  grid-row: 5;
+}
+.harbor-brief {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 26px;
+  border-bottom: 1px solid #a68b6260;
+  flex-shrink: 0;
+}
+.harbor-brief button {
+  border: 0;
+  background: transparent;
+  color: #674928;
+  text-align: left;
+  font: 12px/1.35 var(--font-ui);
+  cursor: pointer;
+}
+.harbor-suggestion {
+  flex: 1;
+}
+.harbor-suggestion span {
+  display: block;
+  font-size: 11px;
+}
+.shore-leave-preview {
+  font: 12px/1.5 var(--font-ui);
+  color: #755735;
+}
+#portPanel .departure-metrics {
+  flex-wrap: wrap;
+}
+.voyage-receipt {
+  border-bottom: 1px solid #a68b6260;
+  padding: 12px 0;
+}
+.voyage-receipt summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.voyage-receipt p {
+  font-size: 12px;
+}
+.voyage-receipt dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 18px;
+  font-size: 13px;
+}
+.voyage-receipt dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#voyageLedger .voyage-receipt dt:last-of-type,
+#voyageLedger .voyage-receipt dd:last-of-type {
+  font-weight: 600;
+}
+@media (max-width: 800px), (max-height: 559px) {
+  .harbor-brief {
+    padding: 6px 14px;
+    gap: 8px;
+  }
+  .harbor-suggestion span {
+    font-size: 10px;
+  }
+  #arrivalReceipt {
+    max-width: 45%;
+    font-size: 11px;
+  }
+}
+
+/* Landscape phones keep reading space by sharing the header and footer rows. */
+@media (max-height: 559px) and (min-width: 600px) {
+  #portPanel .port-header {
+    flex-wrap: nowrap;
+    padding: 8px 14px;
+  }
+  #portPanel .port-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #portPanel .port-identity > .town-kicker {
+    display: none;
+  }
+  #portPanel .port-header h2 {
+    font-size: 20px;
+    margin: 0;
+  }
+  #portPanel #portOfficersButton {
+    margin: 0;
+  }
+  #portPanel .port-grid {
+    width: auto;
+  }
+  #portPanel .departure-bar {
+    flex-wrap: nowrap;
+    padding: 6px 14px;
+  }
+  #portPanel .departure-readiness {
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 10px;
+  }
+  #portPanel .departure-readiness select {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  #portPanel .departure-metrics {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  #portPanel .departure-status {
+    grid-column: 2;
+    grid-row: 2;
   }
 }

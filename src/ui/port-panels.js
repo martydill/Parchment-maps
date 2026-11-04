@@ -33,7 +33,6 @@ import {
   portRecruitmentPool,
   recruitCrew,
   CREW_ROLES,
-  takeShoreLeave,
 } from "../core/crew.js";
 import {
   calculateShipIdentity,
@@ -65,7 +64,8 @@ import {
 } from "../core/crises.js";
 import { intelEffectText } from "../core/intelligence.js";
 import { voyageWarnings } from "../core/guidance.js";
-import { clamp as clampNumber } from "../core/math.js";
+import { previewShoreLeave } from "../core/crew-readiness.js";
+import { recordVoyageEntry } from "../core/voyage-ledger.js";
 import { RUMOR_COST } from "../core/rumors.js";
 import { goods, productionChains } from "../world-data.js";
 import { PORT_NAMES } from "../names.js";
@@ -84,11 +84,7 @@ let currentLawText, canPassConvoyLaw, passConvoyLaw;
 let ensureContractOffers, bestTradeOpportunity, buyRumorLead;
 let renderPortSystems, updateHud;
 let cargoCapacities, activeShipClass, cargoCount, operationalShipStats;
-let routesFrom,
-  orientRoute,
-  applyShipUpgrades,
-  advanceDays,
-  currentVisibilityKm;
+let routesFrom, orientRoute, applyShipUpgrades, currentVisibilityKm;
 let ensureIntelOffers, buyIntel, showIntelReport;
 
 export function configurePortPanels(context) {
@@ -123,7 +119,6 @@ function syncPortPanelContext() {
     routesFrom,
     orientRoute,
     applyShipUpgrades,
-    advanceDays,
     currentVisibilityKm,
     ensureIntelOffers,
     buyIntel,
@@ -756,6 +751,12 @@ export function renderReadiness() {
       if (!result.ok || !result.repaired) return;
       game.operations = result.operations;
       game.coins = result.coins;
+      recordVoyageEntry(
+        game.voyageLedger,
+        "repairs",
+        result.repaired * SHIP_COMPONENTS[key].repairCost,
+        currentPort.name,
+      );
       // Fresh canvas patches show on the hull at sea after a yard repair.
       game.operations.patchedDay = game.day;
       applyShipUpgrades();
@@ -801,6 +802,12 @@ export function renderReadiness() {
     const result = buyProvisions(game.operations, game.coins);
     game.operations = result.operations;
     game.coins = result.coins;
+    recordVoyageEntry(
+      game.voyageLedger,
+      "supplies",
+      result.purchased * 3,
+      currentPort.name,
+    );
     showMessage(`Loaded ${result.purchased} provisions.`);
     renderPortSystems();
     updateHud();
@@ -810,9 +817,16 @@ export function renderReadiness() {
   repairAll.textContent = "Repair weakest systems · 2 per point";
   repairAll.disabled = game.coins < 2 || ops.condition >= 100;
   repairAll.onclick = () => {
+    const before = game.coins;
     const result = repairOperations(game.operations, game.coins);
     game.operations = result.operations;
     game.coins = result.coins;
+    recordVoyageEntry(
+      game.voyageLedger,
+      "repairs",
+      before - result.coins,
+      currentPort.name,
+    );
     if (result.repaired > 0) game.operations.patchedDay = game.day;
     applyShipUpgrades();
     showMessage(
@@ -824,18 +838,24 @@ export function renderReadiness() {
   actions.append(provision, repairAll);
   const leave = document.createElement("button");
   leave.className = "parchment";
-  leave.textContent = "Grant shore leave";
+  leave.id = "grantShoreLeave";
+  const preview = previewShoreLeave(
+    ops,
+    game.coins,
+    game.day,
+    game.activeContracts,
+  );
+  leave.textContent = `Grant shore leave · ${preview.cost} crowns · 1 day`;
+  leave.disabled = !preview.ok;
   leave.onclick = () => {
-    const result = takeShoreLeave(game.operations.crew, game.coins);
+    const result = panelContext.grantShoreLeave();
     if (!result.ok) return showMessage(result.reason);
-    game.operations.crew = result.crew;
-    game.coins = result.coins;
-    game.operations.morale = clampNumber(game.operations.morale + 8, 0, 100);
-    advanceDays(result.days);
-    showMessage(`Shore leave restored the crew · ${result.cost} crowns.`);
-    renderPortSystems();
-    updateHud();
   };
+  const leavePreview = document.createElement("p");
+  leavePreview.id = "shoreLeavePreview";
+  leavePreview.className = "shore-leave-preview";
+  leavePreview.textContent = `After rest: ${Math.round(preview.moraleAfter)} morale · ${Math.round(preview.fatigueAfter)} fatigue. ${preview.wages ? `${preview.wages} crowns in wages also fall due. ` : ""}${preview.unpaidWages ? `${preview.unpaidWages} crowns of wages would go unpaid. ` : ""}${game.activeContracts.length ? "Uses 1 day of commission time. " : ""}${preview.urgentContracts.length ? `Deadline warning: ${preview.urgentContracts.join(", ")}. ` : ""}${!preview.ok ? "Not enough crowns for shore leave." : ""}`;
+  root.append(leavePreview);
   actions.append(leave);
   root.append(actions);
   const recruiting = document.createElement("div");

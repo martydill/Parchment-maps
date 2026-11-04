@@ -8,6 +8,7 @@ import {
   createContractOffer,
   createSurveyContractOffer,
   surveyContractProgress,
+  surveyContractBrief,
   surveyContractThemeCount,
 } from "../src/core/contracts.js";
 
@@ -15,6 +16,57 @@ const ports = {
   Near: { name: "Near", x: 100, y: 0 },
   Far: { name: "Far", x: 1000, y: 0 },
 };
+
+test("survey briefs explain discovery dispositions and recorded progress", () => {
+  const contract = {
+    kind: "survey",
+    title: "Catalogue rare ecosystems",
+    survey: {
+      description: "Catalogue rare ecosystems for naturalists.",
+      target: "discovery",
+      disposition: "share",
+      required: 2,
+      completed: ["ecosystem-a"],
+    },
+  };
+  const before = structuredClone(contract);
+  assert.deepEqual(surveyContractBrief(contract), {
+    description: "Catalogue rare ecosystems for naturalists.",
+    instruction: "Find matching discoveries and choose “Share with faction”.",
+    progress: "1/2 sites recorded",
+  });
+  for (const [disposition, label] of [
+    ["secret", "Keep secret"],
+    ["sell", "Sell the chart"],
+  ])
+    assert.match(
+      surveyContractBrief({
+        ...contract,
+        survey: { ...contract.survey, disposition },
+      }).instruction,
+      new RegExp(label),
+    );
+  assert.deepEqual(contract, before);
+});
+
+test("survey briefs distinguish expeditions and tolerate missing legacy metadata", () => {
+  assert.equal(surveyContractBrief({ destination: "Harbor" }), null);
+  assert.deepEqual(
+    surveyContractBrief({ kind: "survey", title: "Survey the coast" }),
+    {
+      description: "Survey the coast",
+      instruction: "Find and resolve matching discoveries.",
+      progress: "0/1 sites recorded",
+    },
+  );
+  assert.equal(
+    surveyContractBrief({
+      kind: "survey",
+      survey: { target: "exploration", required: 3, completed: [] },
+    }).instruction,
+    "Complete shore expeditions at matching sites.",
+  );
+});
 
 function offer(overrides = {}) {
   return createContractOffer({

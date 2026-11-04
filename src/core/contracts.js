@@ -1,5 +1,6 @@
 import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 import { estimateVoyageDays } from "./voyage-time.js";
+import { DISCOVERY_DISPOSITIONS } from "./discoveries.js";
 
 export function createContractOffer({
   origin,
@@ -68,6 +69,22 @@ export function contractOffersForPort({
 
 export function contractCargoCount(contracts) {
   return contracts.reduce((sum, contract) => sum + contract.cargoUnits, 0);
+}
+
+export function surveyContractBrief(contract) {
+  if (contract.kind !== "survey") return null;
+  const survey = contract.survey || {};
+  const disposition = DISCOVERY_DISPOSITIONS[survey.disposition];
+  return {
+    description: survey.description || contract.title,
+    instruction:
+      survey.target === "exploration"
+        ? "Complete shore expeditions at matching sites."
+        : disposition
+          ? `Find matching discoveries and choose “${disposition.label}”.`
+          : "Find and resolve matching discoveries.",
+    progress: `${survey.completed?.length || 0}/${survey.required ?? 1} sites recorded`,
+  };
 }
 
 /* node:coverage disable */

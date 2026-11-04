@@ -3,9 +3,10 @@
 Automation runs the actual browser game: sailing physics, wrapped navigation,
 markets, commissions, customs, weather, wear, wages, and combat. A merchant policy
 chooses voyages, follows land-avoiding courses, sells cargo, accepts commissions,
-buys supplies, repairs the ship, and attempts to flee combat. It uses current
-prices across the world to rank opportunities; this is a tuning baseline with
-full market knowledge, rather than a model of a new human player.
+buys supplies, repairs the ship, grants shore leave when deadlines allow, and
+attempts to flee combat. By default it uses remembered prices from visited ports
+and purchased market circulars, with a conservative allowance for aging quotes.
+It only chooses revealed ports or destinations named by available commissions.
 
 The game remains dependency-free at runtime. Playwright is a development dependency
 for launching Chromium, taking screenshots, and recording video.
@@ -16,6 +17,18 @@ for launching Chromium, taking screenshots, and recording video.
 npm install
 npx playwright install chromium
 npm run automate -- --seed baseline --seconds 600 --output .context/baseline
+```
+
+Use `--knowledge all` for the original policy's full market knowledge and
+`--rest off` to disable automatic shore leave. The defaults are `--knowledge known`
+and `--rest on`. Shore leave occurs at most once per harbor visit, retains a
+40-crown reserve, and checks that active commissions can still arrive on time.
+These options also work as query parameters in an interactive demo.
+
+```sh
+npm run automate -- --seed baseline --seconds 600 --knowledge known --rest on --output .context/known-rest
+npm run automate -- --seed baseline --seconds 600 --knowledge known --rest off --output .context/known-no-rest
+npm run automate -- --seed baseline --seconds 600 --knowledge all --rest off --output .context/omniscient
 ```
 
 The runner starts a temporary HTTP server on a free loopback port, launches a
@@ -51,7 +64,7 @@ npm run automate -- --url http://localhost:8000 --seconds 180 --assert
 ```
 
 Samples contain the simulation tick, destination, money, elapsed game days,
-distance, port visits, completed/failed contracts, ship condition, provisions,
+distance, port visits, completed/failed contracts, ship condition, provisions, morale, fatigue, shore-leave days,
 and cumulative action counts. The final snapshot also contains a copy of the
 game and ship state, port coordinates, world dimensions, and the most recent 500
 action events. Event IDs and cumulative counts continue beyond that limit.
@@ -111,16 +124,17 @@ Seed strings accept up to 128 characters.
 `command(action)` returns `{ ok: true, ... }` or `{ ok: false, reason }` and records
 the result. Commands act immediately; pausing playback does not prevent them.
 
-| Action     | Fields                         | Behavior                                                                              |
-| ---------- | ------------------------------ | ------------------------------------------------------------------------------------- |
-| `steer`    | `angle`, `power`               | Set a heading in radians and power from 0 to 1. Input persists until replaced.        |
-| `dock`     | —                              | Dock at the harbor currently in range.                                                |
-| `depart`   | —                              | Close the current harbor and prepare to cast off.                                     |
-| `course`   | `port`                         | Plan a land-avoiding course to a named port. Autoplay follows it while at sea.        |
-| `trade`    | `key`, `direction`, `quantity` | Buy or sell through normal market order validation while docked.                      |
-| `contract` | `id`                           | Accept an available, compatible delivery commission while docked.                     |
-| `supply`   | —                              | Buy provisions toward 18 and repair damage while retaining a 40-crown repair reserve. |
-| `combat`   | `action`                       | Choose `fight`, `flee`, `parley`, or `surrender` during combat.                       |
+| Action     | Fields                         | Behavior                                                                                    |
+| ---------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `steer`    | `angle`, `power`               | Set a heading in radians and power from 0 to 1. Input persists until replaced.              |
+| `dock`     | —                              | Dock at the harbor currently in range.                                                      |
+| `depart`   | —                              | Close the current harbor and prepare to cast off.                                           |
+| `course`   | `port`                         | Plan a land-avoiding course to a named port. Autoplay follows it while at sea.              |
+| `trade`    | `key`, `direction`, `quantity` | Buy or sell through normal market order validation while docked.                            |
+| `contract` | `id`                           | Accept an available, compatible delivery commission while docked.                           |
+| `supply`   | —                              | Buy provisions toward 18 and repair damage while retaining a 40-crown repair reserve.       |
+| `rest`     | —                              | Grant one day of shore leave through the same cost, wage, and recovery rules as the player. |
+| `combat`   | `action`                       | Choose `fight`, `flee`, `parley`, or `surrender` during combat.                             |
 
 To find contract IDs, inspect `snapshot().game.contractOffers[currentPort].offers`.
 To choose goods and inspect local supply and demand, use `snapshot().game.economy`.
@@ -147,3 +161,14 @@ play and saving, and a short demo recording. Artifacts go under
 `.context/automation-tests/`. Unit tests cover the clock, options, telemetry,
 failures, voyage selection, and navigation around islands and across the world
 seam. Run the regular formatter, linter, tests, and coverage checks as well.
+
+Run `npm run test:ui` for desktop keyboard and phone touch checks of survey
+instructions, commission course selection, and market purchases. Screenshots go
+under `.context/harbor-ui-tests/`.
+
+Run `npm run test:gameplay` for crew warning and shore-leave previews, deadline
+warnings, contextual ship suggestions, legacy save migration, and real voyage
+receipt updates after trading and resting. Artifacts go to `.context/gameplay-tests/`.
+
+See [gameplay tuning suggestions](./gameplay-tuning.md) for findings from longer
+merchant voyages and proposed crew, economy, and progression experiments.

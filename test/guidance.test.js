@@ -76,6 +76,7 @@ test("currentObjective warns under-provisioned captains and advances milestones"
     currentPortName: PORT_NAMES.orvessaQuay,
   });
   assert.equal(preparation.action, "vessel");
+  assert.match(preparation.detail, /Dock → Passage/);
   assert.equal(preparation.urgency, "danger");
 
   assert.equal(
@@ -137,6 +138,76 @@ test("currentObjective warns under-provisioned captains and advances milestones"
     }).urgency,
     "complete",
   );
+});
+
+test("survey objectives explain the task without a delivery destination", () => {
+  const survey = {
+    kind: "survey",
+    title: "Catalogue rare ecosystems",
+    destination: null,
+    deadline: 6,
+    survey: {
+      target: "discovery",
+      disposition: "share",
+      required: 2,
+      completed: ["reef-garden"],
+    },
+  };
+  for (const location of [
+    {},
+    { currentPortName: PORT_NAMES.orvessaQuay },
+    { nearPortName: PORT_NAMES.orvessaQuay },
+  ]) {
+    const objective = currentObjective({
+      game: game({ activeContracts: [survey] }),
+      ...location,
+    });
+    assert.equal(objective.id, "survey-contract");
+    assert.equal(objective.title, survey.title);
+    assert.equal(objective.destination, null);
+    assert.equal(objective.action, "contracts");
+    assert.equal(objective.urgency, "normal");
+    assert.match(objective.detail, /Share with faction/);
+    assert.match(objective.detail, /1\/2 sites recorded · Due Day 6/);
+    assert.doesNotMatch(objective.detail, /null|undefined/);
+  }
+  const delivery = {
+    destination: "Near",
+    cargoName: "urgent cargo",
+    deadline: 3,
+  };
+  assert.equal(
+    currentObjective({
+      game: game({ activeContracts: [survey, delivery] }),
+    }).destination,
+    "Near",
+  );
+  assert.equal(
+    currentObjective({
+      game: game({ day: 5, activeContracts: [survey] }),
+    }).urgency,
+    "danger",
+  );
+});
+
+test("commission and law guidance names visible harbor tabs", () => {
+  for (const location of [
+    {},
+    { nearPortName: PORT_NAMES.orvessaQuay },
+    { currentPortName: "New Home", homePortName: "New Home" },
+  ]) {
+    const objective = currentObjective({ game: game(), ...location });
+    assert.match(objective.detail, /Guildhall → Contracts/);
+    if (location.currentPortName) assert.match(objective.detail, /at New Home/);
+  }
+  const objective = currentObjective({
+    game: game({
+      completedContracts: 3,
+      milestone: { shortageExploited: true, lawChanged: false },
+      factionStanding: { [FACTION_NAMES.syrrelwakeOarwrightPact]: 20 },
+    }),
+  });
+  assert.match(objective.detail, /Council → Factions & law/);
 });
 
 test("currentObjective handles deadlines, multiple commissions, and missing legacy fields", () => {

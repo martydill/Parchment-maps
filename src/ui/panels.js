@@ -2,6 +2,10 @@ import { seasonAtDay, SEASON_LENGTH } from "../core/seasons.js";
 import { goodsIllustration } from "./port-art.js?v=4";
 import { paginateMarket } from "./port-workspace.js?v=5";
 import { planMarketOrder } from "../core/market-order.js";
+import { surveyContractBrief } from "../core/contracts.js";
+import { crewReadiness } from "../core/crew-readiness.js";
+import { recordVoyageEntry } from "../core/voyage-ledger.js";
+import { renderVoyageLedger, renderMarketNotes } from "./voyage-receipt.js";
 import { updateElementProperty } from "./dom.js";
 import { openExpeditionPanel } from "./expedition-panel.js?v=2";
 import {
@@ -211,6 +215,14 @@ function syncPanelContext() {
 
 export function updateHud() {
   syncPanelContext();
+  const readiness = crewReadiness(game.operations);
+  const crewButton = document.getElementById("crewReadiness");
+  updateElementProperty(crewButton, "hidden", !readiness.needsRest);
+  updateElementProperty(
+    crewButton,
+    "textContent",
+    `Crew: ${Math.round(readiness.morale)} morale · ${Math.round(readiness.fatigue)} fatigue · Shore leave →`,
+  );
   const request = game.specialists.officers.find((officer) =>
     ["offered", "accepted"].includes(officer.ambition.status),
   );
@@ -328,12 +340,14 @@ export function updateHud() {
         : objective.action === "vessel"
           ? "Prepare at dock →"
           : objective.action === "politics"
-            ? "Open politics →"
-            : objective.action === "quests"
-              ? "Open quests & goals →"
-              : objective.action === "ledger"
-                ? "Open ledger →"
-                : "Open chart →",
+            ? "Open council →"
+            : objective.action === "contracts"
+              ? "Review survey →"
+              : objective.action === "quests"
+                ? "Open quests & goals →"
+                : objective.action === "ledger"
+                  ? "Open ledger →"
+                  : "Open chart →",
   );
   let destination = getPortByName(game.navigation.destination);
   if (destination && nearPort?.name === destination.name) {
@@ -527,20 +541,24 @@ export function renderContractList(root, contracts, active = false) {
     return;
   }
   contracts.forEach((contract) => {
+    const survey = surveyContractBrief(contract);
     const card = document.createElement("div");
     card.className = "contract-card" + (active ? " active" : "");
+    card.dataset.contractKind = survey ? "survey" : "delivery";
     const head = document.createElement("div");
     head.className = "contract-head";
     head.innerHTML =
       "<b>" +
       contract.title +
       '</b><span class="contract-tag">' +
-      contract.cargoUnits +
-      " hold</span>";
+      (survey ? "Survey" : contract.cargoUnits + " hold") +
+      "</span>";
     const desc = document.createElement("div");
     desc.className = "small";
     desc.textContent =
-      contract.cargoName + " · Sponsored by " + contract.faction;
+      (survey ? "" : contract.cargoName + " · ") +
+      "Sponsored by " +
+      contract.faction;
     const meta = document.createElement("div");
     meta.className = "contract-meta";
     if (active)
@@ -563,7 +581,19 @@ export function renderContractList(root, contracts, active = false) {
         " crowns</span><span>+" +
         contract.influence +
         " influence</span>";
-    card.append(head, desc, meta);
+    card.append(head);
+    if (survey) {
+      for (const text of [
+        survey.description,
+        survey.instruction,
+        survey.progress,
+      ]) {
+        const line = document.createElement("p");
+        line.textContent = text;
+        card.append(line);
+      }
+    }
+    card.append(desc, meta);
     if (!active) {
       const conflict = contractConflict(
         contract,
@@ -974,7 +1004,20 @@ export function tradeAtPort(key, direction, quantity) {
     }
   }
   game.coins = plan.coinsAfter;
+  if (direction === "sell") {
+    recordVoyageEntry(game.voyageLedger, "sales", plan.total, currentPort.name);
+    recordVoyageEntry(
+      game.voyageLedger,
+      "cargoCost",
+      plan.soldLots.reduce(
+        (sum, lot) => sum + (lot.cost ?? goods[key].base),
+        0,
+      ),
+      currentPort.name,
+    );
+  }
   economyState(currentPort, key).stock = plan.stockAfter;
+  panelContext.rememberLocalMarket();
   syncCargoCounts(game, goods);
   if (direction === "sell") updateMilestoneCompletion();
   document.getElementById("marketReceipt").textContent =
@@ -989,6 +1032,16 @@ export function tradeAtPort(key, direction, quantity) {
 
 export function renderLedger() {
   syncPanelContext();
+  renderVoyageLedger(
+    document.getElementById("voyageLedger"),
+    game.voyageLedger,
+  );
+  renderMarketNotes(
+    document.getElementById("marketNotesLedger"),
+    game.marketNotes,
+    goods,
+    game.day,
+  );
 
   renderQuestJournal(document.getElementById("questJournal"), {
     game,

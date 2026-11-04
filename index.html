@@ -316,6 +316,7 @@
             >
             <span id="dayText">Spring · Day 1</span>
           </div>
+          <button id="crewReadiness" type="button" hidden></button>
         </section>
         <div class="course-slips">
           <button id="courseCard" type="button">
@@ -495,6 +496,12 @@
               Council
             </button>
           </nav>
+          <aside
+            id="harborBrief"
+            class="harbor-brief"
+            aria-label="This harbor visit"
+            hidden
+          ></aside>
           <div class="port-body">
             <section class="port-panel" data-tab="city" role="tabpanel">
               <div class="port-section-heading">
@@ -1116,6 +1123,14 @@
             <button
               type="button"
               class="port-tab"
+              data-tab="voyages"
+              role="tab"
+            >
+              Voyages &amp; prices
+            </button>
+            <button
+              type="button"
+              class="port-tab"
               data-tab="contracts"
               role="tab"
             >
@@ -1194,6 +1209,27 @@
               <div class="detail-card">
                 <h3>Active contracts</h3>
                 <div id="activeContractsLedger"></div>
+              </div>
+            </section>
+            <section class="port-panel" data-tab="voyages" role="tabpanel">
+              <div class="detail-card">
+                <h3>Voyage receipts</h3>
+                <p class="small">
+                  Realized trading profit includes the cost of cargo sold or
+                  lost and recorded voyage expenses. Unsold cargo remains
+                  inventory. Arrival sales and upkeep update the latest receipt
+                  until the next departure. Ship purchases, fleet income, and
+                  personal investments are separate.
+                </p>
+                <div id="voyageLedger"></div>
+              </div>
+              <div class="detail-card">
+                <h3>Remembered market prices</h3>
+                <p class="small">
+                  Local sell quotes recorded on harbor visits. Prices change as
+                  markets trade; older quotes are estimates.
+                </p>
+                <div id="marketNotesLedger"></div>
               </div>
             </section>
             <section class="port-panel" data-tab="discoveries" role="tabpanel">

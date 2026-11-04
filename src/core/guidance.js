@@ -1,5 +1,7 @@
 import { PORT_NAMES, FACTION_NAMES } from "../names.js";
 import { questObjective } from "./quests.js";
+import { surveyContractBrief } from "./contracts.js";
+import { crewReadiness } from "./crew-readiness.js";
 export function currentObjective({
   game,
   currentPortName = null,
@@ -12,6 +14,17 @@ export function currentObjective({
       .slice()
       .sort((left, right) => left.deadline - right.deadline)[0];
     const daysLeft = contract.deadline - game.day;
+    const survey = surveyContractBrief(contract);
+    if (survey) {
+      return {
+        id: "survey-contract",
+        title: contract.title,
+        detail: `${survey.instruction} ${survey.progress} · Due Day ${contract.deadline}.`,
+        action: "contracts",
+        destination: null,
+        urgency: daysLeft <= 1 ? "danger" : "normal",
+      };
+    }
     if (nearPortName === contract.destination) {
       return {
         id: "deliver-contract",
@@ -32,7 +45,7 @@ export function currentObjective({
             : `Sail to ${contract.destination}`,
         detail:
           provisions < 4
-            ? `Buy provisions in Vessel before casting off. The commission is due Day ${contract.deadline}.`
+            ? `Buy provisions in Dock → Passage before casting off. The commission is due Day ${contract.deadline}.`
             : `${contract.cargoName} is aboard. Reach ${contract.destination} by Day ${contract.deadline} (${daysLeft} day${daysLeft === 1 ? "" : "s"} left).`,
         action: provisions < 4 ? "vessel" : "map",
         destination: contract.destination,
@@ -59,7 +72,7 @@ export function currentObjective({
         title: game.completedContracts
           ? "Accept another commission"
           : "Accept your first commission",
-        detail: `Open Trade and choose an ${PORT_NAMES.orvessaQuay} commission. Sealed cargo loads automatically and its destination appears on the chart.`,
+        detail: `Open Guildhall → Contracts and choose a commission at ${homePortName}. Delivery cargo loads automatically and its destination appears on the chart.`,
         action: "trade",
         destination: homePortName,
         urgency: "ready",
@@ -70,7 +83,7 @@ export function currentObjective({
         id: "dock-home",
         title: `Dock at ${PORT_NAMES.orvessaQuay}`,
         detail:
-          "The Guild contract board is waiting. Dock, open Trade, and accept a commission.",
+          "The Guild contract board is waiting. Dock, open Guildhall → Contracts, and accept a commission.",
         action: "dock",
         destination: homePortName,
         urgency: "ready",
@@ -80,7 +93,7 @@ export function currentObjective({
       id: "return-home",
       title: `Return to ${PORT_NAMES.orvessaQuay}`,
       detail:
-        "Dock at your home port and open Trade to take a Guild commission.",
+        "Dock at your home port and open Guildhall → Contracts to take a Guild commission.",
       action: "map",
       destination: homePortName,
       urgency: "normal",
@@ -113,7 +126,7 @@ export function currentObjective({
           : "Build Guild influence",
       detail:
         guildStanding >= 20
-          ? `Dock at ${PORT_NAMES.orvessaQuay} and open Politics to spend 20 influence on the convoy charter.`
+          ? `Dock at ${PORT_NAMES.orvessaQuay} and open Council → Factions & law to spend 20 influence on the convoy charter.`
           : "Complete Guild commissions until your standing reaches 20.",
       action:
         currentPortName === homePortName && guildStanding >= 20
@@ -150,6 +163,8 @@ export function voyageWarnings(operations, estimate) {
   if (operations.morale < 35) {
     warnings.push("Low morale will slow the ship and worsen voyage risks.");
   }
+  if (crewReadiness(operations).fatigue > 60)
+    warnings.push("Tired crew need shore leave before another long passage.");
   if (operations.wagesDueDay <= estimate.arrivalDay) {
     warnings.push(
       `Crew wages fall due before arrival on Day ${estimate.arrivalDay}.`,
