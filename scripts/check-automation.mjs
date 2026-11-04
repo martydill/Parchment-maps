@@ -100,6 +100,20 @@ try {
     "✓ deterministic 120-second voyages, trade/contracts, and player-save isolation",
   );
 
+  // This world used to send the pilot around a continent for two passages
+  // quoted as one day, missing both deadlines before 180 seconds.
+  await boot("coastal-stress");
+  for (let tick = 0; tick < 6000; tick += 300)
+    await page.evaluate(() => window.parchmentAutomation.step(300));
+  const coastal = await page.evaluate(() =>
+    window.parchmentAutomation.snapshot(),
+  );
+  assert.ok(coastal.metrics.visits.Mirravel >= 1);
+  assert.ok(coastal.metrics.completedContracts >= 5);
+  assert.equal(coastal.metrics.failedContracts, 0);
+  assert.equal(coastal.error, null);
+  console.log("✓ narrow-strait commissions arrive before their deadlines");
+
   await boot("another-world");
   assert.notDeepEqual(
     await page.evaluate(() => window.parchmentAutomation.snapshot().ports),
@@ -170,6 +184,39 @@ try {
   assert.notEqual(results.before.x, results.after.x);
   assert.deepEqual(await storage(), before);
   console.log("✓ custom control, action validation, and alternate world seeds");
+
+  // Closing panels must return keyboard steering to the sailing surface,
+  // while controls inside the panels retain their own arrow-key behavior.
+  for (const panel of ["register", "harbor"]) {
+    await boot();
+    await page.evaluate(() => window.parchmentAutomation.setAutoplay(false));
+    await page
+      .locator(panel === "register" ? "#shipButton" : "#dockButton")
+      .click();
+    await page.keyboard.down("ArrowRight");
+    await page.evaluate(() => window.parchmentAutomation.step(30));
+    await page.keyboard.up("ArrowRight");
+    assert.equal(
+      await page.evaluate(
+        () => window.parchmentAutomation.snapshot().ship.anchored,
+      ),
+      true,
+    );
+    if (panel === "register") await page.locator("#closeShip").click();
+    else await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "game");
+    await page.keyboard.down(panel === "register" ? "ArrowRight" : "d");
+    await page.evaluate(() => window.parchmentAutomation.step(30));
+    await page.keyboard.up(panel === "register" ? "ArrowRight" : "d");
+    const ship = await page.evaluate(
+      () => window.parchmentAutomation.snapshot().ship,
+    );
+    assert.equal(ship.anchored, false);
+    assert.ok(ship.speed > 0);
+  }
+  console.log(
+    "✓ keyboard sailing resumes after closing the register and leaving port with Escape",
+  );
 
   // Normal play still starts and accepts keyboard input without publishing API.
   const normal = await browser.newContext({

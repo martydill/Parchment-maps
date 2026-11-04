@@ -19,7 +19,6 @@ import { cultivateOfficial } from "../core/jurisdictions.js";
 import {
   factionPrivilege,
   routePlanEffects,
-  estimateVoyageReadiness,
   ROUTE_PLANS,
   buyProvisions,
   repairOperations,
@@ -28,7 +27,6 @@ import {
   adjustedIntelCost,
 } from "../core/operations.js";
 import {
-  crewVoyageModifiers,
   crewWeeklyWage,
   portRecruitmentPool,
   recruitCrew,
@@ -50,7 +48,6 @@ import {
   investmentCost,
   investInIndustry,
 } from "../core/regional.js";
-import { pathLength } from "../core/routes.js";
 import {
   commissionFleetShip,
   FLEET_COMMISSION_FITTING_FEE,
@@ -83,8 +80,12 @@ let resolveCrisisIntervention, describeCargoRequirements, activeEventsAt;
 let currentLawText, canPassConvoyLaw, passConvoyLaw;
 let ensureContractOffers, bestTradeOpportunity, buyRumorLead;
 let renderPortSystems, updateHud;
-let cargoCapacities, activeShipClass, cargoCount, operationalShipStats;
-let routesFrom, orientRoute, applyShipUpgrades, currentVisibilityKm;
+let cargoCapacities, activeShipClass, cargoCount;
+let routesFrom,
+  portVoyageEstimate,
+  getPortByName,
+  applyShipUpgrades,
+  currentVisibilityKm;
 let ensureIntelOffers, buyIntel, showIntelReport;
 
 export function configurePortPanels(context) {
@@ -115,9 +116,9 @@ function syncPortPanelContext() {
     cargoCapacities,
     activeShipClass,
     cargoCount,
-    operationalShipStats,
     routesFrom,
-    orientRoute,
+    portVoyageEstimate,
+    getPortByName,
     applyShipUpgrades,
     currentVisibilityKm,
     ensureIntelOffers,
@@ -701,25 +702,13 @@ export function renderReadiness() {
   syncPortPanelContext();
   const root = document.getElementById("voyageReadiness");
   const ops = game.operations;
-  const stats = operationalShipStats();
-  const crewModifiers = crewVoyageModifiers(ops.crew);
   const routePlan = routePlanEffects(ops.routePlan);
-  const readinessStats = {
-    ...stats,
-    routePlan: routePlan.id,
-    stormResistance: stats.stormResistance * crewModifiers.stormResistance,
-    crewProvisionMultiplier: crewModifiers.provisionMultiplier,
-  };
   const nearbyRoutes = routesFrom(currentPort.name);
   const estimates = nearbyRoutes.map((route) => {
     const destination = route.a === currentPort.name ? route.b : route.a;
-    const distance = pathLength(
-      orientRoute(route, currentPort.name, destination),
-    );
-    const estimate = estimateVoyageReadiness(
-      distance,
-      readinessStats,
-      routePlan.id,
+    const estimate = portVoyageEstimate(
+      currentPort,
+      getPortByName(destination),
     );
     return {
       destination,

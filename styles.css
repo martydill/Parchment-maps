@@ -5457,6 +5457,29 @@ body.port-open {
   .exchange-catalog {
     height: 390px;
   }
+  #portPanel .exchange-catalog {
+    height: auto;
+  }
+  #portPanel #market {
+    flex: none;
+    grid-template-rows: none;
+    grid-auto-rows: minmax(64px, auto);
+    padding: 0 8px;
+  }
+  #portPanel .exchange-row {
+    grid-template-columns: minmax(0, 1fr) 43px 43px;
+  }
+  #portPanel .exchange-good {
+    padding: 10px 7px;
+    gap: 7px;
+  }
+  #portPanel .exchange-good b {
+    font-size: 13px;
+  }
+  #portPanel .exchange-good > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   /* Let short lists end at their last entry instead of reserving six rows. */
   #contractBoard .workspace-catalog {
     height: auto;

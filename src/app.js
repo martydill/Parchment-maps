@@ -1,5 +1,6 @@
 import { automationOptions } from "./core/automation.js";
 import { createGameAutomation } from "./automation.js";
+import { createPassagePlanner } from "./core/passages.js";
 import { crewReadiness, previewShoreLeave } from "./core/crew-readiness.js";
 import { normalizeMarketNotes } from "./core/market-memory.js";
 import {
@@ -1495,6 +1496,8 @@ for (const route of merchantRoutePaths) {
 // any lane segment that crosses land around it. Rivals, the player's fleet (which
 // reuses these same lanes), and the minimap overlay all consume the result.
 const seaField = buildSeaField(lands, { width: WORLD.w, height: WORLD.h });
+const passagePlanner = createPassagePlanner(seaField);
+const passageDistances = new Map();
 const planCourse = createCoursePlanner(
   buildSeaField(lands, {
     width: WORLD.w,
@@ -2270,10 +2273,8 @@ function makeContractOffer(origin, index) {
     distanceBetween: (destination, source) =>
       routeDistanceBetween(source.name, destination.name) ??
       wrappedDistance(destination.x, destination.y, source.x, source.y),
-    estimateDays: (distance) =>
-      estimateVoyageDays(distance, {
-        maxSpeed: operationalShipStats().maxSpeed,
-      }),
+    estimateDays: (_distance, { origin: source, destination }) =>
+      portVoyageEstimate(source, destination).days,
   });
   game.contractSerial = result.nextSerial;
   return result.offer;
@@ -2298,6 +2299,15 @@ function ensureContractOffers(port) {
         : makeContractOffer(port, index),
   });
   game.contractOffers[port.name] = cache;
+  // Refresh unaccepted legacy offers and quotes after ship or route-plan changes.
+  // Existing commissions retain their agreed deadlines.
+  for (const offer of cache.offers) {
+    if (offer.destination)
+      offer.estimatedDays = portVoyageEstimate(
+        port,
+        getPortByName(offer.destination),
+      ).days;
+  }
   return cache.offers;
 }
 function contractCargoCount() {
@@ -3917,6 +3927,7 @@ const panelContext = {
   localCurrent,
   hullConditionReadout,
   operationalShipStats,
+  portVoyageEstimate,
   PORT_NAMES,
   portEvolution,
   productionChains,
@@ -4152,9 +4163,17 @@ function marketAssessment(port, key) {
 
 function portVoyageEstimate(origin, destination) {
   const laneDistance = routeDistanceBetween(origin.name, destination.name);
-  const distance =
-    laneDistance ??
-    wrappedDistance(origin.x, origin.y, destination.x, destination.y);
+  const key = `${origin.x},${origin.y}:${destination.x},${destination.y}`;
+  let passageDistance = passageDistances.get(key);
+  if (passageDistance === undefined) {
+    passageDistance =
+      passagePlanner.plan(origin, destination)?.distance ?? null;
+    passageDistances.set(key, passageDistance);
+  }
+  const direct = passageDistance === null && laneDistance === null;
+  const distance = direct
+    ? wrappedDistance(origin.x, origin.y, destination.x, destination.y)
+    : Math.max(passageDistance ?? 0, laneDistance ?? 0);
   const stats = operationalShipStats();
   const crew = crewVoyageModifiers(game.operations.crew);
   return {
@@ -4168,7 +4187,7 @@ function portVoyageEstimate(origin, destination) {
       game.operations.routePlan,
     ),
     distance: Math.round(distance),
-    direct: laneDistance === null,
+    direct,
   };
 }
 
@@ -4515,7 +4534,7 @@ function renderTownOverview(port) {
     ...port.factions.map((f) => game.factionStanding[f.name] || 0),
   );
   const privilege = factionPrivilege(standing);
-  root.innerHTML = `<div class="atlas-overview-grid"><article class="atlas-opportunity"><div class="town-kicker">A reason to call here</div><h3>${reason}</h3><p>${detail}</p><button class="parchment" type="button" data-town-section="market">Inspect prices →</button></article><article class="atlas-passage"><div class="town-kicker">Captain’s passage</div><h3>${atPort ? "You are in this harbor" : estimate ? `~${estimate.days} days at sea` : "Chart your approach"}</h3><p>${estimate ? `From ${origin.name} · ${estimate.distance} leagues · ${estimate.provisionsNeeded} provisions${estimate.direct ? ". Direct estimate; actual sailing may take longer." : ". Estimated along the charted trade lane."}` : atPort ? "Dock to trade, commission a vessel, or prepare the next voyage." : `${Math.round(wrappedDistance(ship.x, ship.y, port.x, port.y))} leagues from your ship. Inspect the chart before departing.`}</p><span class="atlas-note">${estimate ? `${game.operations.provisions >= estimate.provisionsNeeded ? "Stores cover this passage" : `Load ${estimate.provisionsNeeded - game.operations.provisions} more provisions`}` : "Your course is shown on the world chart"}</span></article></div><div class="atlas-section-heading"><div><div class="town-kicker">Local exchange</div><h3>Demand & supply</h3></div><span class="small">Live estimates · Day ${game.day}</span></div><div id="townDemand" class="town-demand"></div><div class="atlas-overview-grid"><article class="atlas-conditions"><div class="town-kicker">Before you arrive</div><h3>Law & local standing</h3><p>${currentLawText(port)}</p><span class="atlas-note">${privilege.label} · ${standing} standing · ${privilege.privilege}</span><button class="parchment" type="button" data-town-section="politics">Inspect factions →</button></article><article class="atlas-connections"><div class="town-kicker">Charted connections</div><h3>Where next?</h3><div id="townConnections"></div></article></div>`;
+  root.innerHTML = `<div class="atlas-overview-grid"><article class="atlas-opportunity"><div class="town-kicker">A reason to call here</div><h3>${reason}</h3><p>${detail}</p><button class="parchment" type="button" data-town-section="market">Inspect prices →</button></article><article class="atlas-passage"><div class="town-kicker">Captain’s passage</div><h3>${atPort ? "You are in this harbor" : estimate ? `~${estimate.days} days at sea` : "Chart your approach"}</h3><p>${estimate ? `From ${origin.name} · ${estimate.distance} leagues · ${estimate.provisionsNeeded} provisions${estimate.direct ? ". Direct estimate; actual sailing may take longer." : ". Estimated along a navigable sea route; weather and steering may change arrival."}` : atPort ? "Dock to trade, commission a vessel, or prepare the next voyage." : `${Math.round(wrappedDistance(ship.x, ship.y, port.x, port.y))} leagues from your ship. Inspect the chart before departing.`}</p><span class="atlas-note">${estimate ? `${game.operations.provisions >= estimate.provisionsNeeded ? "Stores cover this passage" : `Load ${estimate.provisionsNeeded - game.operations.provisions} more provisions`}` : "Your course is shown on the world chart"}</span></article></div><div class="atlas-section-heading"><div><div class="town-kicker">Local exchange</div><h3>Demand & supply</h3></div><span class="small">Live estimates · Day ${game.day}</span></div><div id="townDemand" class="town-demand"></div><div class="atlas-overview-grid"><article class="atlas-conditions"><div class="town-kicker">Before you arrive</div><h3>Law & local standing</h3><p>${currentLawText(port)}</p><span class="atlas-note">${privilege.label} · ${standing} standing · ${privilege.privilege}</span><button class="parchment" type="button" data-town-section="politics">Inspect factions →</button></article><article class="atlas-connections"><div class="town-kicker">Charted connections</div><h3>Where next?</h3><div id="townConnections"></div></article></div>`;
   const available = availableMarketGoods(
     game.regionalEconomy[port.name],
     productionChains,
@@ -8273,9 +8292,9 @@ document
   .addEventListener("click", () => openShipRegister("officers"));
 document.getElementById("closeShip").addEventListener("click", () => {
   shipPanel.style.display = "none";
-  document
-    .getElementById(currentPort ? "portOfficersButton" : "shipButton")
-    .focus();
+  (currentPort ? document.getElementById("portOfficersButton") : canvas).focus({
+    preventScroll: true,
+  });
 });
 shipPanel.addEventListener("click", (e) => {
   if (e.target === shipPanel) shipPanel.style.display = "none";
@@ -8704,7 +8723,7 @@ minimapWrap.addEventListener("click", (e) => {
 const panelDismissActions = {
   portPanel: () => {
     departPort();
-    ui.dock.focus({ preventScroll: true });
+    canvas.focus({ preventScroll: true });
   },
   explorationPanel: closeExpeditionPanel,
   townPanel: closeTownDetails,

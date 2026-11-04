@@ -1,5 +1,6 @@
 import { normalizeAngle, wrappedDelta } from "./math.js";
-import { findSeaPath, segmentClear, smoothSeaPath } from "./navfield.js";
+import { segmentClear } from "./navfield.js";
+import { createPassagePlanner } from "./passages.js";
 import { crewReadiness, previewShoreLeave } from "./crew-readiness.js";
 
 export const AUTOMATION_DT = 1 / 30;
@@ -165,58 +166,18 @@ export function chooseAutomationVoyage(origin, candidates, width, visits = {}) {
 
 // Give the real sailing physics sea room for turns, drift, and hull recovery.
 // Unlike NPC lane baking, a failed search never falls back to crossing land.
-export function createAutomationPilot(
-  field,
-  { margin = 58, clearance = 2 } = {},
-) {
-  const grid = new Uint8Array(field.grid.length);
-  for (let row = 0; row < field.rows; row++) {
-    for (let col = 0; col < field.cols; col++) {
-      const y = (row + 0.5) * field.cellSize;
-      let blocked = y < margin || y > field.height - margin;
-      for (let dr = -clearance; dr <= clearance && !blocked; dr++) {
-        const r = row + dr;
-        if (r < 0 || r >= field.rows) continue;
-        for (let dc = -clearance; dc <= clearance; dc++) {
-          const c = (col + dc + field.cols) % field.cols;
-          if (field.grid[r * field.cols + c]) {
-            blocked = true;
-            break;
-          }
-        }
-      }
-      grid[row * field.cols + col] = Number(blocked);
-    }
-  }
-  const safe = { ...field, grid };
+export function createAutomationPilot(field, options = {}) {
+  const planner = createPassagePlanner(field, options);
+  const safe = planner.field;
   let points = [];
   let approachFrom = null;
   let approaching = false;
   return {
     plan(ship, port) {
-      const path = findSeaPath(safe, ship.x, ship.y, port.x, port.y, {
-        maxNodes: grid.length,
-        snapRing: 12,
-      });
-      points = path ? smoothSeaPath(safe, path) : [];
+      const passage = planner.plan(ship, port);
+      points = passage?.points || [];
+      approachFrom = passage?.approachFrom || null;
       approaching = false;
-      approachFrom = points.at(-1) || null;
-      if (approachFrom) {
-        // The clearance corridor can end outside docking range of a coastal
-        // harbor. Finish through actual open water at harbor speed.
-        const approach = findSeaPath(
-          field,
-          approachFrom[0],
-          approachFrom[1],
-          port.x,
-          port.y,
-          {
-            maxNodes: grid.length,
-            snapRing: 12,
-          },
-        );
-        if (approach) points.push(...smoothSeaPath(field, approach).slice(1));
-      }
       return points.length > 0;
     },
     steer(ship) {
