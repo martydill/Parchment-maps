@@ -355,7 +355,7 @@ export function questObjective(game, suggest = false) {
   return {
     id: `quest-${item.id}`,
     title: item.ready ? `Collect reward: ${item.title}` : item.title,
-    detail: `${item.detail} · ${item.progress}/${item.target} · Reward: ${item.reward} crowns.`,
+    detail: `${item.detail}\n${item.progress}/${item.target} · Reward: ${item.reward} crowns.`,
     action: "quests",
     destination: null,
     urgency: item.ready ? "ready" : "normal",

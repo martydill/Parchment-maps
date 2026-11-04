@@ -25,7 +25,7 @@ import {
 import { drawShip } from "../rendering.js?v=5";
 import { renderOfficerCards } from "./officer-ambitions.js";
 import { renderQuestJournal } from "./quest-journal.js";
-import { QUESTS, questJournal, recordQuestTrade } from "../core/quests.js";
+import { recordQuestTrade } from "../core/quests.js";
 
 let panelContext;
 let acceptContract,
@@ -211,15 +211,6 @@ function syncPanelContext() {
 
 export function updateHud() {
   syncPanelContext();
-  const quests = questJournal(game);
-  const readyRewards = quests.filter((item) => item.ready).length;
-
-  updateElementProperty(
-    document.getElementById("questButton"),
-    "textContent",
-    `Quests & goals · ${game.quests.completed.length}/${QUESTS.length}${readyRewards ? ` · ${readyRewards} ready` : ""}`,
-  );
-
   const request = game.specialists.officers.find((officer) =>
     ["offered", "accepted"].includes(officer.ambition.status),
   );
@@ -317,20 +308,6 @@ export function updateHud() {
     ui.hold,
     "textContent",
     cargoCount() + "/" + game.holdMax,
-  );
-  updateElementProperty(
-    ui.objective,
-    "textContent",
-    game.milestone.complete
-      ? `Merchant Prince · ${game.activeWorldEvents.length} active crises`
-      : `${game.completedContracts}/3 contracts · Guild ${guildStanding()}/20`,
-  );
-  updateElementProperty(
-    ui.objective,
-    "title",
-    game.milestone.complete
-      ? ui.objective.textContent
-      : `${ui.objective.textContent} · shortage ${game.milestone.shortageExploited ? "exploited" : worldEvents.ironShortage.active ? "active" : "pending"}`,
   );
   const objective = currentObjective({
     game,

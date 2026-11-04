@@ -251,10 +251,15 @@ test("tracking rejects unavailable quests, switches goals, and toggles off", () 
   assert.equal(game.quests.tracked, null);
   assert.equal(questObjective(game), null);
   assert.equal(questObjective(game, true).id, "quest-first-commission");
+  assert.match(
+    questObjective(game, true).detail,
+    /\n0\/1 · Reward: 20 crowns\.$/,
+  );
   game.completedContracts = 1;
   assert.equal(trackQuest(game, "first-commission"), true);
   assert.equal(questObjective(game).urgency, "ready");
   assert.match(questObjective(game).title, /Collect reward/);
+  assert.match(questObjective(game).detail, /\n1\/1 · Reward: 20 crowns\.$/);
   claimQuestReward(game, "first-commission");
   assert.equal(trackQuest(game, "first-commission"), false);
 });

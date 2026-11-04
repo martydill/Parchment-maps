@@ -373,7 +373,6 @@ import {
   nightSightLimit,
   normalizeTimeOfDay,
   sceneLighting,
-  timeOfDayLabel,
 } from "./core/lighting.js";
 import {
   drawHarborBoats,
@@ -806,8 +805,6 @@ function localCurrent(position = ship) {
 }
 function applyShipUpgrades() {
   game.shipUpgrades = normalizeShipUpgradeState(game.shipUpgrades);
-  document.getElementById("shipName").textContent =
-    SHIP_CLASSES[game.shipUpgrades.activeClass].vesselName;
   const stats = operationalShipStats();
   game.holdMax = stats.holdMax;
   ship.maxSpeed = stats.maxSpeed;
@@ -3772,12 +3769,10 @@ const ui = {
   hull: document.getElementById("hullText"),
   coins: document.getElementById("coinText"),
   day: document.getElementById("dayText"),
-  time: document.getElementById("timeText"),
   hold: document.getElementById("holdText"),
   dock: document.getElementById("dockButton"),
   explore: document.getElementById("exploreButton"),
   message: document.getElementById("message"),
-  objective: document.getElementById("objectiveText"),
   course: document.getElementById("courseCard"),
   courseTitle: document.getElementById("courseTitle"),
   courseDetail: document.getElementById("courseDetail"),
@@ -4008,11 +4003,6 @@ function followCurrentObjective() {
 }
 
 ui.course.addEventListener("click", followCurrentObjective);
-document.getElementById("questButton").addEventListener("click", () => {
-  renderLedger();
-  activateSectionTabs(document.getElementById("ledgerPanel"), "quests");
-  document.getElementById("ledgerPanel").style.display = "grid";
-});
 ui.plottedCourseOpen.addEventListener("click", () => {
   minimapWrap.style.display = "grid";
   renderChart();
@@ -6302,13 +6292,6 @@ function update(dt) {
   // traffic, unchanged.
   if (gameStarted) {
     game.timeOfDay = advanceTimeOfDay(game.timeOfDay, dt);
-    updateElementProperty(
-      ui.time,
-      "textContent",
-      timeOfDayLabel(
-        sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
-      ),
-    );
     updateFleetShips(dt);
   }
   if (
@@ -8311,9 +8294,6 @@ function refreshDebugScene() {
   revealCurrentView(true);
   fogCadence.reset();
   updateHud();
-  ui.time.textContent = timeOfDayLabel(
-    sceneLighting(sceneTimeOfDay(), currentWeather().roughness, game.day),
-  );
   if (currentPort) renderHarborPresentation();
   if (selectedTown)
     drawMenuPort(document.getElementById("townIllustration"), selectedTown, 0);

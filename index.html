@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#201b15" />
     <title>Parchment Maps</title>
-    <link rel="stylesheet" href="./styles.css?v=36" />
+    <link rel="stylesheet" href="./styles.css?v=41" />
   </head>
   <body class="map-opening">
     <svg class="resource-icon-sprite" aria-hidden="true">
@@ -292,63 +292,54 @@
       </button>
     </div>
     <div id="hud">
-      <div class="topbar">
-        <div class="badge voyage-instruments">
+      <div class="voyage-hud">
+        <section
+          class="badge voyage-summary"
+          aria-label="Ship and voyage status"
+        >
           <span class="hud-paper-edge" aria-hidden="true"></span>
           <div class="instrument-heading">
-            <b id="shipName">Merchant Vessel</b>
-            <span class="instrument-home"
-              >Home: <span id="homePortLabel">Home Port</span></span
-            >
+            <b id="coinText">120 crowns</b>
+            <span id="hullText">Hull 100%</span>
+            <span>Hold <span id="holdText">0/18</span></span>
           </div>
           <div class="instrument-readouts">
             <span id="speedText">0 knots</span>
             <span id="windText">Wind E · 14 knots</span>
-            <span id="hullText">Hull 100%</span>
           </div>
           <span class="instrument-secondary" id="visibilityText"
             >Clear · 12 km sight</span
           >
-        </div>
-        <div class="badge trade-instruments">
-          <span class="hud-paper-edge" aria-hidden="true"></span>
-          <div class="instrument-heading">
-            <b id="coinText">120 crowns</b>
+          <div class="instrument-footer">
+            <span class="instrument-home"
+              >Home: <span id="homePortLabel">Home Port</span></span
+            >
             <span id="dayText">Spring · Day 1</span>
           </div>
-          <div class="instrument-readouts">
-            <span id="timeText">Daylight</span>
-            <span>Hold <span id="holdText">0/18</span></span>
+        </section>
+        <div class="course-slips">
+          <button id="courseCard" type="button">
+            <span class="hud-paper-edge" aria-hidden="true"></span>
+            <b id="courseTitle">Dock at home port</b>
+            <span id="courseDetail">Take your first Guild commission.</span>
+            <span id="courseAction">Show me where →</span>
+          </button>
+          <div id="plottedCourse" hidden>
+            <span class="hud-paper-edge" aria-hidden="true"></span>
+            <span class="course-kicker">Plotted course</span>
+            <b id="plottedCourseTitle"></b>
+            <span id="plottedCourseDetail"></span>
+            <span id="plottedCourseActions">
+              <button id="plottedCourseOpen" type="button">Open chart</button>
+              <button id="plottedCourseClear" type="button">
+                Clear course
+              </button>
+            </span>
           </div>
-          <span class="instrument-secondary" id="objectiveText"
-            >0/3 contracts · shortage not reported</span
-          >
         </div>
       </div>
       <div id="message"></div>
       <div id="seaWarning" role="status" aria-live="polite" hidden></div>
-      <div class="course-slips">
-        <button id="courseCard" type="button">
-          <span class="hud-paper-edge" aria-hidden="true"></span>
-          <span class="course-kicker">Captain’s course</span>
-          <b id="courseTitle">Dock at home port</b>
-          <span id="courseDetail">Take your first Guild commission.</span>
-          <span id="courseAction">Show me where →</span>
-        </button>
-        <button id="questButton" type="button">
-          Quests &amp; goals · 0/15
-        </button>
-        <div id="plottedCourse" hidden>
-          <span class="hud-paper-edge" aria-hidden="true"></span>
-          <span class="course-kicker">Plotted course</span>
-          <b id="plottedCourseTitle"></b>
-          <span id="plottedCourseDetail"></span>
-          <span id="plottedCourseActions">
-            <button id="plottedCourseOpen" type="button">Open chart</button>
-            <button id="plottedCourseClear" type="button">Clear course</button>
-          </span>
-        </div>
-      </div>
       <button
         id="mapButton"
         class="main-icon-button"

@@ -17,7 +17,7 @@
     radial-gradient(ellipse at 45% 35%, #fff4d660, transparent 75%),
     linear-gradient(110deg, #f6e7c57a, #eddbb36b),
     url("./assets/map-opening/parchment-weathered.jpg");
-  --hud-corners: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cdefs%3E%3Cg id='corner' fill='none' stroke='%23765532' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 30V8h22M12 25V12h13M8 20c8 0 12-4 12-12M12 20c0-5 3-8 8-8M20 8c0 7 4 10 9 10M8 20c7 0 10 4 10 9'/%3E%3Cpath d='m8 3 3 5-3 5-3-5Z' fill='%23765532' stroke='none'/%3E%3Ccircle cx='24' cy='24' r='1.3' fill='%23765532' stroke='none'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23corner'/%3E%3Cuse href='%23corner' transform='translate(100 0) scale(-1 1)'/%3E%3Cuse href='%23corner' transform='translate(0 100) scale(1 -1)'/%3E%3Cuse href='%23corner' transform='translate(100 100) scale(-1 -1)'/%3E%3C/svg%3E");
+  --hud-corners: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cdefs%3E%3Cg id='corner' opacity='0.3' fill='none' stroke='%23765532' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 30V8h22M12 25V12h13M8 20c8 0 12-4 12-12M12 20c0-5 3-8 8-8M20 8c0 7 4 10 9 10M8 20c7 0 10 4 10 9'/%3E%3Cpath d='m8 3 3 5-3 5-3-5Z' fill='%23765532' stroke='none'/%3E%3Ccircle cx='24' cy='24' r='1.3' fill='%23765532' stroke='none'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23corner'/%3E%3Cuse href='%23corner' transform='translate(100 0) scale(-1 1)'/%3E%3Cuse href='%23corner' transform='translate(0 100) scale(1 -1)'/%3E%3Cuse href='%23corner' transform='translate(100 100) scale(-1 -1)'/%3E%3C/svg%3E");
 }
 * {
   box-sizing: border-box;
@@ -380,15 +380,17 @@ body.encounter-active #hud {
   inset: 0;
   pointer-events: none;
 }
-.topbar {
+.voyage-hud {
   position: absolute;
   top: max(10px, env(safe-area-inset-top));
-  left: 10px;
-  right: 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: flex-start;
+  left: max(14px, env(safe-area-inset-left));
+  width: min(360px, calc(100vw - 28px));
+  display: grid;
+  gap: 10px;
+}
+.voyage-summary {
+  display: grid;
+  gap: 4px;
 }
 /* Shared chart material for the corner readouts, course slips and control plates. */
 #hud
@@ -464,8 +466,8 @@ body.encounter-active #hud {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 0 0, #71442166, transparent 27%),
-    radial-gradient(ellipse at 100% 100%, #71442159, transparent 24%),
+    radial-gradient(ellipse at 0 0, #71442126, transparent 27%),
+    radial-gradient(ellipse at 100% 100%, #71442121, transparent 24%),
     linear-gradient(90deg, var(--hud-accent, transparent) 3px, transparent 3px),
     var(--hud-paper-surface);
   background-position: center;
@@ -535,7 +537,7 @@ body.encounter-active #hud {
     0 15%
   );
 }
-.trade-instruments .hud-paper-edge::before {
+.voyage-summary .hud-paper-edge::before {
   transform: scaleX(-1);
 }
 #plottedCourse .hud-paper-edge::before {
@@ -597,39 +599,40 @@ body.encounter-active #hud {
 }
 .badge {
   position: relative;
-  min-width: 240px;
-  padding: 11px 18px 12px;
-  font-size: 13px;
+  min-width: 0;
+  padding: 9px 14px;
+  font-size: 12px;
   line-height: 1.25;
 }
 .instrument-heading,
-.instrument-readouts {
+.instrument-readouts,
+.instrument-footer {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 3px 8px;
 }
 .instrument-heading {
-  padding-bottom: 4px;
+  padding-bottom: 3px;
+  font: 700 12px/1.2 var(--font-ui);
   border-bottom: 1px solid #82613d45;
   box-shadow: 0 1px #fff2d259;
   color: var(--hud-ink);
 }
 .instrument-heading b {
-  font: 700 16px/1.12 var(--font-display);
-  white-space: nowrap;
+  font: 700 14px/1.15 var(--font-display);
+  overflow-wrap: anywhere;
 }
 .instrument-home,
 #dayText {
   color: var(--hud-muted-ink);
-  font: 600 11px/1.2 var(--font-ui);
-  white-space: nowrap;
+  font: 600 10px/1.2 var(--font-ui);
 }
 .instrument-readouts {
-  padding-top: 5px;
   font: 700 12px/1.2 var(--font-ui);
   color: #483421;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 #hullText.worn {
   color: #855014;
@@ -639,15 +642,14 @@ body.encounter-active #hud {
 }
 .instrument-secondary {
   display: block;
-  margin-top: 4px;
   color: #455b47;
   font: 600 11px/1.25 var(--font-ui);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 #message {
   position: absolute;
   left: 50%;
-  top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+  bottom: calc(132px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   max-width: min(86vw, 540px);
   text-align: center;
@@ -658,7 +660,6 @@ body.encounter-active #hud {
   font-size: 14px;
 }
 #message.event {
-  top: calc(max(10px, env(safe-area-inset-top)) + 74px);
   padding: 10px 18px 10px 45px;
   border-color: rgba(231, 195, 117, 0.86);
   color: #fff3cd;
@@ -788,7 +789,7 @@ body.encounter-active #hud {
   border-color: #526b4b;
 }
 #mapButton {
-  top: calc(max(10px, env(safe-area-inset-top)) + 89px);
+  top: max(10px, env(safe-area-inset-top));
   width: 50px;
   height: 50px;
   display: block;
@@ -1899,18 +1900,13 @@ button.parchment {
   height: 50px;
 }
 #ledgerButton {
-  top: calc(max(10px, env(safe-area-inset-top)) + 147px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 58px);
 }
 #shipButton {
-  top: calc(max(10px, env(safe-area-inset-top)) + 205px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 116px);
 }
 #menuButton {
-  top: calc(max(10px, env(safe-area-inset-top)) + 263px);
-}
-#objectiveText {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--hud-muted-ink);
+  top: calc(max(10px, env(safe-area-inset-top)) + 174px);
 }
 #ledgerPanel,
 #menuPanel,
@@ -2576,15 +2572,6 @@ button.parchment {
   font-style: italic;
 }
 @media (max-width: 560px) {
-  #ledgerButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 144px);
-  }
-  #shipButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 200px);
-  }
-  #menuButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 256px);
-  }
   .contract-head,
   .law-head {
     align-items: flex-start;
@@ -3161,10 +3148,7 @@ button.parchment {
 
 /* Phase-one guidance and voyage feedback */
 .course-slips {
-  position: absolute;
-  top: calc(max(10px, env(safe-area-inset-top)) + 92px);
-  left: 14px;
-  width: min(360px, calc(100vw - 96px));
+  width: min(360px, calc(100vw - 100px));
   display: grid;
   gap: 10px;
 }
@@ -3182,17 +3166,6 @@ button.parchment {
 #courseTitle,
 #plottedCourseTitle {
   font: 600 16px/1.15 var(--font-display);
-}
-#questButton {
-  pointer-events: auto;
-  justify-self: start;
-  padding: 8px 12px;
-  border: 1px solid #8c673580;
-  border-radius: 4px;
-  background: #ecdbb7;
-  color: #543b21;
-  font: 600 12px var(--font-ui);
-  cursor: pointer;
 }
 .quest-chain {
   margin-top: 24px;
@@ -3316,6 +3289,7 @@ button.parchment {
   text-transform: uppercase;
 }
 #courseDetail {
+  white-space: pre-line;
   font-size: 12px;
   line-height: 1.35;
   opacity: 0.9;
@@ -3397,16 +3371,9 @@ button.parchment {
   flex: none;
 }
 @media (max-width: 620px) {
-  .topbar {
-    left: 8px;
-    right: 8px;
-    gap: 6px;
-    align-items: stretch;
-  }
-  .topbar .badge {
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 9px 11px 10px;
+  .voyage-hud {
+    left: max(8px, env(safe-area-inset-left));
+    width: min(360px, calc(100vw - 90px));
   }
   #hud :is(.badge, #courseCard, #plottedCourse)::after {
     border-width: 15px;
@@ -3418,66 +3385,11 @@ button.parchment {
   #hud .badge::before {
     inset: 3px;
   }
-  .instrument-heading b {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 13px;
-  }
-  .instrument-home {
-    display: none;
-  }
-  .instrument-readouts {
-    gap: 6px;
-    font-size: 11px;
-  }
-  .voyage-instruments .instrument-readouts {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 3px 6px;
-  }
-  #speedText {
-    grid-area: 1 / 1;
-  }
-  #hullText {
-    grid-area: 1 / 2;
-  }
-  #windText {
-    grid-area: 2 / 1 / 3 / -1;
-  }
-  .instrument-readouts > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .instrument-secondary {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 10px;
-  }
-  #objectiveText {
-    font-size: 10px;
+  #message {
+    bottom: calc(190px + env(safe-area-inset-bottom));
   }
   #message.event {
-    top: auto;
-    bottom: calc(190px + env(safe-area-inset-bottom));
     width: min(88vw, 420px);
-  }
-  #mapButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 116px);
-  }
-  #ledgerButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 172px);
-  }
-  #shipButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 228px);
-  }
-  #menuButton {
-    top: calc(max(10px, env(safe-area-inset-top)) + 284px);
-  }
-  .course-slips {
-    top: calc(max(10px, env(safe-area-inset-top)) + 112px);
-    width: calc(100vw - 100px);
   }
   #plottedCourse {
     width: 100%;
