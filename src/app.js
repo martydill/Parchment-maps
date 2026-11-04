@@ -6049,10 +6049,7 @@ document
   .getElementById("skipEncounter")
   .addEventListener("click", () => finishEncounterIntro());
 encounterOverlay.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    finishEncounterIntro();
-  } else if (event.key === "Tab") {
+  if (event.key === "Tab") {
     event.preventDefault();
     const sound = document.getElementById("encounterSound");
     const skip = document.getElementById("skipEncounter");
@@ -7480,6 +7477,10 @@ function chooseCombatAction(action) {
     `${result.description}${cargoText}${result.prizeValue ? ` Prize salvage yielded ${result.prizeValue} crowns.` : ""}`,
   );
   showMessage(`HOSTILE ENCOUNTER · ${result.description}`, 5);
+  closeCombatEncounter();
+}
+
+function closeCombatEncounter() {
   hideCombatTooltip();
   pendingCombat = null;
   game.seaRaid.raider = null;
@@ -7921,11 +7922,6 @@ document
   .addEventListener("scroll", hideCombatTooltip);
 addEventListener("resize", hideCombatTooltip);
 document.getElementById("combatPanel").addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && combatTooltipOption) {
-    event.preventDefault();
-    event.stopPropagation();
-    hideCombatTooltip();
-  }
   if (event.key !== "Tab") return;
   const controls = [...event.currentTarget.querySelectorAll("button")];
   const first = controls[0];
@@ -7996,19 +7992,6 @@ document.getElementById("closePort").addEventListener("click", departPort);
 for (const panelId of ["portPanel", "townPanel", "reportPanel"]) {
   const panel = document.getElementById(panelId);
   panel.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !event.target.closest("select, input")) {
-      event.preventDefault();
-      document
-        .getElementById(
-          {
-            portPanel: "closePort",
-            townPanel: "closeTown",
-            reportPanel: "closeReport",
-          }[panelId],
-        )
-        .click();
-      if (panelId === "portPanel") ui.dock.focus();
-    }
     if (event.key !== "Tab") return;
     const controls = [
       ...panel.querySelectorAll(
@@ -8309,10 +8292,7 @@ document.addEventListener("pointerdown", (event) => {
     closeDebugMenu(false);
 });
 debugMenu.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeDebugMenu();
-  } else if (event.key === "Tab") {
+  if (event.key === "Tab") {
     const controls = [...debugMenu.querySelectorAll("button, select, input")];
     const first = controls[0];
     const last = controls.at(-1);
@@ -8526,6 +8506,52 @@ document
 minimapWrap.addEventListener("click", (e) => {
   if (e.target === minimapWrap) minimapWrap.style.display = "none";
 });
+
+const panelDismissActions = {
+  portPanel: () => {
+    departPort();
+    ui.dock.focus({ preventScroll: true });
+  },
+  explorationPanel: closeExpeditionPanel,
+  townPanel: closeTownDetails,
+  ledgerPanel: () => document.getElementById("closeLedger").click(),
+  shipPanel: () => document.getElementById("closeShip").click(),
+  menuPanel: () => document.getElementById("closeMenu").click(),
+  vesselPanel: closeVesselDetails,
+  reportPanel: closeIntelReport,
+  combatPanel: closeCombatEncounter,
+  discoveryPanel: closeDiscoveryDetails,
+  minimapWrap: () => document.getElementById("closeMap").click(),
+  debugMenu: closeDebugMenu,
+  encounterIntro: finishEncounterIntro,
+};
+addEventListener(
+  "keydown",
+  (event) => {
+    // The opening animation owns its Escape shortcut until it finishes.
+    if (event.key !== "Escape" || event.defaultPrevented || mapOpening?.active)
+      return;
+    const panels = [
+      ...document.querySelectorAll(
+        Object.keys(panelDismissActions)
+          .map((id) => `#${id}`)
+          .join(","),
+      ),
+    ].filter((panel) => !panel.inert && panel.getClientRects().length > 0);
+    // Higher stacking levels paint last; ties follow document order.
+    panels.sort(
+      (a, b) =>
+        (Number(getComputedStyle(a).zIndex) || 0) -
+        (Number(getComputedStyle(b).zIndex) || 0),
+    );
+    const panel = panels.at(-1);
+    if (!panel) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    panelDismissActions[panel.id]();
+  },
+  { capture: true },
+);
 
 const restoredSavedGame = loadGameState();
 if (!restoredSavedGame) {
