@@ -9,6 +9,23 @@ await mkdir(output, { recursive: true });
 const server = await serveGame();
 let browser;
 const errors = [];
+async function checkMarketRows(page) {
+  const rows = await page
+    .locator("#market .exchange-row:visible")
+    .evaluateAll((elements) =>
+      elements.map((row) => ({
+        text: row.innerText,
+        height: row.getBoundingClientRect().height,
+        contentHeight: row.scrollHeight,
+      })),
+    );
+  assert.ok(rows.length > 0);
+  for (const row of rows)
+    assert.ok(
+      row.contentHeight <= Math.ceil(row.height),
+      `Market row must contain its text: ${JSON.stringify(row)}`,
+    );
+}
 try {
   browser = await chromium.launch();
   for (const mobile of [false, true]) {
@@ -123,6 +140,7 @@ try {
     assert.equal((await snapshot()).game.navigation.destination, course);
 
     await openTab("market");
+    await checkMarketRows(page);
     if (mobile) {
       const catalog = await page.locator(".exchange-catalog").boundingBox();
       const order = await page.locator("#marketOrder").boundingBox();
@@ -205,6 +223,8 @@ try {
       ),
       1,
     );
+    await page.locator('#portPanel .port-tab[data-tab="market"]').tap();
+    await checkMarketRows(page);
     await context.close();
     console.log(
       `✓ ${viewport.width}×${viewport.height}: selected commission action remains reachable`,

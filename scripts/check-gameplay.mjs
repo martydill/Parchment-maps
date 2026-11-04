@@ -56,6 +56,21 @@ try {
           deadline: 2,
         },
       ];
+      saved.game.contractOffers["Orvessa Quay"] = {
+        refreshedDay: saved.game.day,
+        offers: [
+          {
+            id: "legacy-offer",
+            title: "Legacy dispatch to Narthkel",
+            origin: "Orvessa Quay",
+            destination: "Narthkel",
+            faction: "Lantern League",
+            reward: 100,
+            cargoUnits: 1,
+            estimatedDays: 0,
+          },
+        ],
+      };
       // Exercise migration from saves made before receipts and market memory.
       delete saved.game.voyageLedger;
       delete saved.game.marketNotes;
@@ -88,6 +103,10 @@ try {
     assert.equal(saved.game.operations.morale, 28);
     assert.equal(saved.game.operations.crew.groups.deck.fatigue, 57);
     assert.equal(saved.game.voyageLedger.pending.leave, 11);
+    assert.ok(
+      saved.game.contractOffers["Orvessa Quay"].offers[0].estimatedDays >= 1,
+    );
+    assert.equal(saved.game.activeContracts[0].deadline, 2);
     assert.ok(Object.keys(saved.game.marketNotes).length > 0);
     await page.locator(".harbor-suggestion").click();
     assert.ok(
