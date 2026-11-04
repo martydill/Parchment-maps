@@ -13,6 +13,7 @@ import { createMaritimeHazardState } from "./maritime-hazards.js";
 import { createSeaRaidState } from "./sea-raiders.js";
 import { createLegacyState } from "./legacies.js";
 import { createQuestState } from "./quests.js";
+import { createVoyageLedger } from "./voyage-ledger.js";
 
 export function createGameState() {
   return {
@@ -46,6 +47,8 @@ export function createGameState() {
     },
     news: [],
     intelligence: [],
+    marketNotes: {},
+    voyageLedger: createVoyageLedger(),
     intelOffers: {},
     intelSerial: 1,
     scheduledEvents: [],

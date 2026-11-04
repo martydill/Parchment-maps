@@ -2,10 +2,14 @@ import {
   chooseAutomationVoyage,
   createAutomationPilot,
   createAutomationSession,
+  shouldAutomationRest,
 } from "./core/automation.js";
 import { planMarketOrder } from "./core/market-order.js";
 import { canTrade, tradeQuote } from "./core/jurisdictions.js";
 import { buyProvisions, repairOperations } from "./core/operations.js";
+import { crewReadiness } from "./core/crew-readiness.js";
+import { rememberedSellPrice } from "./core/market-memory.js";
+import { recordVoyageEntry } from "./core/voyage-ledger.js";
 
 // Browser integration for the merchant policy. Every action goes through the
 // same game functions as a player; the policy gets no money or physics boosts.
@@ -17,6 +21,8 @@ export function createGameAutomation(options, context) {
   let voyage = null;
   let prepared = false;
   let bought = false;
+  let rested = false;
+  let restDays = 0;
   let nextPortAction = 0;
   let lastProgress = 0;
   let bestDistance = Infinity;
@@ -36,11 +42,21 @@ export function createGameAutomation(options, context) {
         units: 0,
       });
       if (!access.ok) continue;
-      const sell = tradeQuote(
-        context.sellPrice(port, key),
-        context.legalStatus(port, key),
-        "sell",
-      );
+      const sell =
+        options.knowledge === "all"
+          ? tradeQuote(
+              context.sellPrice(port, key),
+              context.legalStatus(port, key),
+              "sell",
+            )
+          : rememberedSellPrice(
+              game.marketNotes,
+              game.intelligence,
+              port.name,
+              key,
+              game.day,
+            );
+      if (sell === null) continue;
       for (let quantity = 1; quantity <= game.holdMax; quantity++) {
         const order = planMarketOrder({
           direction: "buy",
@@ -63,21 +79,29 @@ export function createGameAutomation(options, context) {
 
   function chooseVoyage(origin) {
     const offers = context.offers(origin);
-    const candidates = ports.map((port) => {
-      const offer = offers
-        .filter((offer) => offer.destination === port.name)
-        .sort((a, b) => b.reward - a.reward)[0];
-      const active = game.activeContracts.filter(
-        (contract) => contract.destination === port.name,
-      );
-      return {
-        port,
-        ...quote(origin, port),
-        offer,
-        reward:
-          (offer?.reward || 0) + active.reduce((sum, c) => sum + c.reward, 0),
-      };
-    });
+    const candidates = ports
+      .filter(
+        (port) =>
+          options.knowledge === "all" ||
+          context.knownPort(port) ||
+          offers.some((offer) => offer.destination === port.name) ||
+          game.activeContracts.some((c) => c.destination === port.name),
+      )
+      .map((port) => {
+        const offer = offers
+          .filter((offer) => offer.destination === port.name)
+          .sort((a, b) => b.reward - a.reward)[0];
+        const active = game.activeContracts.filter(
+          (contract) => contract.destination === port.name,
+        );
+        return {
+          port,
+          ...quote(origin, port),
+          offer,
+          reward:
+            (offer?.reward || 0) + active.reduce((sum, c) => sum + c.reward, 0),
+        };
+      });
     while (candidates.length) {
       const candidate = chooseAutomationVoyage(
         origin,
@@ -126,6 +150,7 @@ export function createGameAutomation(options, context) {
           (visits[context.currentPort().name] || 0) + 1;
         prepared = false;
         bought = false;
+        rested = false;
         voyage = null;
         destination = null;
         return { ok: true, port: context.currentPort().name };
@@ -157,6 +182,18 @@ export function createGameAutomation(options, context) {
         );
         game.operations = repair.operations;
         game.coins = repair.coins + Math.min(40, provisions.coins);
+        recordVoyageEntry(
+          game.voyageLedger,
+          "supplies",
+          provisions.purchased * 3,
+          port.name,
+        );
+        recordVoyageEntry(
+          game.voyageLedger,
+          "repairs",
+          provisions.coins - game.coins,
+          port.name,
+        );
         if (repair.repaired > 0) game.operations.patchedDay = game.day;
         context.refresh();
         return {
@@ -164,6 +201,13 @@ export function createGameAutomation(options, context) {
           purchased: provisions.purchased,
           repaired: repair.repaired,
         };
+      }
+      case "rest": {
+        if (!port)
+          return { ok: false, reason: "Dock before granting shore leave." };
+        const result = context.rest();
+        if (result.ok) restDays += result.days;
+        return result;
       }
       case "combat":
         if (
@@ -216,6 +260,27 @@ export function createGameAutomation(options, context) {
       if (!prepared) {
         prepared = true;
         return { type: "supply" };
+      }
+      if (!rested && options.rest !== "off") {
+        rested = true;
+        const arrivalDays = Object.fromEntries(
+          game.activeContracts
+            .filter((c) => c.destination)
+            .map((c) => [
+              c.destination,
+              context.estimateDays(port, c.destination),
+            ]),
+        );
+        if (
+          shouldAutomationRest(
+            game.operations,
+            game.coins,
+            game.day,
+            game.activeContracts,
+            arrivalDays,
+          )
+        )
+          return { type: "rest" };
       }
       if (!voyage) {
         voyage = chooseVoyage(port);
@@ -273,6 +338,8 @@ export function createGameAutomation(options, context) {
     },
     observe: () => ({
       policy: "merchant",
+      knowledge: options.knowledge,
+      rest: options.rest,
       destination: destination?.name || null,
       steering: lastSteering,
       metrics: {
@@ -284,6 +351,9 @@ export function createGameAutomation(options, context) {
         failedContracts: game.failedContracts,
         condition: game.operations.condition,
         provisions: game.operations.provisions,
+        morale: game.operations.morale,
+        fatigue: crewReadiness(game.operations).fatigue,
+        restDays,
       },
       game,
       ship,

@@ -1,5 +1,15 @@
 import { automationOptions } from "./core/automation.js";
 import { createGameAutomation } from "./automation.js";
+import { crewReadiness, previewShoreLeave } from "./core/crew-readiness.js";
+import { normalizeMarketNotes } from "./core/market-memory.js";
+import {
+  arriveVoyageReceipt,
+  beginVoyageReceipt,
+  normalizeVoyageLedger,
+  recordVoyageEntry,
+  voyageProfit,
+} from "./core/voyage-ledger.js";
+import { harborSuggestion } from "./core/harbor-suggestion.js";
 import { harborFoamObstacles } from "./core/obstacle-foam.js";
 import { createCartographicRendering } from "./cartographic-rendering.js";
 import { labelZoomOpacity } from "./core/cartography.js";
@@ -19,6 +29,7 @@ import {
   openPortWorkspace,
   refreshPortWorkspaces,
   readingPages,
+  selectCollectionEntry,
 } from "./ui/port-workspace.js?v=5";
 import { createSeaRendering } from "./sea-rendering.js?v=11";
 import {
@@ -2094,6 +2105,13 @@ function advanceDays(days) {
     game.operations = wages.operations;
     game.coins = wages.coins;
     if (wages.paid)
+      recordVoyageEntry(
+        game.voyageLedger,
+        "wages",
+        wages.paid,
+        currentPort?.name,
+      );
+    if (wages.paid)
       addNews("Crew paid", `${wages.paid} crowns paid in weekly wages.`);
     if (wages.missed)
       addNews(
@@ -2174,10 +2192,9 @@ function advanceDays(days) {
       changeStanding(contract.faction, -3);
       addNews(
         "Contract failed",
-        contract.title +
-          " expired before reaching " +
-          contract.destination +
-          ".",
+        contract.kind === "survey"
+          ? `${contract.title} expired before the survey was completed.`
+          : `${contract.title} expired before reaching ${contract.destination}.`,
       );
     } else retained.push(contract);
   }
@@ -2306,8 +2323,16 @@ function acceptContract(id) {
   contract.deadline = game.day + contract.estimatedDays + 3;
   game.activeContracts.push(contract);
   offers.splice(index, 1);
-  if (contract.destination)
+  let coursePlotted = false;
+  if (contract.destination) {
     revealContractDestination(getPortByName(contract.destination));
+    if (!game.navigation.destination)
+      coursePlotted = plotCourse(
+        game.navigation,
+        contract.destination,
+        ports.map((port) => port.name),
+      );
+  }
   addNews(
     "Contract accepted",
     contract.title +
@@ -2318,7 +2343,9 @@ function acceptContract(id) {
       ".",
   );
   showMessage(
-    contract.title + " accepted. Destination added to your chart.",
+    contract.kind === "survey"
+      ? `${contract.title} accepted. Review its requirements in Ledger → Contracts.`
+      : `${contract.title} accepted. ${coursePlotted ? "Course plotted" : "Destination added to your chart"}.`,
     3,
   );
   renderPortSystems();
@@ -2339,6 +2366,12 @@ function completeSurveyContracts(event) {
     }
     const rewards = contract.survey.rewards;
     game.coins += rewards.coins;
+    recordVoyageEntry(
+      game.voyageLedger,
+      "commissions",
+      rewards.coins,
+      currentPort?.name,
+    );
     changeStanding(contract.faction, rewards.standing);
     game.completedContracts++;
     addNews(
@@ -2371,6 +2404,12 @@ function resolveContractsAtPort(port) {
       outcome.reward * specialistRewardMultiplier(game.specialists),
     );
     game.coins += outcome.reward;
+    recordVoyageEntry(
+      game.voyageLedger,
+      "commissions",
+      outcome.reward,
+      port.name,
+    );
     rewardTotal += outcome.reward;
     changeStanding(contract.faction, outcome.standing);
     if (outcome.standing !== 0) {
@@ -3396,6 +3435,12 @@ function loadGameState() {
 
   wakeSystem.clear();
   Object.assign(game, saved.game);
+  game.voyageLedger = normalizeVoyageLedger(saved.game.voyageLedger);
+  game.marketNotes = normalizeMarketNotes(
+    saved.game.marketNotes,
+    ports.map((port) => port.name),
+    Object.keys(goods),
+  );
   game.mapSeed = mapSeed;
   game.timeOfDay = normalizeTimeOfDay(game.timeOfDay);
   game.firstMeridianCrossed = Boolean(game.firstMeridianCrossed);
@@ -3823,6 +3868,8 @@ const panelContext = {
   renderHarborPresentation,
   openHarborService,
   openMarketGood,
+  grantShoreLeave,
+  rememberLocalMarket,
   calculateShipIdentity,
   canTrade,
   cargoCapacities,
@@ -3982,18 +4029,22 @@ function followCurrentObjective() {
     ["trade", "vessel", "politics"].includes(objective.action) &&
     currentPort
   ) {
-    activateSectionTabs(
-      document.getElementById("portPanel"),
+    openHarborService(
       objective.action === "vessel" ? "harbor" : objective.action,
+      objective.action === "vessel"
+        ? "voyageReadiness"
+        : objective.action === "trade"
+          ? "contractBoard"
+          : "localLaw",
     );
     document.getElementById("portPanel").style.display = "grid";
     return;
   }
-  if (["ledger", "quests"].includes(objective.action)) {
+  if (["ledger", "quests", "contracts"].includes(objective.action)) {
     renderLedger();
     activateSectionTabs(
       document.getElementById("ledgerPanel"),
-      objective.action === "quests" ? "quests" : "milestone",
+      objective.action === "ledger" ? "milestone" : objective.action,
     );
     document.getElementById("ledgerPanel").style.display = "grid";
     return;
@@ -4125,10 +4176,15 @@ function openHarborService(tab, target) {
   const panel = document.getElementById("portPanel");
   activateSectionTabs(panel, tab);
   openPortWorkspace(tab, target);
+  if (target === "voyageReadiness")
+    document
+      .getElementById("grantShoreLeave")
+      ?.scrollIntoView({ block: "nearest" });
 }
 
 function renderHarborPresentation() {
   if (!currentPort) return;
+  rememberLocalMarket();
   document.getElementById("portRealm").textContent =
     `${currentPort.realm} · Day ${game.day}`;
   document.querySelectorAll("[data-service]").forEach((button) => {
@@ -4141,7 +4197,109 @@ function renderHarborPresentation() {
     `${Math.round(game.operations.condition)}%`;
   renderPortCity();
   renderDepartureReadiness();
+  renderHarborBrief();
 }
+
+function openVoyageLedger() {
+  renderLedger();
+  activateSectionTabs(document.getElementById("ledgerPanel"), "voyages");
+  document.getElementById("ledgerPanel").style.display = "grid";
+  document.querySelector('#ledgerPanel .port-tab[data-tab="voyages"]').focus();
+}
+
+function renderHarborBrief() {
+  const root = document.getElementById("harborBrief");
+  root.replaceChildren();
+  const suggestion = harborSuggestion(
+    game,
+    currentPort.name,
+    worldEvents.ironShortage.active,
+  );
+  if (suggestion) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "harbor-suggestion";
+    const title = document.createElement("b");
+    title.textContent = suggestion.title + " →";
+    const detail = document.createElement("span");
+    detail.textContent = suggestion.detail;
+    button.append(title, detail);
+    button.onclick = () => {
+      if (suggestion.good) openMarketGood(suggestion.good);
+      else if (suggestion.tab === "chart") {
+        plotCourse(
+          game.navigation,
+          suggestion.port,
+          ports.map((p) => p.name),
+        );
+        renderPortSystems();
+        updateHud();
+        minimapWrap.style.display = "grid";
+        renderChart();
+        saveGameState();
+      } else {
+        openHarborService(
+          suggestion.tab,
+          suggestion.tab === "vessel" ? "shipyard" : "localLaw",
+        );
+        if (suggestion.vessel)
+          selectCollectionEntry(
+            document.getElementById("vesselCatalog"),
+            SHIP_CLASSES[suggestion.vessel].name,
+          );
+      }
+    };
+    root.append(button);
+  }
+  const receipt = game.voyageLedger.history[0];
+  if (receipt?.destination === currentPort.name) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "arrivalReceipt";
+    const profit = Math.round(voyageProfit(receipt));
+    button.textContent = `Voyage result: ${profit >= 0 ? "+" : ""}${profit} crowns · View receipt →`;
+    button.onclick = openVoyageLedger;
+    root.append(button);
+  }
+  root.hidden = !root.children.length;
+}
+
+function grantShoreLeave() {
+  if (!currentPort)
+    return { ok: false, reason: "Dock before granting shore leave." };
+  const preview = previewShoreLeave(
+    game.operations,
+    game.coins,
+    game.day,
+    game.activeContracts,
+  );
+  if (!preview.ok)
+    return { ok: false, reason: "Not enough crowns for shore leave." };
+  game.operations = preview.operations;
+  game.coins -= preview.cost;
+  recordVoyageEntry(game.voyageLedger, "leave", preview.cost, currentPort.name);
+  advanceDays(preview.days);
+  rememberLocalMarket();
+  showMessage(
+    `Shore leave restored the crew · ${preview.cost} crowns · 1 day.`,
+    4,
+  );
+  renderPortSystems();
+  updateHud();
+  saveGameState();
+  return { ok: true, cost: preview.cost, days: preview.days };
+}
+
+document.getElementById("crewReadiness").onclick = () => {
+  if (!currentPort && nearPort) openPort();
+  if (currentPort) openHarborService("harbor", "voyageReadiness");
+  else {
+    renderShipPanel();
+    activateSectionTabs(document.getElementById("shipPanel"), "crew");
+    document.getElementById("shipPanel").style.display = "grid";
+    showMessage("Grant shore leave at the next harbor’s Dock → Passage.", 4);
+  }
+};
 
 function renderPortCity() {
   const port = currentPort;
@@ -4221,6 +4379,13 @@ function renderDepartureReadiness() {
     ? Math.max(0, estimate.provisionsNeeded - ops.provisions)
     : 0;
   root.innerHTML = `<label class="town-kicker" for="departureDestination">Next passage</label><select id="departureDestination" aria-label="Next destination"><option value="">Choose a destination</option></select><div class="departure-metrics"><button type="button" data-readiness="provisions" class="${shortage ? "needs-attention" : ""}">Stores <b>${ops.provisions}/30</b></button><button type="button" data-readiness="condition" class="${ops.condition < 60 ? "needs-attention" : ""}">Vessel <b>${Math.round(ops.condition)}%</b></button><span>${estimate ? `~${estimate.days} days · ${estimate.provisionsNeeded} stores${estimate.direct ? " · direct estimate" : ""}` : "Plot your next passage"}</span></div><span class="departure-status ${shortage || ops.condition < 40 ? "needs-attention" : ""}">${shortage ? `Need ${shortage} more provisions before this passage` : ops.condition < 40 ? "Critical vessel damage · visit the shipyard" : estimate ? "Stores cover the passage · weather may change" : "Select a port to estimate voyage supplies"}</span>`;
+  const crew = crewReadiness(ops);
+  const crewButton = document.createElement("button");
+  crewButton.type = "button";
+  crewButton.dataset.readiness = "crew";
+  crewButton.classList.toggle("needs-attention", crew.needsRest);
+  crewButton.textContent = `Crew ${Math.round(crew.morale)} morale · ${Math.round(crew.fatigue)} fatigue${crew.needsRest ? " · Rest advised" : ""}`;
+  root.querySelector(".departure-metrics").append(crewButton);
   const select = root.querySelector("select");
   for (const port of ports
     .filter(
@@ -6869,6 +7034,28 @@ function buyPriceFor(port, key) {
 function sellPriceFor(port, key) {
   return sellPrice(pricingOptions(port, key));
 }
+function rememberLocalMarket() {
+  if (!currentPort) return;
+  game.marketNotes[currentPort.name] = {
+    day: game.day,
+    prices: Object.fromEntries(
+      [
+        ...availableMarketGoods(
+          game.regionalEconomy[currentPort.name],
+          productionChains,
+          Object.keys(goods),
+        ),
+      ].map((key) => [
+        key,
+        tradeQuote(
+          sellPriceFor(currentPort, key),
+          legalStatusAt(currentPort, key),
+          "sell",
+        ),
+      ]),
+    ),
+  };
+}
 function legalStatusAt(port, key) {
   return jurisdictionLaw(port.name, key, {
     crises: crisisAtPort(game.regionalCrises, port.name),
@@ -6964,6 +7151,7 @@ function openPort() {
     const fee = dockingFee(game.regionalEconomy[currentPort.name]);
     const paid = Math.min(game.coins, fee);
     game.coins -= paid;
+    recordVoyageEntry(game.voyageLedger, "harbor", paid);
     if (paid < fee)
       game.regionalEconomy[currentPort.name].unrest = clampNumber(
         game.regionalEconomy[currentPort.name].unrest + 3,
@@ -7007,6 +7195,14 @@ function openPort() {
       seed: game.day + currentPort.name.length,
     });
     game.cargoLots = outcome.remaining;
+    recordVoyageEntry(
+      game.voyageLedger,
+      "cargoLost",
+      [...outcome.lost, ...outcome.confiscated].reduce(
+        (sum, lot) => sum + lot.cost,
+        0,
+      ),
+    );
     syncCargoCounts(game, goods);
     if (outcome.lost.length)
       addNews(
@@ -7041,8 +7237,15 @@ function openPort() {
       addNews("Entry refused at " + currentPort.name, customs.reason);
       showMessage("PORT BAN · Registered trade is unavailable.", 4);
     }
-    game.coins = Math.max(0, game.coins - customs.fine - customs.remoteFee);
+    const customsPaid = Math.min(game.coins, customs.fine + customs.remoteFee);
+    game.coins -= customsPaid;
+    recordVoyageEntry(game.voyageLedger, "customs", customsPaid);
     if (customs.confiscated.length) {
+      recordVoyageEntry(
+        game.voyageLedger,
+        "cargoLost",
+        customs.confiscated.reduce((sum, lot) => sum + lot.cost, 0),
+      );
       const seized = new Set(customs.confiscated.map((lot) => lot.id));
       game.cargoLots = game.cargoLots.filter((lot) => !seized.has(lot.id));
       syncCargoCounts(game, goods);
@@ -7079,6 +7282,12 @@ function openPort() {
     });
     game.operations.crew = crewProgress.crew;
     if (crewProgress.event) applyCrewVoyageEvent(crewProgress.event);
+    arriveVoyageReceipt(
+      game.voyageLedger,
+      game.departedFromPort,
+      currentPort.name,
+      game.day,
+    );
     game.voyageDistance = 0;
     resetVoyageTimeState();
     game.departedFromPort = null;
@@ -7097,6 +7306,7 @@ function openPort() {
     );
   }
   resolveContractsAtPort(currentPort);
+  rememberLocalMarket();
   const officerAtPort = game.specialists.officers.find(
     (officer) =>
       officer.ambition.status === "accepted" &&
@@ -7451,10 +7661,13 @@ function chooseCombatAction(action) {
     encounterRollLike(pendingCombat.seed + 23) < result.cargoLossRisk
   ) {
     const lost = removeCombatCargo(pendingCombat.profile);
+    if (lost) recordVoyageEntry(game.voyageLedger, "cargoLost", lost.cost);
     if (lost) cargoText = ` Raiders seized ${goods[lost.key].name}.`;
   }
   if (result.prizeValue) game.coins += result.prizeValue;
   game.coins -= result.coinsLost;
+  recordVoyageEntry(game.voyageLedger, "salvage", result.prizeValue);
+  recordVoyageEntry(game.voyageLedger, "encounters", result.coinsLost);
   addNews(
     `Sea encounter: ${result.outcome}`,
     `${result.description}${cargoText}${result.prizeValue ? ` Prize salvage yielded ${result.prizeValue} crowns.` : ""}`,
@@ -7955,6 +8168,7 @@ document.getElementById("townCourseButton").addEventListener("click", () => {
 });
 function departPort() {
   const leaving = currentPort;
+  if (leaving) beginVoyageReceipt(game.voyageLedger, leaving.name, game.day);
   document.body.classList.remove("port-open");
   document.getElementById("portPanel").style.display = "none";
   currentPort = null;
@@ -8593,6 +8807,10 @@ if (automationConfig) {
     trade: tradeAtPort,
     accept: acceptContract,
     combat: chooseCombatAction,
+    rest: grantShoreLeave,
+    knownPort: (port) => port.home || isWorldPointExplored(port.x, port.y),
+    estimateDays: (origin, name) =>
+      portVoyageEstimate(origin, getPortByName(name)).days,
     offers: (port) =>
       game.activeContracts.length >= 3
         ? []

@@ -8,6 +8,8 @@
     "test": "node --test",
     "automate": "node scripts/automate.mjs",
     "test:automation": "node scripts/check-automation.mjs",
+    "test:ui": "node scripts/check-harbor-ui.mjs",
+    "test:gameplay": "node scripts/check-gameplay.mjs",
     "test:coverage": "node --experimental-test-coverage --test --test-coverage-include='src/core/*.js' --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=95",
     "lint": "eslint .",
     "format": "prettier --write .",

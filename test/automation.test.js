@@ -40,10 +40,34 @@ test("automation is opt-in and validates seed, mode, and speed", () => {
     mode: "step",
     seed: "parchment-automation",
     speed: 1,
+    knowledge: "known",
+    rest: "on",
   });
   assert.deepEqual(
     automationOptions("?automation=demo&seed=research%20A&speed=32"),
-    { mode: "demo", seed: "research A", speed: 32 },
+    {
+      mode: "demo",
+      seed: "research A",
+      speed: 32,
+      knowledge: "known",
+      rest: "on",
+    },
+  );
+  assert.equal(
+    automationOptions("?automation=step&knowledge=all&rest=off").knowledge,
+    "all",
+  );
+  assert.equal(
+    automationOptions("?automation=step&knowledge=all&rest=off").rest,
+    "off",
+  );
+  assert.throws(
+    () => automationOptions("?automation=step&knowledge=secret"),
+    RangeError,
+  );
+  assert.throws(
+    () => automationOptions("?automation=step&rest=yes"),
+    RangeError,
   );
   assert.equal(
     automationOptions("?automation=demo&speed=.25&seed=").speed,
