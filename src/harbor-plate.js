@@ -28,6 +28,67 @@ function noise(index, seed) {
   return value - Math.floor(value);
 }
 
+// Keep only the current port and size for each panel; removed panels can be
+// collected along with their artwork. Lighting and animation do not affect it.
+const staticHarborLayers = new WeakMap();
+// Ridge paths extend 16 pixels past the panel. Preserve those edges when
+// pointer parallax shifts the cached image back into view.
+const RIDGE_PADDING = 18;
+
+function harborLayers(surface, name) {
+  const { width, height } = surface;
+  const cached = staticHarborLayers.get(surface);
+  if (
+    cached?.name === name &&
+    cached.width === width &&
+    cached.height === height
+  )
+    return cached;
+  const seed = [...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0);
+  const grain = cached?.grain ?? surface.ownerDocument.createElement("canvas");
+  grain.width = width;
+  grain.height = height;
+  const g = grain.getContext("2d");
+  for (let mark = 0; mark < 1800; mark++) {
+    const x = noise(mark, seed) * width,
+      y = noise(mark + 1900, seed) * height;
+    g.fillStyle = mark % 3 ? "rgba(94,70,38,.035)" : "rgba(255,249,222,.25)";
+    g.fillRect(x, y, 0.5 + noise(mark, 5) * 2, 0.5 + noise(mark, 9));
+  }
+  const ridges =
+    cached?.ridges ?? surface.ownerDocument.createElement("canvas");
+  ridges.width = width + RIDGE_PADDING * 2;
+  ridges.height = height + RIDGE_PADDING * 2;
+  const r = ridges.getContext("2d");
+  r.translate(RIDGE_PADDING, RIDGE_PADDING);
+  for (let ridge = 0; ridge < 3; ridge++) {
+    r.beginPath();
+    r.moveTo(0, height * 0.63);
+    for (let x = 0; x <= width + 16; x += 16) {
+      const y =
+        height * (0.51 + ridge * 0.042) +
+        Math.sin((x / width) * 9 + seed + ridge * 0.6) * height * 0.045 +
+        Math.sin((x / width) * 23 + ridge) * height * 0.012;
+      r.lineTo(x, y);
+    }
+    r.lineTo(width, height * 0.75);
+    r.lineTo(0, height * 0.75);
+    r.closePath();
+    r.fillStyle = [
+      "rgba(143,153,119,.10)",
+      "rgba(143,153,119,.13)",
+      "rgba(143,153,119,.17)",
+    ][ridge];
+    r.fill();
+    r.strokeStyle = "rgba(114,112,80,.18)";
+    r.lineWidth = 0.8;
+    r.stroke();
+  }
+  const layers = { name, width, height, seed, grain, ridges };
+  staticHarborLayers.set(surface, layers);
+  return layers;
+}
+
 function compass(c, x, y, radius) {
   c.save();
   c.translate(x, y);
@@ -88,10 +149,7 @@ export function drawHarborPlate(
   const c = surface.getContext("2d");
   const width = surface.width,
     height = surface.height;
-  const seed = [...port.name].reduce(
-    (sum, letter) => sum + letter.charCodeAt(0),
-    0,
-  );
+  const { seed, grain, ridges } = harborLayers(surface, port.name);
   const profile = harborProfile(port.name);
   const composition = getHarborLayout(port.name)?.composition;
   const palette = portScenePalette(lighting, season);
@@ -111,38 +169,8 @@ export function drawHarborPlate(
   paper.addColorStop(1, palette.paperSea);
   c.fillStyle = paper;
   c.fillRect(0, 0, width, height);
-  // Paper flecks remain fixed to the page while flags and workers animate.
-  for (let mark = 0; mark < 1800; mark++) {
-    const x = noise(mark, seed) * width,
-      y = noise(mark + 1900, seed) * height;
-    c.fillStyle = mark % 3 ? "rgba(94,70,38,.035)" : "rgba(255,249,222,.25)";
-    c.fillRect(x, y, 0.5 + noise(mark, 5) * 2, 0.5 + noise(mark, 9));
-  }
-  layer(0.3, () => {
-    for (let ridge = 0; ridge < 3; ridge++) {
-      c.beginPath();
-      c.moveTo(0, height * 0.63);
-      for (let x = 0; x <= width + 16; x += 16) {
-        const y =
-          height * (0.51 + ridge * 0.042) +
-          Math.sin((x / width) * 9 + seed + ridge * 0.6) * height * 0.045 +
-          Math.sin((x / width) * 23 + ridge) * height * 0.012;
-        c.lineTo(x, y);
-      }
-      c.lineTo(width, height * 0.75);
-      c.lineTo(0, height * 0.75);
-      c.closePath();
-      c.fillStyle = [
-        "rgba(143,153,119,.10)",
-        "rgba(143,153,119,.13)",
-        "rgba(143,153,119,.17)",
-      ][ridge];
-      c.fill();
-      c.strokeStyle = "rgba(114,112,80,.18)";
-      c.lineWidth = 0.8;
-      c.stroke();
-    }
-  });
+  c.drawImage(grain, 0, 0);
+  layer(0.3, () => c.drawImage(ridges, -RIDGE_PADDING, -RIDGE_PADDING));
   layer(0.5, () =>
     drawHarborSkyline(c, port.name, width, height, palette, lighting),
   );

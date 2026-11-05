@@ -24,7 +24,7 @@ import {
   seasonAtDay,
 } from "./core/seasons.js";
 import { terrainBiome } from "./core/terrain.js";
-import { drawHarborPlate } from "./harbor-plate.js?v=4";
+import { drawHarborPlate } from "./harbor-plate.js?v=5";
 import { getHarborLayout } from "./harbor-layouts.js";
 import {
   openPortWorkspace,
