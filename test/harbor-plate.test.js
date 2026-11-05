@@ -6,6 +6,8 @@ import { seasonalAppearance } from "../src/core/seasons.js";
 
 function recordingSurface(width, height) {
   const geometry = [];
+  const calls = [];
+  const layers = [];
   let depth = 0;
   const context = new Proxy(
     {
@@ -29,6 +31,7 @@ function recordingSurface(width, height) {
         return (
           target[property] ??
           ((...args) => {
+            calls.push([property, ...args]);
             geometry.push(...args.filter((value) => typeof value === "number"));
           })
         );
@@ -39,7 +42,17 @@ function recordingSurface(width, height) {
     width,
     height,
     getContext: () => context,
+    ownerDocument: {
+      createElement(tag) {
+        assert.equal(tag, "canvas");
+        const layer = recordingSurface(0, 0);
+        layers.push(layer);
+        return layer;
+      },
+    },
     geometry,
+    calls,
+    layers,
     depth: () => depth,
   };
 }
@@ -71,6 +84,118 @@ test("harbor plates fit wide and narrow canvases and restore drawing state for e
       assert.ok(surface.geometry.every(Number.isFinite), name);
     }
   }
+});
+
+test("fixed harbor grain and ridges are reused while lighting, parallax, and vessels stay live", async () => {
+  const { sceneLighting } = await import("../src/core/lighting.js");
+  const surface = recordingSurface(720, 380);
+  const port = { name: PORT_NAMES.orvessaQuay };
+  const frames = [];
+  const art = { draw: (...args) => frames.push(args) };
+  drawHarborPlate(surface, port, { art });
+  assert.equal(surface.layers.length, 2);
+  const [grain, ridges] = surface.layers;
+  assert.equal(
+    grain.calls.filter(([call]) => call === "fillRect").length,
+    1800,
+  );
+  assert.equal(ridges.calls.filter(([call]) => call === "fill").length, 3);
+  const cachedCalls = surface.layers.map((layer) => layer.calls.length);
+  for (let frame = 1; frame <= 120; frame++) {
+    drawHarborPlate(surface, port, {
+      art,
+      time: frame * 16,
+      lighting: sceneLighting(frame / 120),
+      season: seasonalAppearance(frame),
+      evolution: { level: frame % 4 },
+      pointer: { x: 1, y: -1 },
+      reducedMotion: frame === 120,
+    });
+  }
+  assert.equal(surface.layers.length, 2);
+  assert.deepEqual(
+    surface.layers.map((layer) => layer.calls.length),
+    cachedCalls,
+  );
+  const grainBlits = surface.calls.filter(
+    ([call, image]) => call === "drawImage" && image === grain,
+  );
+  const ridgeBlits = surface.calls.filter(
+    ([call, image]) => call === "drawImage" && image === ridges,
+  );
+  assert.equal(grainBlits.length, 121);
+  assert.equal(ridgeBlits.length, 121);
+  assert.ok(grainBlits.every(([, , x, y]) => x === 0 && y === 0));
+  assert.ok(ridgeBlits.every(([, , x, y]) => x < 0 && y < 0));
+  assert.ok(
+    surface.calls.some(
+      ([call, x, y]) =>
+        call === "translate" &&
+        Math.abs(x - 3.6) < 1e-9 &&
+        Math.abs(y + 2.1) < 1e-9,
+    ),
+  );
+  assert.equal(
+    frames.length,
+    121,
+    "architecture still receives every live frame",
+  );
+  assert.equal(frames[119][6], 119 * 16);
+  assert.equal(frames[120][6], 0, "reduced motion freezes the animation clock");
+  assert.equal(surface.depth(), 0);
+});
+
+test("harbor artwork refreshes on port or dimension changes without accumulating canvases", () => {
+  const surface = recordingSurface(720, 380);
+  const options = { art: { draw() {} } };
+  let port = { name: PORT_NAMES.orvessaQuay };
+  drawHarborPlate(surface, port, options);
+  const [grain, ridges] = surface.layers;
+  const originalGrain = grain.calls.slice();
+  const originalRidges = ridges.calls.slice();
+  const changes = [
+    () => {
+      port = { name: PORT_NAMES.vesperport };
+    },
+    () => {
+      surface.width = 390;
+    },
+    () => {
+      surface.height = 420;
+    },
+  ];
+  for (const change of changes) {
+    const grainCount = grain.calls.length;
+    const ridgeCount = ridges.calls.length;
+    change();
+    drawHarborPlate(surface, port, options);
+    assert.equal(surface.layers.length, 2);
+    assert.equal(grain.calls.length - grainCount, originalGrain.length);
+    assert.ok(ridges.calls.length > ridgeCount);
+    assert.equal(grain.width, surface.width);
+    assert.equal(grain.height, surface.height);
+    assert.ok(
+      ridges.width > surface.width,
+      "off-panel ridge strokes remain available for parallax",
+    );
+    assert.ok(ridges.height > surface.height);
+  }
+  assert.notDeepEqual(
+    grain.calls.slice(originalGrain.length, originalGrain.length * 2),
+    originalGrain,
+  );
+  assert.notDeepEqual(
+    ridges.calls.slice(originalRidges.length, originalRidges.length * 2),
+    originalRidges,
+  );
+  const otherSurface = recordingSurface(surface.width, surface.height);
+  drawHarborPlate(otherSurface, port, options);
+  assert.equal(otherSurface.layers.length, 2);
+  assert.notEqual(
+    otherSurface.layers[0],
+    grain,
+    "each panel owns its current artwork",
+  );
 });
 
 test("atlas plates accept older saves without evolution and unknown harbor names", () => {
